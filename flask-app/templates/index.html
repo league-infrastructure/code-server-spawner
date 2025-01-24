@@ -1,0 +1,51 @@
+{% extends "page.html" %}
+
+
+{% block title %}JTL Auth Home{% endblock %}
+{% block header %}<h1>Auth Client Home</h1>{% endblock %}
+
+{% block content %}
+
+        <div>
+
+        {% if current_user.is_authenticated %}
+            <p>Logged in as: {{ current_user.primary_email }}</p>
+
+            {% if current_user.is_student %}
+                <p>Role: Student</p>
+            {% endif %}
+            {% if current_user.is_league %}
+                <p>Role: League User</p>
+            {% endif %}
+            {% if current_user.is_admin %}
+                <p>Role: Admin</p>
+            {% endif %}
+            {% if current_user.is_staff %}
+                <p>Role: Staff</p>
+            {% endif %}
+
+            <p><a href="{{ url_for('auth.logout') }}">Logout</a></p>
+        {% else %}
+            <p> not Logged in</p>
+            <p><a href="{{ url_for('auth.login') }}">login</a></p>
+        {% endif %}
+       
+        <p><a href="{{ url_for('index') }}">index</a></p> 
+        <p><a href="{{ url_for('hello_world') }}">hello</a></p> 
+        <p><a href="{{ url_for('private') }}">private</a></p>
+        <p><a href="{{ url_for('public') }}">public</a></p>
+
+        {% if current_user.is_staff %}
+        <p><a href="{{ url_for('staff') }}">private_staff</a></p>
+        {% endif %}
+        {% if current_user.is_admin %}
+        <p><a href="{{ url_for('admin') }}">private_admin</a></p>
+        {% endif %}
+
+
+        </div>
+
+{% endblock %}
+
+
+{% block footer %}{% endblock %}
