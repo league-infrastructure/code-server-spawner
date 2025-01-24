@@ -18,7 +18,7 @@ It's based on https://github.com/ericlincn/docker-flask-gunicorn
 
 * Create a new repository using "Use this template" button, rather than cloning,
   then clone the repository to your local machine.
-* Set up secrets, [using these instructions](https://github.com/league-infrastructure/league-infrastructure/wiki/Repository-Secrets)
+* Set up secrets, [using these instructions](https://github.com/league-infrastructure/league-infrastructure/wiki/Repository-Secrets) Use the file in the 'Common Secrets.key'  LastPass note.
 * Add the token from the note in last pass, "jointheleague-it Github Clone Only Token" to the file `secrets/github-token.txt`
 * Remove any of the components you don't need, such as the flask app or the nginx server. Delete the 
   component's director, then remove it from the `docker-compose.yaml` file.
@@ -27,7 +27,7 @@ It's based on https://github.com/ericlincn/docker-flask-gunicorn
 ## Usage
 
 First you will need to unlock the secrets, 
-[using these instructions](https://github.com/league-infrastructure/league-infrastructure/blob/master/Repo_Secrets.md)
+[using these instructions](https://github.com/league-infrastructure/league-infrastructure/wiki/Repository-Secrets)
 
 
 You can start this stack with `docker-compose`:
