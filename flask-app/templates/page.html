@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Title{% endblock %}</title>
+    {% block styles %}
+    <style></style>
+    {% endblock %}
+  </head>
+  <body>
+    <header>
+        {% block header %}
+        This here is a header 
+        {% endblock %}
+        <div class="messages">
+            {% include '_messages.html' %}
+         </div>
+      
+    </header>
+
+
+    <div class="content">
+        {% block content %}
+        <!-- Default content -->
+        {% endblock %}
+    </div>
+  </body>
+    <footer>
+        {% block footer %}
+        This here is a footer
+        {% endblock %}
+    </footer>
+</html>

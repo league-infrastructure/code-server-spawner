@@ -1,0 +1,13 @@
+
+Flask
+Flask-WTF
+Flask-PyMongo
+flask_httpauth
+flask-session
+flask_sqlalchemy
+gunicorn
+gevent
+python-dotenv
+jtlutil
+sqlitedict
+jinja2
