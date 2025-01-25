@@ -55,9 +55,6 @@ def init_app(file: str | Path = None):
     app.db_path =  app_dir / "db" / "app.db"
     initialize_database(app.db_path)
     
-    with app.app_context():
-        for rule in app.url_map.iter_rules():
-            print(f"Endpoint: {rule.endpoint}, Methods: {', '.join(rule.methods)}, Route: {rule.rule}")
 
     return app
 
