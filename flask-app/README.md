@@ -14,3 +14,10 @@ or
 ```bash
 python app.py
 ```
+
+Lock dependences before release: 
+
+```bash
+ uv pip compile pyproject.toml -o requirements.txt
+ ```
+ 

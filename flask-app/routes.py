@@ -2,8 +2,9 @@
 import uuid
 from functools import wraps
 
-from flask import (abort, current_app, render_template, session, g)
+from flask import (abort, current_app, render_template, session, request,  g, redirect, url_for)
 from flask_login import (current_user, login_required)
+from jtlutil.flask.flaskapp import insert_query_arg
 from app import app
 
 
@@ -54,36 +55,30 @@ def admin_required(f):
 
     return decorated_function
 
-@app.route("/")
+@app.route("/", methods=["GET", "POST"])
 def index():
-    return render_template("index.html", current_user = current_user)
+    
+    if request.method == "POST":
+        # Handle form submission
+        form_data = request.form
+        current_app.logger.info(f"Form submitted with data: {form_data}")
+        # Process form data here
+        action = form_data.get("action")
+        if action == "start":
+            url = insert_query_arg(url_for('start_server'),"redirect",url_for("index", _external=True))
+            app.logger.info("Redirecting to start server: {url}")
+            return redirect(url)
+        
+        return render_template("index.html", current_user=current_user, form_data=form_data)
+    
+    return render_template("index.html", current_user=current_user)
 
 
-@app.route("/hello")
-def hello_world():
-    from  datetime import datetime
-    session['counter'] = session.get('counter', 0) + 1
-    
-    kv = current_app.kvstore
-    
-    kv['counter'] = kv.get('counter', 0) + 1
-    
-    # Get the current time and session info
-    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    session_info = dict(session)
-    
-    return render_template(
-        'hello_world.html',
-        current_time=current_time,
-        session_info=session_info,
-        scounter=session['counter'],
-        kvcounter=kv['counter']
-    )
 
-@app.route("/private")
+@app.route("/start")
 @login_required
-def private():
-    return render_template("private.html", current_user = current_user)
+def start_server():
+    return render_template("start.html", current_user = current_user)
 
 
 @app.route("/private/staff")

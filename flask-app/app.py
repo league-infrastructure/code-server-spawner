@@ -41,7 +41,7 @@ def init_app(file: str | Path = None):
 
     # Initialize logger
     init_logger(app)
-
+    
     app_dir, db_dir = configure_app_dir(app)
     
     setup_sqlite_sessions(app)

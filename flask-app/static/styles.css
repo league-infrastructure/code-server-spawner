@@ -64,14 +64,14 @@ button {
 
 button.small-right {
     background-color: #f0ad4e; /* Orange background for secondary button */
-    width: 100px; /* Fixed width for secondary button */
+    width: 150px; /* Fixed width for secondary button */
     color: black; /* Black text for better contrast */
     float: right; /* Float the button to the right */
 }
 
 button.small-left {
     background-color:blue; /* Orange background for secondary button */
-    width: 100px; /* Fixed width for secondary button */
+    width: 150px; /* Fixed width for secondary button */
     color: white; /* Black text for better contrast */
     float: left; /* Float the button to the left */
 }
