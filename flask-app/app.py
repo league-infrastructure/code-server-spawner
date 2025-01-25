@@ -37,7 +37,8 @@ def init_app(file: str | Path = None):
     app.login_manager =  auth_bp.login_manager
     app.load_user = load_user
 
-    configure_config(app)
+    #configure_config(app)
+    configure_config_tree(app)
 
     # Initialize logger
     init_logger(app)
