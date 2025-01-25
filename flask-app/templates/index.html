@@ -1,18 +1,30 @@
 {% extends "page.html" %}
 
 
-{% block title %}JTL Auth Home{% endblock %}
-{% block header %}<h1>Auth Client Home</h1>{% endblock %}
+{% block title %}League Code Server{% endblock %}
+{% block header %}<h1>League Code Server</h1>{% endblock %}
 
 {% block content %}
 
 <div class="content">
     <form action="{{ url_for('index') }}" method="POST">
+        {% if not current_user.is_authenticated %}
+
         <div class="form-group">
-            <button type="submit" name="action" value="start" class="small-left">Start Server</button>
+            <button type="submit" name="action" value="login" class="small-left">Login</button>
             <button type="submit" name="action" value="create" class="small-right">Create Account</button>
         </div>
+
+        {% else %}
+
+            <div class="form-group">
+                <button type="submit" name="action" value="logout" class="small-left">Logout</button>
+                <button type="submit" name="action" value="start" class="small-right">Start Server</button>
+            </div>
+        
+        {% endif %}
     </form>
+   
 </div>
 
 <div>
@@ -33,12 +45,9 @@
             <p>Role: Staff</p>
         {% endif %}
 
-        <p><a href="{{ url_for('auth.logout') }}">Logout</a></p>
-    {% else %}
-        <p> not Logged in</p>
-        <p><a href="{{ url_for('auth.login') }}">login</a></p>
+        <p>Server Name: {{server_name}}</p>
     {% endif %}
-    </div>
+</div>
 
 
 {% endblock %}
