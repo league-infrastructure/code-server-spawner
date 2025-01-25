@@ -14,9 +14,9 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # the application crashes without emitting any logs due to buffering.
 ENV PYTHONUNBUFFERED=1
 
-RUN mkdir -p /opt/app
+RUN mkdir -p /app
 
-WORKDIR /opt/app
+WORKDIR /app
 
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/go/dockerfile-user-best-practices/
@@ -42,7 +42,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # USER appuser
 
 # Copy the source code into the container.
-COPY . .
+COPY . /app
 
 # Expose the port that the application listens on.
 EXPOSE 8000
@@ -50,8 +50,8 @@ EXPOSE 8000
 # Copy the entrypoint script to the specified location
 # Don't really need to do this b/c of the copy . ., but
 # it's summetric with the other Dockerfiles
-COPY entrypoint.sh /opt/app/entrypoint.sh
-RUN chmod +x /opt/app/entrypoint.sh
+
+RUN chmod +x /app/entrypoint.sh
 
 # Set the entrypoint to run the setup script
 ENTRYPOINT ["/bin/bash", "/opt/app/entrypoint.sh"]

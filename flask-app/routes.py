@@ -2,7 +2,8 @@
 import uuid
 from functools import wraps
 
-from flask import (abort, current_app, render_template, session, request,  g, redirect, url_for)
+from flask import (abort, current_app, render_template, session, request,  g, 
+                   redirect, url_for, jsonify)
 from flask_login import (current_user, login_required, logout_user)
 from jtlutil.flask.flaskapp import insert_query_arg
 from app import app
@@ -138,7 +139,12 @@ def staff():
 def admin():
     return render_template("private-admin.html", current_user = current_user)
 
-
-@app.route("/public")
-def public():
-    return render_template("public.html", current_user = current_user)
+@app.route("/", methods=["GET", "POST"])
+def telem():
+    if request.method == "POST":
+        telemetry_data = request.get_json()
+        current_app.logger.info(f"Telemetry data received: {telemetry_data}")
+        # Process telemetry data here if needed
+        content_length = request.content_length
+        current_app.logger.info(f"Content-Length of telemetry data: {content_length}")
+        return  jsonify(content_length)
