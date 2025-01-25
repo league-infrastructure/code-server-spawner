@@ -6,7 +6,7 @@ services:
     image: jtl-cron # CHANGE to an image name specific to this project
 
     volumes:
-      - app-data:/opt/data
+      - app-data:/app/data
 
     restart: unless-stopped
 
@@ -21,37 +21,14 @@ services:
       caddy.reverse_proxy: "{{upstreams 8000}}"
 
     volumes:
-      - app-data:/opt/data
+      - app-data:/app
+      - /var/run/docker.sock:/var/run/docker.sock
 
      # Expose Flask app on host port 8090
     ports:
       - "8090:8000"
 
     networks: # Must exist to recieve traffic from Caddy
-      - caddy
-
-  nginx:
-    build:
-      context: nginx
-    image: jtl-nginx # CHANGE to an image name specific to this project
-
-    volumes:
-      - app-data:/opt/data
-
-    labels:
-      caddy: example-nginx.do.jointheleague.org
-      caddy.reverse_proxy: "{{upstreams 80}}"
-      
-      caddy.basic_auth: "*"
-      caddy.basic_auth.code: ${PASSWORD}
-
-    restart: unless-stopped
-
-    # Expose NGINX server on host port 8091
-    ports:
-      - "8091:80"
-
-    networks:
       - caddy
 
 
