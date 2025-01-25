@@ -95,7 +95,7 @@ def index():
 @login_required
 def start_server():
     import docker
-    from jtldockerctl.dctl import create_cs_pair, logger
+    from jtlutil.docker.dctl import create_cs_pair, logger
     import logging
     import requests
     import time
@@ -139,7 +139,7 @@ def staff():
 def admin():
     return render_template("private-admin.html", current_user = current_user)
 
-@app.route("/", methods=["GET", "POST"])
+@app.route("/telem", methods=["GET", "POST"])
 def telem():
     if request.method == "POST":
         telemetry_data = request.get_json()

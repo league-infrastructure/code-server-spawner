@@ -14,27 +14,30 @@ services:
     image: jtl-flask # CHANGE to an image name specific to this project
     build:
       context: flask-app
+    container_name: cs-spawner
 
     # These labels set up the domain name in the Caddy proxy
     labels:
-      caddy: example-flask.do.jointheleague.org
+      caddy: cs-spawner.do.jointheleague.org
       caddy.reverse_proxy: "{{upstreams 8000}}"
 
     volumes:
       - app-data:/app
       - /var/run/docker.sock:/var/run/docker.sock
 
-     # Expose Flask app on host port 8090
-    ports:
-      - "8090:8000"
+    # Expose Flask app on host port 8090
+    # ports:
+    #  - "8090:8000"
 
     networks: # Must exist to recieve traffic from Caddy
       - caddy
+      - jtlctl
 
 
 networks:
   caddy:
     external: true
+  jtlctl:
 
 
 volumes:

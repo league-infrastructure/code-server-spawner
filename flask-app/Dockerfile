@@ -7,6 +7,12 @@
 ARG PYTHON_VERSION=3.11
 FROM python:${PYTHON_VERSION}-slim as base
 
+# Install git with proper preparation and cleanup
+RUN apt-get update && \
+    apt-get install -y git && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Prevents Python from writing pyc files.
 ENV PYTHONDONTWRITEBYTECODE=1
 
@@ -54,8 +60,8 @@ EXPOSE 8000
 RUN chmod +x /app/entrypoint.sh
 
 # Set the entrypoint to run the setup script
-ENTRYPOINT ["/bin/bash", "/opt/app/entrypoint.sh"]
+ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]
 
 
 # Run the application.
-CMD gunicorn -c gunicorn_config.py app:app
+CMD gunicorn -c /app/config/gunicorn_config.py app:app
