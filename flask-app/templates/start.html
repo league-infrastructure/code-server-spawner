@@ -1,19 +1,10 @@
 {% extends "page.html" %}
 
 
-{% block title %}JTL Auth Home{% endblock %}
-{% block header %}<h1>Auth Client Home</h1>{% endblock %}
+{% block title %}Page Debug{% endblock %}
+{% block header %}<h1>Request Debug</h1>{% endblock %}
 
 {% block content %}
-
-<div class="content">
-    <form action="{{ url_for('index') }}" method="POST">
-        <div class="form-group">
-            <button type="submit" name="action" value="start" class="small-left">Start Server</button>
-            <button type="submit" name="action" value="create" class="small-right">Create Account</button>
-        </div>
-    </form>
-</div>
 
 <div>
 
@@ -40,8 +31,6 @@
     {% endif %}
     </div>
 
-
 {% endblock %}
-
 
 {% block footer %}{% endblock %}
