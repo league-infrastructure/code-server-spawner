@@ -29,13 +29,32 @@
     
             {% if current_user.is_authenticated and current_user.is_staff %}
             <h2>Containers</h2>
-            <ul>    
+            <table>
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Password</th>
+                        <th>Login</th>
+                    </tr>
+                </thead>
+                <tbody>
                 {% for container in containers %}
-                <li><a href="https://{{ container.labels['caddy'] }}">{{ container.labels['jtl.codeserver.username'] }}</a> ({{ container.labels['jt.codeserver.password'] }})</li>
+                    <tr>
+                        <td><a href="https://{{ container.labels['caddy'] }}" target="_blank">{{ container.labels['jtl.codeserver.username'] }}</a></td>
+                        <td>{{ container.labels['jt.codeserver.password'] }}</td>
+                        
+                    <td>
+                        <form action="https://{{ container.labels['caddy'] }}/login" method="POST" target="_blank">
+                            <input type="hidden" name="base" value=".">
+                            <input type="hidden" name="href" value="https://jed.do.jointheleague.org/login">
+                            <input type="hidden" name="password" value="{{ container.labels['jt.codeserver.password'] }}">
+                            <button type="submit" class="login">Login</button>
+                        </form>
+                    </td>
+                    </tr>
                 {% endfor %}
-            </ul>
-
-        
+                </tbody>
+            </table>
             {% endif %}
 
         {% endif %}

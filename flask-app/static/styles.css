@@ -63,6 +63,11 @@ button {
     cursor: pointer;
 }
 
+button.login {
+    background-color: #45a049; /* Green background for primary button */
+    width: 100%; /* Full width */
+}
+
 button.small-right {
     background-color: #f0ad4e; /* Orange background for secondary button */
     width: 150px; /* Fixed width for secondary button */
