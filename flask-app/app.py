@@ -60,7 +60,6 @@ def init_app(file: str | Path = None):
     initialize_database(app.db_path)
     create_keystroke_tables(app.db_path)
     
-
     return app
 
 app = init_app()
