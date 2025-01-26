@@ -1,11 +1,25 @@
 
 .PHONY: setup build publish compile
 
-compile:
-	uv pip compile pyproject.toml -o requirements.txt
 
-publish: build compile
-	uv publish --token $$UV_PUBLISH_TOKEN
+VERSION := $(shell grep '^version =' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+
+
+ver:
+	@echo $(VERSION)
+
+compile:
+	uv pip compile --refresh pyproject.toml -o requirements.txt
+
+push:
+	git commit --allow-empty -a -m "Release version $(VERSION)"
+	git push
+	git tag v$(VERSION) 
+	git push --tags
+
+publish: build compile push
+	echo "Dont publish this"
+	#uv publish --token $$UV_PUBLISH_TOKEN
 
 build:
 	uv build
