@@ -10,6 +10,7 @@ from app import app, get_db
 from db import insert_keystroke_data
 from slugify import slugify
 from jtlutil.docker.dctl import container_status, create_cs_pair, logger, container_list
+from __version__ import version
 
 def ensure_session():
     if "session_id" not in session:

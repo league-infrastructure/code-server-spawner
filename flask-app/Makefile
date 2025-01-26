@@ -12,6 +12,7 @@ compile:
 	uv pip compile --refresh pyproject.toml -o requirements.txt
 
 push:
+	echo "__version__ = '$(VERSION)'" > __version__.py
 	git commit --allow-empty -a -m "Release version $(VERSION)"
 	git push
 	git tag v$(VERSION) 
