@@ -27,10 +27,33 @@ footer {
     margin-top: auto;
 }
 
+footer .left {
+    float: left;
+}
+
+footer .center {
+    text-align: center;
+    width: 100%;
+}
+
+footer .right {
+    float: right;
+}
+
+center {
+    text-align: center;
+}
+
 form {
     display: flex;
     flex-direction: column;
     margin: 0 auto;
+}
+
+.inline {
+    vertical-align: middle;
+    height: 1em; /* Matches the line height */
+    width: auto; /* Maintains aspect ratio */
 }
 
 .form-group {

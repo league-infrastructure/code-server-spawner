@@ -2,7 +2,11 @@
 
 
 {% block title %}League Code Server{% endblock %}
-{% block header %}<h1>League Code Server</h1>{% endblock %}
+{% block header %}
+<div style="text-align: center;">
+    <h1>League Code Server</h1>
+</div>
+{% endblock %}
 
 {% block content %}
 
@@ -67,5 +71,13 @@
 
 
 {% block footer %}
-code-server-spawner {version}
+<div class="left">code-server-spawner {{version}}</div>
+<div class="right">
+    <img class="inline" src="{{ url_for('static', filename='flag.png') }}" alt="Flag">
+    <a href="https://www.jointheleague.org">Join the League</a>
+    
+</div>
+{% endblock %}
+
+{% block scripts %}
 {% endblock %}

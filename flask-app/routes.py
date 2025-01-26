@@ -10,7 +10,7 @@ from app import app, get_db
 from db import insert_keystroke_data
 from slugify import slugify
 from jtlutil.docker.dctl import container_status, create_cs_pair, logger, container_list
-from __version__ import version
+from __version__ import __version__ as version
 
 def ensure_session():
     if "session_id" not in session:
@@ -96,7 +96,7 @@ def index():
         
     return render_template("index.html", current_user=current_user,
                            server_hostname=server_hostname, server_status=server_status, form_data=form_data,
-                           containers = containers)
+                           containers = containers, version=version)
 
 
 
