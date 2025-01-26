@@ -3,7 +3,7 @@ services:
   cron:
     build:
       context: cron-app
-    image: jtl-cron # CHANGE to an image name specific to this project
+    image: jtl-cton # CHANGE to an image name specific to this project
 
     volumes:
       - app-data:/app/data
@@ -22,12 +22,12 @@ services:
       caddy.reverse_proxy: "{{upstreams 8000}}"
 
     volumes:
-      - app-data:/app
+      - app-data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
 
     # Expose Flask app on host port 8090
-    # ports:
-    #  - "8090:8000"
+    ports:
+      - "8090:8000"
 
     networks: # Must exist to recieve traffic from Caddy
       - caddy

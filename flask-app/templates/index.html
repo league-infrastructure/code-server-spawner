@@ -15,6 +15,7 @@
             <button type="submit" name="action" value="create" class="small-right">Create Account</button>
         </div>
 
+
         {% else %}
 
             <div class="form-group">
@@ -22,31 +23,24 @@
                 <button type="submit" name="action" value="start" class="small-right">Start Server</button>
             </div>
         
+
+            <p>Logged in as: {{ current_user.primary_email }} ({{current_user.role}})</p>
+            <p>Server Name: {{server_hostname}} ({{server_status}})</p> 
+    
+            {% if current_user.is_authenticated and current_user.is_staff %}
+            <h2>Containers</h2>
+            <ul>    
+                {% for container in containers %}
+                <li><a href="https://{{ container.labels['caddy'] }}">{{ container.labels['jtl.codeserver.username'] }}</a> ({{ container.labels['jt.codeserver.password'] }})</li>
+                {% endfor %}
+            </ul>
+
+        
+            {% endif %}
+
         {% endif %}
     </form>
    
-</div>
-
-<div>
-
-    {% if current_user.is_authenticated %}
-        <p>Logged in as: {{ current_user.primary_email }}</p>
-
-        {% if current_user.is_student %}
-            <p>Role: Student</p>
-        {% endif %}
-        {% if current_user.is_league %}
-            <p>Role: League User</p>
-        {% endif %}
-        {% if current_user.is_admin %}
-            <p>Role: Admin</p>
-        {% endif %}
-        {% if current_user.is_staff %}
-            <p>Role: Staff</p>
-        {% endif %}
-
-        <p>Server Name: {{server_name}}</p>
-    {% endif %}
 </div>
 
 

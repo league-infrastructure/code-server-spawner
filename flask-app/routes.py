@@ -1,14 +1,15 @@
 
 import uuid
 from functools import wraps
-
+import docker
 from flask import (abort, current_app, render_template, session, request,  g, 
                    redirect, url_for, jsonify)
 from flask_login import (current_user, login_required, logout_user)
 from jtlutil.flask.flaskapp import insert_query_arg
-from app import app
+from app import app, get_db
+from db import insert_keystroke_data
 from slugify import slugify
-
+from jtlutil.docker.dctl import container_status, create_cs_pair, logger, container_list
 
 def ensure_session():
     if "session_id" not in session:
@@ -22,11 +23,7 @@ def before_request():
     ensure_session()
     app.load_user(current_app)
 
-@app.teardown_appcontext
-def close_db(exception):
-    db = g.pop('db', None)
-    if db is not None:
-        db.close()
+
 
 def staff_required(f):
     @wraps(f)
@@ -59,7 +56,8 @@ def admin_required(f):
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    
+     
+     
     if request.method == "POST":
         # Handle form submission
         form_data = request.form
@@ -83,19 +81,28 @@ def index():
         form_data = {}
 
     if current_user.is_authenticated:
-        server_name = current_app.app_config.HOSTNAME_TEMPLATE.format(username=slugify(current_user.primary_email))
-    else:
-        server_name = None
+        username=slugify(current_user.primary_email)
+        server_hostname = current_app.app_config.HOSTNAME_TEMPLATE.format(username=username)
+        client = docker.DockerClient(base_url=current_app.app_config.SSH_URI )
+        server_status = container_status(client, current_user.primary_email )
         
-    return render_template("index.html", current_user=current_user, server_name=server_name, form_data=form_data)
+        containers = container_list(client) if current_user.is_staff else []
+          
+    else:
+        server_hostname = None
+        server_status = None
+        containers = []
+        
+    return render_template("index.html", current_user=current_user,
+                           server_hostname=server_hostname, server_status=server_status, form_data=form_data,
+                           containers = containers)
 
 
 
 @app.route("/start")
 @login_required
 def start_server():
-    import docker
-    from jtlutil.docker.dctl import create_cs_pair, logger
+    
     import logging
     import requests
     import time
@@ -147,4 +154,8 @@ def telem():
         # Process telemetry data here if needed
         content_length = request.content_length
         current_app.logger.info(f"Content-Length of telemetry data: {content_length}")
+        
+        conn = get_db()
+        insert_keystroke_data(conn, telemetry_data)
+        
         return  jsonify(content_length)
