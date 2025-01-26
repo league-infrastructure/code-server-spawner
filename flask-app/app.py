@@ -7,7 +7,7 @@ import sqlitedict
 from flask import Flask, current_app, g
 
 from jtlutil.flask.flaskapp import *
-
+from db import create_keystroke_tables
 
 def get_db():
     if 'db' not in g:
@@ -45,21 +45,32 @@ def init_app(file: str | Path = None):
     
     app_dir, db_dir = configure_app_dir(app)
     
+    app.logger.info(f"App dir: {app_dir}")
+    app.logger.info(f"DB dir: {db_dir}")
+    
     setup_sqlite_sessions(app)
     
     # A key value store, built on top of sqlite
-    kv_db_path = app_dir / "db" / "kv.db"
+    kv_db_path = db_dir / "kv.db"
     app.kvstore = sqlitedict.SqliteDict(kv_db_path, tablename="kv", autocommit=True)
     
     # A regular sql database. For this database, we need to open and
     # close per request. 
-    app.db_path =  app_dir / "db" / "app.db"
+    app.db_path =  db_dir / "app.db"
     initialize_database(app.db_path)
+    create_keystroke_tables(app.db_path)
     
 
     return app
 
 app = init_app()
+
+@app.teardown_appcontext
+def close_db(exception):
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
+
 from routes import *
 
 if __name__ == "__main__":
