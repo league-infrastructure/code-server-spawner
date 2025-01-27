@@ -75,15 +75,20 @@ def close_db(exception):
         db.close()
 
 def human_time_format(seconds):
-    if seconds < 60:
-        return f"{int(seconds)}s"
-    elif seconds < 3600:
-        minutes, seconds = divmod(seconds, 60)
-        return f"{int(minutes)}m {int(seconds)}s"
-    else:
-        hours, remainder = divmod(seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        return f"{int(hours)}h {int(minutes)}m"
+    
+    try:
+        if seconds < 60:
+            return f"{int(seconds)}s"
+        elif seconds < 3600:
+            minutes, seconds = divmod(seconds, 60)
+            return f"{int(minutes)}m {int(seconds)}s"
+        else:
+            hours, remainder = divmod(seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            return f"{int(hours)}h {int(minutes)}m"
+    except Exception as e:
+        current_app.logger.error(f"Error in human_time_format: {e}")
+        return seconds
 
 # Register the filter with Flask or Jinja2
 app.jinja_env.filters['human_time'] = human_time_format
