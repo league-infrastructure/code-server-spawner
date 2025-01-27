@@ -93,8 +93,8 @@ def human_time_format(seconds):
 # Register the filter with Flask or Jinja2
 app.jinja_env.filters['human_time'] = human_time_format
 
-from routes import *
-from cron import *
+from routes.main import *
+from routes.cron import *
 
 if __name__ == "__main__":
     app.run(debug = True, host = "0.0.0.0")
