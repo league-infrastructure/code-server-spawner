@@ -18,9 +18,6 @@ push:
 	git tag v$(VERSION) 
 	git push --tags
 
-
-
-
 setup:
 	uv venv --link-mode symlink
 

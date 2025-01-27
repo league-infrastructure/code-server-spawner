@@ -1,7 +1,7 @@
 services:
 
 
-  flask:
+   cs-spawner:
     image: cs-spawner # CHANGE to an image name specific to this project
     container_name: cs-spawner
     build:

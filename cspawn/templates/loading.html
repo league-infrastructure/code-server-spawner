@@ -1,0 +1,56 @@
+{% extends "page.html" %}
+
+{% block title %}Starting Server - League Code Server{% endblock %}
+
+{% block styles %}
+<style>
+    .spinner-container {
+        text-align: center;
+        padding: 2rem;
+    }
+    
+    .spinner-border {
+        width: 4rem;
+        height: 4rem;
+    }
+    
+    .status-info {
+        margin-top: 2rem;
+        text-align: center;
+    }
+    
+    .cancel-container {
+        margin-top: 2rem;
+        text-align: center;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-body">
+        <div class="spinner-container">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+        
+        <div class="status-info">
+            <p>Starting your server...</p>
+            <p>Time elapsed: {{ elapsed_time }} seconds</p>
+            <p>Attempt: {{ iteration }}</p>
+        </div>
+
+        <div class="cancel-container">
+            <a href="{{ url_for('home') }}" class="btn btn-danger">Cancel</a>
+        </div>
+    </div>
+</div>
+
+<!-- Auto-refresh every 1 seconds -->
+<script>
+    setTimeout(function() {
+        window.location.reload();
+    }, 1000);
+</script>
+{% endblock %}

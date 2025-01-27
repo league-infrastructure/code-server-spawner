@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import docker
+from datetime import datetime 
 
 def create_keystroke_tables(conn):
 
@@ -56,7 +57,18 @@ def create_keystroke_tables(conn):
            state TEXT NOT NULL,
            containerName TEXT NOT NULL,
            memory_usage INTEGER NOT NULL,
-           hostname TEXT NOT NULL
+           hostname TEXT NOT NULL,
+           port INTEGER
+       )
+    """)
+    conn.commit()
+    
+    
+    conn.execute("""
+       CREATE TABLE IF NOT EXISTS user_accounts (
+           username TEXT PRIMARY KEY NOT NULL,
+           password TEXT NOT NULL,
+           createTime TEXT NOT NULL    
        )
     """)
     conn.commit()
@@ -108,14 +120,15 @@ def update_container_state(conn, d):
     
     for container in d:
         cursor.execute('''
-            INSERT INTO container_state (containerId, state, containerName, memory_usage, hostname)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO container_state (containerId, state, containerName, memory_usage, hostname, port)
+            VALUES (?, ?, ?, ?, ?, ?)
         ''', (
             container['id'],
             container['state'],
             container['name'],
             container.get('memory_usage'),
-            container['hostname']
+            container['hostname'],
+            container['port']
         ))
     
     conn.commit()
@@ -159,6 +172,7 @@ def join_container_info(conn):
            cs.state,
            cs.memory_usage,
            cs.hostname,
+           cs.port, 
            h.instanceId,
            h.lastHeartbeat,
            ks.average30m,
@@ -169,3 +183,18 @@ def join_container_info(conn):
    """).fetchall()
    
    return [dict(row) for row in rows]
+
+def insert_user_account(conn, username: str, password: str, create_time: datetime):
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO user_accounts (username, password, createTime)
+        VALUES (?, ?, ?)
+    ''', (username, password, create_time.isoformat()))
+    conn.commit()
+
+def get_user_account(conn, username):
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM user_accounts WHERE username = ?
+    ''', (username,))
+    return cursor.fetchone()

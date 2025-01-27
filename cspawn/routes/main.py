@@ -9,17 +9,17 @@ from pathlib import Path
 
 import docker
 import requests
-from __version__ import __version__ as version
-from app import CI_FILE, app, get_db
-from db import insert_keystroke_data, update_container_status
+from cspawn.__version__ import __version__ as version
+from cspawn.app import CI_FILE, app, get_db
+from cspawn.db import insert_keystroke_data, update_container_status
 from flask import (abort, current_app, g, jsonify, redirect, render_template,
-                   request, session, url_for)
+                   request, session, url_for, flash)
 from flask_login import current_user, login_required, logout_user
 from jtlutil.docker.dctl import (container_list, container_status,
-                                 create_cs_pair, logger)
+                                 create_cs_pair, logger, make_container_name, get_mapped_port)
 from jtlutil.flask.flaskapp import insert_query_arg
 from slugify import slugify
-
+from humanize import naturaltime, naturaldelta
 
 def ensure_session():
     
@@ -68,6 +68,19 @@ def admin_required(f):
 
     return decorated_function
 
+empty_status = {
+    'containerName': '',
+    'containerId': '',
+    'state': '',
+    'memory_usage': 0,
+    'hostname': '',
+    'instanceId': '',
+    'lastHeartbeat': '',
+    'average30m': None,
+    'seconds_since_report': 0, 
+    'port': None
+}
+
 def container_status_list(client):
     # Link the container list to the containser statuses
     
@@ -77,92 +90,163 @@ def container_status_list(client):
     # non-zero keystrok report, so we also want to know the time since the last
     # heartbeat, which indicates tht the webapp is still open. 
     for record in d:
-        last_heartbeat = datetime.fromisoformat(record['lastHeartbeat']).astimezone()
-        heartbeat_ago = (datetime.now().astimezone() - last_heartbeat).total_seconds()
-        record['heartbeatAgo'] = heartbeat_ago
+        if record['lastHeartbeat']:
+            last_heartbeat = datetime.fromisoformat(record['lastHeartbeat']).astimezone()
+            record['heartbeatAgo'] = naturaldelta((datetime.now().astimezone() - last_heartbeat).total_seconds())
+        else:
+            record['heartbeatAgo'] = '?'
+        
+        
+        if record['seconds_since_report']:
+            record['seconds_since_report'] = naturaldelta(record['seconds_since_report'])
+        else:
+            record['seconds_since_report'] = '?'
     
     dm = {e['containerId']:e  for e in d}
     
     containers = container_list(client) if current_user.is_staff else []
     
-    ct = [ (c, dm.get(c.id)) for c in containers if c.id in dm]
+    ct = [ (c, dm.get(c.id, empty_status)) for c in containers ]
     
     return ct
 
-@app.route("/", methods=["GET", "POST"])
+@app.route("/")
 def index():
-     
-     
-    if request.method == "POST":
-        # Handle form submission
-        form_data = request.form
-        current_app.logger.info(f"Form submitted with data: {form_data}")
-        # Process form data here
-        action = form_data.get("action")
-        
-        match form_data.get("action"):
-            case "start":
-                url = insert_query_arg(url_for('start_server'),"redirect",url_for("index", _external=True))
-                app.logger.info("Redirecting to start server: {url}")
-                return redirect(url)
-            case "create":
-                ...
-            case "login":
-                return redirect(url_for('auth.login', next=url_for('index', _external=True)))
-            case "logout":
-               return redirect(url_for('auth.logout', next=url_for('index', _external=True)))
-        
-    else:
-        form_data = {}
-
     if current_user.is_authenticated:
-        username=slugify(current_user.primary_email)
-        server_hostname = current_app.app_config.HOSTNAME_TEMPLATE.format(username=username)
-        client = docker.DockerClient(base_url=current_app.app_config.SSH_URI )
-        server_status = container_status(client, current_user.primary_email )
-        
-        containers = container_status_list(client)
-          
+        return redirect(url_for("home"))
     else:
-        server_hostname = None
-        server_status = None
-        containers = []
+        return redirect(url_for("login"))
+    
+@app.route("/login")
+def login():
+    return render_template("login.html", current_user = current_user)
+
+
+
+@app.route("/home", methods=["GET", "POST"])
+@login_required
+def home():
+     
+    username=slugify(current_user.primary_email)
+    server_hostname = current_app.app_config.HOSTNAME_TEMPLATE.format(username=username)
+    client = docker.DockerClient(base_url=current_app.app_config.SSH_URI )
+    server_status = container_status(client, current_user.primary_email )
         
-    return render_template("index.html", current_user=current_user,
-                           server_hostname=server_hostname, server_status=server_status, form_data=form_data,
-                           containers = containers, version=version)
+    if current_user.is_staff:
+        containers = container_status_list(client)
+
+        return render_template("admin.html", current_user=current_user,
+                            server_hostname=server_hostname, server_status=server_status,
+                            containers = containers, version=version)
+            
+    else:
+
+        containers = []
+        return render_template("home.html", server_status=server_status, server_hostname=server_hostname, 
+                               current_user=current_user, version=version)
+
+@app.route("/stop")
+@login_required
+def stop_server():
+
+    server_id = request.args.get('server_id')
+    client = docker.DockerClient(base_url=current_app.app_config.SSH_URI)
+    
+    if not current_user.is_staff or not server_id:
+        
+        container_name = make_container_name(current_user.primary_email)
+        container = client.containers.get(container_name)
+        container.stop()
+
+        flash("Server stopped successfully", "success")
+        return redirect(url_for('home'))
+
+    else:
+        container = client.containers.get(make_container_name(server_id))
+        container.stop()
+        
+        flash("Server stopped successfully", "success")
+        return redirect(url_for('home'))
+        
+
+
+
+def check_server_ready(hostname_url):
+    """Check if the server is ready by making a request to it."""
+    try:
+        response = requests.get(hostname_url)
+        return response.status_code in [200, 302]
+    except requests.exceptions.SSLError:
+        current_app.logger.warning(f"SSL error encountered when connecting to {hostname_url}")
+        return False
+    except requests.exceptions.RequestException as e:
+        current_app.logger.warning(f"Error checking server status: {e}")
+        return False
+
 
 @app.route("/start")
 @login_required
 def start_server():
+    # Get query parameters
+    hostname = request.args.get('hostname')
+    iteration = int(request.args.get('iteration', 0))
+    start_time = float(request.args.get('start_time', time.time()))
     
-    logger.setLevel(logging.DEBUG)
+    # If no hostname, this is the initial request
+    if not hostname:
+        logger.setLevel(logging.DEBUG)
+        client = docker.DockerClient(base_url=current_app.app_config.SSH_URI)
+        
+        # Create the container
+        nvc, pa = create_cs_pair(
+            client, 
+            current_app.app_config, 
+            current_app.app_config.IMAGES_PYTHONCS,
+            current_user.primary_email
+        )
+        
+        if port :=  get_mapped_port(client, pa.id, "8080"):
+            hostname = f'localhost:{port}'
+            hostname_url = f"http://{hostname}"
+           
+        else:
+            hostname = pa.labels['caddy']    
+            hostname_url = f"https://{hostname}"
+        
+        # Check if server is immediately ready
+        time.sleep(1)  # Initial pause
+        if check_server_ready(hostname_url):
+            return redirect(hostname_url)
+            
+        # If not ready, redirect to start the polling process
+        return redirect(url_for('start_server', 
+                              hostname=hostname,
+                              iteration=1,
+                              start_time=start_time))
     
-    client = docker.DockerClient(base_url=current_app.app_config.SSH_URI )
-
-    nvc, pa = create_cs_pair(client, current_app.app_config, current_app.app_config.IMAGES_PYTHONCS,
-                             current_user.primary_email)
-
-    hostname = pa.labels['caddy']
-
+    # If we have hostname, we're in the polling phase
     hostname_url = f"https://{hostname}"
-    max_retries = 20
-    retry_delay = 2  # seconds
-
-    for _ in range(max_retries):
-        try:
-            response = requests.get(hostname_url)
-            if response.status_code in [200, 302]:
-                break
-        except requests.exceptions.SSLError:
-            current_app.logger.warning(f"SSL error encountered when connecting to {hostname_url}")
-        time.sleep(retry_delay)
-    else:
-        current_app.logger.error(f"Failed to get a valid response from {hostname_url} after {max_retries} attempts")
-
-
-    return redirect(hostname_url)
-
+    
+    # Sleep if this isn't the first iteration
+    if iteration >= 1:
+        time.sleep(1)
+    
+    # Check if server is ready
+    if check_server_ready(hostname_url):
+        return redirect(hostname_url)
+    
+    # Calculate elapsed time
+    elapsed_time = int(time.time() - start_time)
+    
+    # Maximum wait time (5 minutes)
+    if elapsed_time > 300:
+        flash("Server startup timed out after 5 minutes", "error")
+        return redirect(url_for('home'))
+    
+    # Render loading page with updated iteration
+    return render_template('loading.html',
+                         iteration=iteration + 1,
+                         elapsed_time=elapsed_time)
 
 
 @app.route("/private/staff")

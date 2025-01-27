@@ -2,8 +2,8 @@
 
 
 from flask import current_app, jsonify
-from app import app, get_db, CI_FILE
-from db import update_container_metrics, update_container_state, join_container_info
+from cspawn.app import app, get_db, CI_FILE
+from cspawn.db import update_container_metrics, update_container_state, join_container_info
 from jtlutil.docker.dctl import container_state
 import docker 
 import os
