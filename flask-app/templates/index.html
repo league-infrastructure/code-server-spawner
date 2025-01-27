@@ -48,7 +48,8 @@
                         <td><a href="https://{{ container.labels['caddy'] }}" target="_blank">{{ container.labels['jtl.codeserver.username'] }}</a></td>
                         <td>{{ container.labels['jt.codeserver.password'] }}</td>
                         <td><div class="small-text">{{container.status}}<br/>
-                            ❤️{{status.seconds_since_report}} sec ago<br/>
+                            ❤️{{status.heartbeatAgo|human_time}}<br/>
+                            🗝️{{status.seconds_since_report|human_time}}<br/>
                             Mem: {{(status.memory_usage/(1024*1024))|int}} MB<br/>
                             </div>
                         </td>                        

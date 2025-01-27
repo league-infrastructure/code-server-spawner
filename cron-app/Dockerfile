@@ -26,7 +26,6 @@ RUN pip install -r /app/requirements.txt
 
 # Copy environment variables and scripts
 COPY cron-app.env /etc/cron-app.env
-COPY run-app.sh /app/run-app.sh
 
 # Copy the crontab file into the appropriate location
 COPY crontab /etc/crontab
