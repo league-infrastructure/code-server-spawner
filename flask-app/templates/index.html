@@ -38,23 +38,28 @@
                     <tr>
                         <th>Username</th>
                         <th>Password</th>
+                        <th>Status</th>
                         <th>Login</th>
                     </tr>
                 </thead>
                 <tbody>
-                {% for container in containers %}
+                {% for (container, status) in containers %}
                     <tr>
                         <td><a href="https://{{ container.labels['caddy'] }}" target="_blank">{{ container.labels['jtl.codeserver.username'] }}</a></td>
                         <td>{{ container.labels['jt.codeserver.password'] }}</td>
-                        
-                    <td>
-                        <form action="https://{{ container.labels['caddy'] }}/login" method="POST" target="_blank">
-                            <input type="hidden" name="base" value=".">
-                            <input type="hidden" name="href" value="https://jed.do.jointheleague.org/login">
-                            <input type="hidden" name="password" value="{{ container.labels['jt.codeserver.password'] }}">
-                            <button type="submit" class="login">Login</button>
-                        </form>
-                    </td>
+                        <td><div class="small-text">{{container.status}}<br/>
+                            ❤️{{status.seconds_since_report}} sec ago<br/>
+                            Mem: {{(status.memory_usage/(1024*1024))|int}} MB<br/>
+                            </div>
+                        </td>                        
+                        <td>
+                            <form action="https://{{ container.labels['caddy'] }}/login" method="POST" target="_blank">
+                                <input type="hidden" name="base" value=".">
+                                <input type="hidden" name="href" value="https://jed.do.jointheleague.org/login">
+                                <input type="hidden" name="password" value="{{ container.labels['jt.codeserver.password'] }}">
+                                <button type="submit" class="login">Login</button>
+                            </form>
+                        </td>
                     </tr>
                 {% endfor %}
                 </tbody>

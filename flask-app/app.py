@@ -7,7 +7,8 @@ import sqlitedict
 from flask import Flask, current_app, g
 
 from jtlutil.flask.flaskapp import *
-from db import create_keystroke_tables
+
+CI_FILE = "container_info.json"
 
 def get_db():
     if 'db' not in g:
@@ -17,11 +18,12 @@ def get_db():
 
 
 def initialize_database(path: Path):
+    from db import create_keystroke_tables
+    
     conn = sqlite3.connect(path)
-    cursor = conn.cursor()
-    #cursor.execute('''
-    #    CREATE TABLE IF NOT EXISTS db_user ()
-    #''')
+
+    create_keystroke_tables(conn)
+
     conn.commit()
     conn.close()
         
@@ -57,8 +59,9 @@ def init_app(file: str | Path = None):
     # A regular sql database. For this database, we need to open and
     # close per request. 
     app.db_path =  db_dir / "app.db"
+    
     initialize_database(app.db_path)
-    create_keystroke_tables(app.db_path)
+    
     
     return app
 
@@ -71,6 +74,7 @@ def close_db(exception):
         db.close()
 
 from routes import *
+from cron import *
 
 if __name__ == "__main__":
     app.run(debug = True, host = "0.0.0.0")

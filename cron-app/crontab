@@ -1,8 +1,13 @@
-PATH=/bin:/usr/bin:/usr/local/bin:/opt/app
+PATH=/bin:/usr/bin:/usr/local/bin:/app
 # The `/proc/1/fd/1 2>/proc/1/fd/2` sends both stdout and stderr to the
 # stdout and stderr of the first process, which will output to the docker log
-#* * * * *  date >/proc/1/fd/1 2>/proc/1/fd/2
-*/30 * * * *  /opt/run-app.sh >/proc/1/fd/1 2>/proc/1/fd/2
 
 
- 
+ # Minutely
+* * * * * curl -X GET http://cs-spawner:8000/cron/minutely >/proc/1/fd/1 2>/proc/1/fd/2
+
+# Hourly
+0 * * * * curl -X GET http://cs-spawner:8000/cron/hourly >/proc/1/fd/1 2>/proc/1/fd/2
+
+# Daily at midnight
+0 0 * * * curl -X GET http://cs-spawner:8000/cron/daily >/proc/1/fd/1 2>/proc/1/fd/2
