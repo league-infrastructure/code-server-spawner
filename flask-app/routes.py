@@ -188,7 +188,7 @@ def telem():
             current_app.logger.error(f"Missing required field: {e}: telemetry data: {telemetry_data}")
             return jsonify({"status": "error", "message": f"Missing required field: {e}"})
         
-        current_app.logger.info(f"Telemetry data received: {telemetry_data}")
+        current_app.logger.info(f"Telemetry data received:  {telemetry_data['average30m']}kps @{telemetry_data['containerName']} ")
         # Process telemetry data here if needed
         content_length = request.content_length
         current_app.logger.info(f"Content-Length of telemetry data: {content_length}")
