@@ -3,10 +3,10 @@ PATH=/bin:/usr/bin:/usr/local/bin:/app
 # stdout and stderr of the first process, which will output to the docker log
 
  # Minutely
-* * * * * curl -X GET http://cs-spawner:8000/cron/minutely >/proc/1/fd/1 2>/proc/1/fd/2
+* * * * * curl -X GET http://localhost:8000/cron/minutely >/proc/1/fd/1 2>/proc/1/fd/2
 
 # Hourly
-0 * * * * curl -X GET http://cs-spawner:8000/cron/hourly >/proc/1/fd/1 2>/proc/1/fd/2
+0 * * * * curl -X GET http://localhost:8000/cron/hourly >/proc/1/fd/1 2>/proc/1/fd/2
 
 # Daily at midnight
-0 0 * * * curl -X GET http://cs-spawner:8000/cron/daily >/proc/1/fd/1 2>/proc/1/fd/2
+0 0 * * * curl -X GET http://localhost:8000/cron/daily >/proc/1/fd/1 2>/proc/1/fd/2
