@@ -18,12 +18,8 @@ push:
 	git tag v$(VERSION) 
 	git push --tags
 
-publish: build compile push
-	echo "Dont publish this"
-	#uv publish --token $$UV_PUBLISH_TOKEN
 
-build:
-	uv build
+
 
 setup:
 	uv venv --link-mode symlink

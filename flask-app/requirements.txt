@@ -83,8 +83,10 @@ itsdangerous==2.2.0
 jedi==0.19.2
     # via ipython
 jinja2==3.1.5
-
-git+https://github.com/league-infrastructure/jtlutil.git@v0.1.13#egg=jtlutil
+    # via
+    #   code-server-spawner (pyproject.toml)
+    #   flask
+jtlutil==0.1.14
     # via code-server-spawner (pyproject.toml)
 jupyter-client==8.6.3
     # via ipykernel
