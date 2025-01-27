@@ -2,7 +2,6 @@ PATH=/bin:/usr/bin:/usr/local/bin:/app
 # The `/proc/1/fd/1 2>/proc/1/fd/2` sends both stdout and stderr to the
 # stdout and stderr of the first process, which will output to the docker log
 
-
  # Minutely
 * * * * * curl -X GET http://cs-spawner:8000/cron/minutely >/proc/1/fd/1 2>/proc/1/fd/2
 

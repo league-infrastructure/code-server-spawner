@@ -1,18 +1,25 @@
 
-import uuid
-from functools import wraps
-import docker
 import json
+import logging
+import time
+import uuid
+from datetime import datetime
+from functools import wraps
 from pathlib import Path
-from flask import (abort, current_app, render_template, session, request,  g, 
-                   redirect, url_for, jsonify)
-from flask_login import (current_user, login_required, logout_user)
-from jtlutil.flask.flaskapp import insert_query_arg
-from app import app, get_db, CI_FILE
-from db import insert_keystroke_data, update_container_status
-from slugify import slugify
-from jtlutil.docker.dctl import container_status, create_cs_pair, logger, container_list
+
+import docker
+import requests
 from __version__ import __version__ as version
+from app import CI_FILE, app, get_db
+from db import insert_keystroke_data, update_container_status
+from flask import (abort, current_app, g, jsonify, redirect, render_template,
+                   request, session, url_for)
+from flask_login import current_user, login_required, logout_user
+from jtlutil.docker.dctl import (container_list, container_status,
+                                 create_cs_pair, logger)
+from jtlutil.flask.flaskapp import insert_query_arg
+from slugify import slugify
+
 
 def ensure_session():
     
@@ -65,6 +72,14 @@ def container_status_list(client):
     # Link the container list to the containser statuses
     
     d = json.loads((Path(current_app.app_config.DATA_DIR) / CI_FILE).read_text())
+    
+    # The seconds_since_report field is actually the time since the last 
+    # non-zero keystrok report, so we also want to know the time since the last
+    # heartbeat, which indicates tht the webapp is still open. 
+    for record in d:
+        last_heartbeat = datetime.fromisoformat(record['lastHeartbeat']).astimezone()
+        heartbeat_ago = (datetime.now().astimezone() - last_heartbeat).total_seconds()
+        record['heartbeatAgo'] = heartbeat_ago
     
     dm = {e['containerId']:e  for e in d}
     
@@ -121,10 +136,6 @@ def index():
 @login_required
 def start_server():
     
-    import logging
-    import requests
-    import time
-    
     logger.setLevel(logging.DEBUG)
     
     client = docker.DockerClient(base_url=current_app.app_config.SSH_URI )
@@ -180,7 +191,7 @@ def telem():
             # Every report is used to update the heartbeat, but only ones with 
             # keystrokes are used to update the keystroke data
             update_container_status(conn, telemetry_data['containerName'], 
-                        telemetry_data['instanceId'], telemetry_data['timestamp'])
+                                    telemetry_data['instanceId'], telemetry_data['timestamp'])
 
             if telemetry_data['keystrokes'] == 0:             
                 return jsonify({"status": "ignored"})
@@ -189,14 +200,10 @@ def telem():
             return jsonify({"status": "error", "message": f"Missing required field: {e}"})
         
         current_app.logger.info(f"Telemetry data received:  {telemetry_data['average30m']}kps @{telemetry_data['containerName']} ")
-        # Process telemetry data here if needed
-        content_length = request.content_length
-        current_app.logger.info(f"Content-Length of telemetry data: {content_length}")
         
         try:
-            
             insert_keystroke_data(conn, telemetry_data)
-            return  jsonify(content_length)
+            return  jsonify({"status": "OK"})
         except Exception as e:
             current_app.logger.error(f"Error inserting telemetry data: {e}")
             return jsonify({"status": "error"})
