@@ -1,6 +1,6 @@
 [project]
 name = "code-server-spawner"
-version = "0.2.3"
+version = "0.3.1"
 description = "Manages code server containers"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -14,9 +14,9 @@ dependencies = [
     "flask-wtf>=1.2.2",
     "gevent>=24.11.1",
     "gunicorn>=23.0.0",
+    "humanize>=4.11.0",
     "jinja2>=3.1.5",
-    "jtlutil>=0.1.14",
+    "jtlutil>=0.1.16",
     "python-dotenv>=1.0.1",
     "sqlitedict>=2.1.0",
-
 ]

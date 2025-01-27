@@ -1,0 +1,90 @@
+{% extends "page.html" %}
+
+{% block title %}Register - League Code Server{% endblock %}
+
+{% block header %}
+<div class="text-center">
+    <h1 class="mb-4">Create New Account</h1>
+</div>
+{% endblock %}
+
+{% block content %}
+<div style="width: 600px; margin: 0 auto;">
+    <div class="card">
+        <div class="card-body">
+            <h2 class="card-title mb-4">Registration Details</h2>
+            
+            <form action="{{ url_for('register') }}" method="POST">
+                <!-- Username Field -->
+                <div class="mb-3">
+                    <label for="username" class="form-label">Username:</label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="username" 
+                           name="username" 
+                           value="{{ form.username }}"
+                           required
+                           autocomplete="username">
+                </div>
+                
+                <!-- Password Fields Row -->
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <label for="password" class="form-label">Password:</label>
+                        <input type="password" 
+                               class="form-control" 
+                               id="password" 
+                               name="password" 
+                               required
+                               autocomplete="new-password">
+                    </div>
+                    <div class="col-6">
+                        <label for="password_confirm" class="form-label">Confirm Password:</label>
+                        <input type="password" 
+                               class="form-control" 
+                               id="password_confirm" 
+                               name="password_confirm" 
+                               required
+                               autocomplete="new-password">
+                    </div>
+                </div>
+
+                <!-- Registration Code Field -->
+                <div class="mb-4">
+                    <label for="registration_code" class="form-label">Registration Code:</label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="registration_code" 
+                           name="registration_code" 
+                           value="{{ form.registration_code }}"
+                           required>
+                </div>
+
+                <!-- Buttons Row -->
+                <div class="row">
+                    <div class="col-6">
+                        <button type="submit" class="btn btn-primary btn-lg w-100">Create Account</button>
+                    </div>
+                    <div class="col-6">
+                        <a href="{{ url_for('login') }}" class="btn btn-outline-secondary btn-lg w-100">
+                            Back to Login
+                        </a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block footer %}
+<div class="row mt-4">
+    <div class="col">
+        <span class="text-muted">code-server-spawner {{version}}</span>
+    </div>
+    <div class="col text-end">
+        <img class="inline me-2" src="{{ url_for('static', filename='flag.png') }}" alt="Flag">
+        <a href="https://www.jointheleague.org">Join the League</a>
+    </div>
+</div>
+{% endblock %}

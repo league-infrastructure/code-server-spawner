@@ -192,7 +192,7 @@ wheels = [
 
 [[package]]
 name = "code-server-spawner"
-version = "0.1.0"
+version = "0.3.1"
 source = { virtual = "." }
 dependencies = [
     { name = "flask" },
@@ -204,6 +204,7 @@ dependencies = [
     { name = "flask-wtf" },
     { name = "gevent" },
     { name = "gunicorn" },
+    { name = "humanize" },
     { name = "jinja2" },
     { name = "jtlutil" },
     { name = "python-dotenv" },
@@ -221,8 +222,9 @@ requires-dist = [
     { name = "flask-wtf", specifier = ">=1.2.2" },
     { name = "gevent", specifier = ">=24.11.1" },
     { name = "gunicorn", specifier = ">=23.0.0" },
+    { name = "humanize", specifier = ">=4.11.0" },
     { name = "jinja2", specifier = ">=3.1.5" },
-    { name = "jtlutil", specifier = ">=0.1.4" },
+    { name = "jtlutil", specifier = ">=0.1.14" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "sqlitedict", specifier = ">=2.1.0" },
 ]
@@ -529,6 +531,15 @@ wheels = [
 ]
 
 [[package]]
+name = "humanize"
+version = "4.11.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6a/40/64a912b9330786df25e58127194d4a5a7441f818b400b155e748a270f924/humanize-4.11.0.tar.gz", hash = "sha256:e66f36020a2d5a974c504bd2555cf770621dbdbb6d82f94a6857c0b1ea2608be", size = 80374 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/92/75/4bc3e242ad13f2e6c12e0b0401ab2c5e5c6f0d7da37ec69bc808e24e0ccb/humanize-4.11.0-py3-none-any.whl", hash = "sha256:b53caaec8532bcb2fff70c8826f904c35943f8cecaca29d272d9df38092736c0", size = 128055 },
+]
+
+[[package]]
 name = "idna"
 version = "3.10"
 source = { registry = "https://pypi.org/simple" }
@@ -617,7 +628,7 @@ wheels = [
 
 [[package]]
 name = "jtlutil"
-version = "0.1.4"
+version = "0.1.14"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "docker" },
@@ -636,9 +647,9 @@ dependencies = [
     { name = "requests" },
     { name = "sqlitedict" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/68/6b/ae8b977e951eee0e766d5f90ba37fdec63e38808c3afaab002ba993336c2/jtlutil-0.1.4.tar.gz", hash = "sha256:222e93bba3a9917a93a99587be3ca20fbf70f3984bbb99e77c500482b622099b", size = 29955 }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/a5/a32704cf5a274ae46536bf235110510b70147fc3f7f548f4e237ddc165b7/jtlutil-0.1.14.tar.gz", hash = "sha256:4ae1feb4058bba69e230bdcb1401c0fc37021c01353844f4904828a7e451f0b4", size = 56679 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c1/cb/7e77032142e51581884fbb4e0f13fe86cb233367f90efec2650c759f2c30/jtlutil-0.1.4-py3-none-any.whl", hash = "sha256:80f03ecba3a91d465cae83aaaa6e3954e4b30487c91b07ab5860a0e642c50125", size = 11574 },
+    { url = "https://files.pythonhosted.org/packages/1b/50/306cd437edb4cfab2e4050fe2bd222fabb4bb471a2be803522506b0744ef/jtlutil-0.1.14-py3-none-any.whl", hash = "sha256:c958b145578077f2426b6dc4a63cf391290a3a04ecb20a252f111b40e477db74", size = 11842 },
 ]
 
 [[package]]

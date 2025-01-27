@@ -18,7 +18,7 @@ ENV PYTHONUNBUFFERED=1
 # Install git with proper preparation and cleanup
 RUN apt-get update && \
     apt-get install -y \
-    build-essential git cron curl tzdata \
+    build-essential git cron curl tzdata procps \
     git supervisor net-tools tini && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -69,4 +69,4 @@ EXPOSE 8000
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
 # Run the application.
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
+CMD ["/usr/bin/supervisord", "-c", "/app/supervisord.conf"]

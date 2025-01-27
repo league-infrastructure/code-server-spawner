@@ -8,6 +8,8 @@ from flask import Flask, current_app, g
 from jinja2 import Environment
 
 from jtlutil.flask.flaskapp import *
+from .db import create_keystroke_tables
+
 
 CI_FILE = "container_info.json"
 
@@ -19,7 +21,7 @@ def get_db():
 
 
 def initialize_database(path: Path):
-    from db import create_keystroke_tables
+    
     
     conn = sqlite3.connect(path)
 
@@ -28,6 +30,7 @@ def initialize_database(path: Path):
     conn.commit()
     conn.close()
         
+                    
 def init_app(file: str | Path = None):
 
     from jtlutil.flask.auth import auth_bp, load_user
@@ -39,7 +42,8 @@ def init_app(file: str | Path = None):
 
     app.login_manager =  auth_bp.login_manager
     app.load_user = load_user
-
+    app.login_manager.login_view = "login"
+    
     #configure_config(app)
     configure_config_tree(app)
 
@@ -63,7 +67,9 @@ def init_app(file: str | Path = None):
     
     initialize_database(app.db_path)
     
+    app.user_db_path = db_dir / "users.db"
     
+
     return app
 
 app = init_app()
@@ -93,8 +99,9 @@ def human_time_format(seconds):
 # Register the filter with Flask or Jinja2
 app.jinja_env.filters['human_time'] = human_time_format
 
-from routes.main import *
-from routes.cron import *
+from .routes.main import *
+from .routes.cron import *
+from .routes.auth import *
 
 if __name__ == "__main__":
     app.run(debug = True, host = "0.0.0.0")

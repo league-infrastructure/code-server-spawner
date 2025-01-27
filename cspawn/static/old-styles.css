@@ -1,0 +1,150 @@
+body {
+    font-family: Arial, sans-serif;
+    width: 600px;
+    margin: 0 auto; /* Centers the page on larger screens */
+
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+   
+}
+
+/* Media query: for mobile devices */
+@media (max-width: 600px) {
+    body {
+      width: 600px;
+      margin: 0 auto; /* Centers the page on smaller screens */
+    }
+  }
+
+
+body .content {
+    margin: 0 auto;
+    flex: 1;
+}
+
+
+form {
+    display: flex;
+    flex-direction: column;
+    margin: 0 auto;
+}
+
+
+.form-group {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.form-group label {
+    margin-right: 10px;
+    flex-direction: column; 
+    flex: 0 0 10em;
+}
+
+.form-group input {
+    flex: 1;
+    padding: 5px;
+    font-size: 14px;
+}
+
+.form-text {
+    margin-top: 5px;
+    color: grey;
+    font-size: 12px;
+    width: 100%; /* Ensures the text is full-width and below the input */
+}
+
+.hidden-field {
+    display: none;
+}
+
+button {
+    padding: 10px;
+    margin-right:10px;
+    font-size: 14px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+
+button.login {
+    background-color: #45a049; /* Green background for primary button */
+    width: 100%; /* Full width */
+}
+
+button.small-right {
+    background-color: #f0ad4e; /* Orange background for secondary button */
+    width: 150px; /* Fixed width for secondary button */
+    color: black; /* Black text for better contrast */
+    float: right; /* Float the button to the right */
+}
+
+button.small-left {
+    background-color:blue; /* Orange background for secondary button */
+    width: 150px; /* Fixed width for secondary button */
+    color: white; /* Black text for better contrast */
+    float: left; /* Float the button to the left */
+}
+
+button:hover {
+    background-color: #45a049;
+}
+
+
+.error { color: red; padding: 10px; border: 1px solid red; margin-bottom: 10px; }
+
+.notice { color: blue; padding: 10px;  border: 1px solid blue;  margin-bottom: 10px;}
+
+/* Rows and columns */
+
+
+.info-group {
+    margin-bottom: 20px;
+}
+
+.info-row {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.info-item {
+    display: flex;
+    align-items: center;
+    gap: 10px; /* Space between label and value */
+    margin-bottom: 5px;
+}
+
+label {
+    flex: 0 0 150px; /* Fixed width for labels */
+    font-weight: bold;
+}
+
+span {
+    flex: 1; /* Flexible width for the value */
+    color: #333;
+    padding-left: 5px; /* Optional padding for alignment */
+}
+
+
+.back-button {
+    margin-top: 10px;
+    background-color: grey;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.back-button:hover {
+    background-color: #6c757d; /* Darker grey on hover */
+}
+
+.small-text {
+    font-size: 10px;
+    color: grey;
+}

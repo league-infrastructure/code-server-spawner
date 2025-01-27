@@ -2,35 +2,50 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Your custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    
     <title>{% block title %}Title{% endblock %}</title>
-    {% block styles %}
-    <style></style>
-    {% endblock %}
+    {% block styles %}{% endblock %}
   </head>
   <body>
-    <header>
-        {% block header %}
-        This here is a header 
-        {% endblock %}
-        <div class="messages">
-            {% include '_messages.html' %}
-         </div>
-      
-    </header>
+    <div class="container">
+      <header class="mb-4">
+          {% block header %}
+          This here is a header 
+          {% endblock %}
+          <div class="messages">
+              {% include '_messages.html' %}
+          </div>
+      </header>
 
+      <main>
+          {% block content %}
+          <!-- Default content -->
+          {% endblock %}
+      </main>
 
-    <div class="content">
-        {% block content %}
-        <!-- Default content -->
-        {% endblock %}
+      <footer class="mt-4">
+          {% block footer %}
+
+          <div class="left">code-server-spawner {{version}}</div>
+          <div class="right">
+              <img class="inline" src="{{ url_for('static', filename='flag.png') }}" alt="Flag">
+              <a href="https://www.jointheleague.org">Join the League</a>
+              
+          </div>
+
+          {% endblock %}
+      </footer>
     </div>
+
+    <!-- Bootstrap Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {% block scripts %}{% endblock %}
   </body>
-    <footer>
-        {% block footer %}
-        This here is a footer
-        {% endblock %}
-    </footer>
 </html>
