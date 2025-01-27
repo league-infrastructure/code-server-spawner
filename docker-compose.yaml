@@ -1,24 +1,12 @@
 services:
 
-  cron:
-    build:
-      context: cron-app
-    image: jtl-cs-cron # CHANGE to an image name specific to this project
-
-    volumes:
-      #- app-data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock
-
-    networks:
-      - jtlctl
-
-    restart: unless-stopped
 
   flask:
-    image: jtl-flask # CHANGE to an image name specific to this project
-    build:
-      context: flask-app
+    image: cs-spawner # CHANGE to an image name specific to this project
     container_name: cs-spawner
+    build:
+      context: .
+      dockerfile: Dockerfile
 
     # These labels set up the domain name in the Caddy proxy
     labels:

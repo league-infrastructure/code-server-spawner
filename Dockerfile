@@ -7,6 +7,14 @@
 ARG PYTHON_VERSION=3.11
 FROM python:${PYTHON_VERSION}-slim AS base
 
+# Prevents Python from writing pyc files.
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Keeps Python from buffering stdout and stderr to avoid situations where
+# the application crashes without emitting any logs due to buffering.
+ENV PYTHONUNBUFFERED=1
+
+
 # Install git with proper preparation and cleanup
 RUN apt-get update && \
     apt-get install -y \
@@ -17,12 +25,11 @@ RUN apt-get update && \
 
 ENV TZ=America/Los_Angeles
 
-# Prevents Python from writing pyc files.
-ENV PYTHONDONTWRITEBYTECODE=1
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# Keeps Python from buffering stdout and stderr to avoid situations where
-# the application crashes without emitting any logs due to buffering.
-ENV PYTHONUNBUFFERED=1
+# Copy the crontab file into the appropriate location
+COPY crontab /etc/crontab
+RUN crontab /etc/crontab
 
 RUN mkdir -p /app
 
@@ -58,11 +65,6 @@ COPY . /app
 # Expose the port that the application listens on.
 EXPOSE 8000
 
-# Copy the entrypoint script to the specified location
-# Don't really need to do this b/c of the copy . ., but
-# it's summetric with the other Dockerfiles
-
-RUN chmod +x /app/entrypoint.sh
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
