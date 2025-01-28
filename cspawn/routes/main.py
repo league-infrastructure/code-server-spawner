@@ -203,7 +203,7 @@ def check_server_ready(hostname_url):
         current_app.logger.warning(f"SSL error encountered when connecting to {hostname_url}")
         return False
     except requests.exceptions.RequestException as e:
-        current_app.logger.warning(f"Error checking server status: {e}")
+        current_app.logger.warning(f"Error checking server statusto {hostname_url}: {e}")
         return False
 
 
@@ -231,7 +231,7 @@ def start_server():
             port=is_devel # If true, we get a mapped port
         )
         
-        if port :=  get_mapped_port(client, pa.id, "8080"):
+        if port :=  get_mapped_port(client, pa.id, "8080") and is_devel:
             hostname = f'localhost:{port}'
             hostname_url = f"http://{hostname}"
            
