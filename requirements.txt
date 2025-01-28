@@ -70,6 +70,8 @@ greenlet==3.1.1
     #   sqlalchemy
 gunicorn==23.0.0
     # via code-server-spawner (pyproject.toml)
+humanize==4.11.0
+    # via code-server-spawner (pyproject.toml)
 idna==3.10
     # via requests
 ipykernel==6.29.5
@@ -86,7 +88,7 @@ jinja2==3.1.5
     # via
     #   code-server-spawner (pyproject.toml)
     #   flask
-jtlutil==0.1.14
+jtlutil==0.1.16
     # via code-server-spawner (pyproject.toml)
 jupyter-client==8.6.3
     # via ipykernel

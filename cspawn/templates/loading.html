@@ -36,7 +36,7 @@
         </div>
         
         <div class="status-info">
-            <p>Starting your server...</p>
+            <p>Starting your server at {{hostname}} </p>
             <p>Time elapsed: {{ elapsed_time }} seconds</p>
             <p>Attempt: {{ iteration }}</p>
         </div>
@@ -44,13 +44,14 @@
         <div class="cancel-container">
             <a href="{{ url_for('home') }}" class="btn btn-danger">Cancel</a>
         </div>
+
     </div>
 </div>
 
 <!-- Auto-refresh every 1 seconds -->
 <script>
     setTimeout(function() {
-        window.location.reload();
+        window.location.href = "{{next_url | safe}}";
     }, 1000);
 </script>
 {% endblock %}

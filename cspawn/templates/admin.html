@@ -79,7 +79,7 @@
                             <div class="small text-muted">
                                 {{container.status}}<br/>
                                 ❤️{{status.heartbeatAgo}} 🗝️{{status.seconds_since_report}}<br/>
-                                Mem: {{(status.memory_usage/(1024*1024))|int}} MB<br/>                              
+                                Mem: {{(status.memory_usage/(1024*1024))|int}} MB<br/>               
                                 {% if status.port and container.status == 'running' %}                                    
                                     <a href="http://localhost:{{ status.port }}" target="_blank">http://localhost:{{ status.port }}</a>
                                 {% endif %}

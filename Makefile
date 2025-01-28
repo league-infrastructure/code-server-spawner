@@ -21,3 +21,6 @@ push:
 setup:
 	uv venv --link-mode symlink
 
+build:
+	docker compose build --no-cache
+
