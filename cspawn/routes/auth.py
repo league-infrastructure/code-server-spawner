@@ -28,8 +28,7 @@ import sqlite3
 def check_registration_code(code: str) -> bool:
     return code == 'Code4Life'
 
-@app.route('/register', methods=['GET', 'POST'])
-@app.route("/auth/register")
+@app.route("/auth/register", methods=['GET', 'POST'])
 def auth_register():
     
     from cspawn.db import get_user_account, insert_user_account
@@ -62,7 +61,7 @@ def auth_register():
         # Check username availability
         try:
             existing_user = get_user_account(db, form_data['username'])
-            print("!!!!", existing_user)
+           
             if existing_user:
                 flash('Username already exists', 'error')
                 return render_template('register.html', form=form_data)
@@ -86,13 +85,15 @@ def auth_register():
             create_time = datetime.now(timezone.utc)
             insert_user_account(db, form_data['username'], password, create_time)
           
-            flash('Account created successfully!', 'success')
+            flash('Account created. You can Login', 'success')
+           
             return redirect(url_for('login'))
+        
         except Exception as e:
             
             flash('Error creating account', 'error')
             current_app.logger.error(f"Error creating account: {e}")
-            raise
+         
             return render_template('register.html', form=form_data)
 
     # GET request - display the registration form
