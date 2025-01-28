@@ -19,4 +19,5 @@ dependencies = [
     "jtlutil>=0.1.19",
     "python-dotenv>=1.0.1",
     "sqlitedict>=2.1.0",
+    "tenacity>=9.0.0",
 ]

@@ -67,4 +67,5 @@ capture_output = True
 # Command line: --preload
 # Default: False
 # Load application code before the worker processes are forked.
-# preload_app = True
+preload_app = True
+

@@ -1,28 +1,12 @@
 
-import json
-import logging
-import time
-import uuid
 from datetime import datetime
-from functools import wraps
-from pathlib import Path
 
-import docker
-import requests
-from cspawn.__version__ import __version__ as version
-from cspawn.app import CI_FILE, app, get_db
-from cspawn.db import insert_keystroke_data, update_container_status
-from flask import (abort, current_app, g, jsonify, redirect, render_template,
-                   request, session, url_for, Blueprint, flash, redirect, render_template, 
+from cspawn.app import app, get_db
+from flask import (current_app, redirect, render_template,
+                   request, url_for, flash, redirect, render_template, 
     request, url_for)
-from flask_login import current_user, login_required, logout_user
-from jtlutil.docker.dctl import (container_list, container_status,
-                                 create_cs_pair, logger)
-from jtlutil.flask.flaskapp import insert_query_arg
-from slugify import slugify
 
 from datetime import datetime, timezone
-import sqlite3
 
 
 def check_registration_code(code: str) -> bool:
