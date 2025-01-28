@@ -11,15 +11,21 @@ import docker
 import requests
 from cspawn.__version__ import __version__ as version
 from cspawn.app import CI_FILE, app, get_db
-from cspawn.db import insert_keystroke_data, update_container_status
+from cspawn.db import insert_keystroke_data, update_container_status, update_container_info
 from flask import (abort, current_app, g, jsonify, redirect, render_template,
                    request, session, url_for, flash)
 from flask_login import current_user, login_required, logout_user
 from jtlutil.docker.dctl import (container_list, container_status,
                                  create_cs_pair, logger, make_container_name, get_mapped_port)
-from jtlutil.flask.flaskapp import insert_query_arg
+from jtlutil.flask.flaskapp import insert_query_arg, is_running_under_gunicorn
 from slugify import slugify
 from humanize import naturaltime, naturaldelta
+
+
+context = {
+    "version": version,
+    "current_user": current_user,
+}
 
 def ensure_session():
     
@@ -101,7 +107,11 @@ def container_status_list(client):
             record['seconds_since_report'] = naturaldelta(record['seconds_since_report'])
         else:
             record['seconds_since_report'] = '?'
-    
+            
+        #if not record.get('port'):
+        #    record['port'] = get_mapped_port(client, record['containerId'], "8080")
+        
+
     dm = {e['containerId']:e  for e in d}
     
     containers = container_list(client) if current_user.is_staff else []
@@ -119,7 +129,7 @@ def index():
     
 @app.route("/login")
 def login():
-    return render_template("login.html", current_user = current_user)
+    return render_template("login.html", **context)
 
 
 
@@ -135,15 +145,22 @@ def home():
     if current_user.is_staff:
         containers = container_status_list(client)
 
-        return render_template("admin.html", current_user=current_user,
-                            server_hostname=server_hostname, server_status=server_status,
-                            containers = containers, version=version)
+        return render_template("admin.html", server_hostname=server_hostname, server_status=server_status,
+                            containers = containers, **context)
             
     else:
 
         containers = []
-        return render_template("home.html", server_status=server_status, server_hostname=server_hostname, 
-                               current_user=current_user, version=version)
+        return render_template("home.html", server_status=server_status, server_hostname=server_hostname, **context)
+
+def stop_novnc(client, container):
+    try:
+        novnc_name = container.labels['jtl.codeserver.vnc']
+        vnc_container = client.containers.get(novnc_name)
+        vnc_container.stop()
+    except docker.errors.NotFound:
+        current_app.logger.warning(f"VNC container not found for {container.name}")
+        pass
 
 @app.route("/stop")
 @login_required
@@ -156,23 +173,28 @@ def stop_server():
         
         container_name = make_container_name(current_user.primary_email)
         container = client.containers.get(container_name)
+        stop_novnc(client, container)
         container.stop()
+        
+        
+        vnc_container = client.containers.get(f"{container_name}-novnc")
+        
+        vnc_container.stop()
 
         flash("Server stopped successfully", "success")
         return redirect(url_for('home'))
 
     else:
         container = client.containers.get(make_container_name(server_id))
+        stop_novnc(client, container)
         container.stop()
         
         flash("Server stopped successfully", "success")
         return redirect(url_for('home'))
         
-
-
-
 def check_server_ready(hostname_url):
     """Check if the server is ready by making a request to it."""
+    
     try:
         response = requests.get(hostname_url)
         return response.status_code in [200, 302]
@@ -197,12 +219,15 @@ def start_server():
         logger.setLevel(logging.DEBUG)
         client = docker.DockerClient(base_url=current_app.app_config.SSH_URI)
         
+        is_devel = not is_running_under_gunicorn()
+        
         # Create the container
         nvc, pa = create_cs_pair(
             client, 
             current_app.app_config, 
             current_app.app_config.IMAGES_PYTHONCS,
-            current_user.primary_email
+            current_user.primary_email,
+            port=is_devel # If true, we get a mapped port
         )
         
         if port :=  get_mapped_port(client, pa.id, "8080"):
@@ -213,52 +238,63 @@ def start_server():
             hostname = pa.labels['caddy']    
             hostname_url = f"https://{hostname}"
         
+    
         # Check if server is immediately ready
         time.sleep(1)  # Initial pause
         if check_server_ready(hostname_url):
+            update_container_info(current_app, get_db())
             return redirect(hostname_url)
             
+        ctx = {
+            'hostname': hostname,
+            'hostname_url': hostname_url,
+            'start_time': start_time
+        }
         # If not ready, redirect to start the polling process
-        return redirect(url_for('start_server', 
-                              hostname=hostname,
-                              iteration=1,
-                              start_time=start_time))
+        return redirect(url_for('start_server', iteration=1, **ctx, **context))
     
-    # If we have hostname, we're in the polling phase
-    hostname_url = f"https://{hostname}"
-    
-    # Sleep if this isn't the first iteration
-    if iteration >= 1:
-        time.sleep(1)
-    
-    # Check if server is ready
-    if check_server_ready(hostname_url):
-        return redirect(hostname_url)
-    
-    # Calculate elapsed time
-    elapsed_time = int(time.time() - start_time)
-    
-    # Maximum wait time (5 minutes)
-    if elapsed_time > 300:
-        flash("Server startup timed out after 5 minutes", "error")
-        return redirect(url_for('home'))
-    
-    # Render loading page with updated iteration
-    return render_template('loading.html',
-                         iteration=iteration + 1,
-                         elapsed_time=elapsed_time)
+    else:
+        # With parameters, this is a continuation of the polling process
+       
+        # If we have hostname, we're in the polling phase
+        hostname_url = f"https://{hostname}"
+        
+        # Sleep if this isn't the first iteration
+        if iteration >= 1:
+            time.sleep(1)
+        
+        # Check if server is ready
+        if check_server_ready(hostname_url):
+            return redirect(hostname_url)
+        
+        # Calculate elapsed time
+        elapsed_time = int(time.time() - start_time)
+        
+        # Maximum wait time (5 minutes)
+        if elapsed_time > 300:
+            flash("Server startup timed out after 5 minutes", "error")
+            return redirect(url_for('home'))
+        
+        # Render loading page with updated iteration
+        ctx = {
+            'hostname': hostname,
+            'hostname_url': hostname_url,
+            'start_time': start_time,
+        }
+        next_url = url_for('start_server', iteration=iteration + 1, **ctx)
+        return render_template('loading.html', iteration=iteration, next_url=next_url, **ctx, **context)
 
 
 @app.route("/private/staff")
 @staff_required
 def staff():
-    return render_template("private-staff.html", current_user = current_user)
+    return render_template("private-staff.html", **context)
 
 
 @app.route("/private/admin")
 @staff_required
 def admin():
-    return render_template("private-admin.html", current_user = current_user)
+    return render_template("private-admin.html", **context)
 
 @app.route("/telem", methods=["GET", "POST"])
 def telem():
