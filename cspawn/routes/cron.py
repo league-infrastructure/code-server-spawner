@@ -14,7 +14,7 @@ from pathlib import Path
 def minutely():
     current_app.logger.info("Minutely cron job")
     db = get_db()
-    update_container_info(current_app, get_db)
+    update_container_info(current_app, get_db())
     return jsonify({"status": "OK"})
 
 @app.route("/cron/hourly")
