@@ -292,10 +292,6 @@ def staff():
     return render_template("private-staff.html", **context)
 
 
-@app.route("/private/admin")
-@staff_required
-def admin():
-    return render_template("private-admin.html", **context)
 
 @app.route("/telem", methods=["GET", "POST"])
 def telem():
@@ -328,3 +324,17 @@ def telem():
         except Exception as e:
             current_app.logger.error(f"Error inserting telemetry data: {e}")
             return jsonify({"status": "error"})
+        
+        
+@app.route("/write-test", methods=["GET", "POST"])
+def write_test():
+    
+    from cspawn.db import insert_user_account
+    from datetime import datetime   
+    from  uuid import uuid4
+    
+    db = get_db()
+    insert_user_account(db, str(uuid4()), 'foobar', datetime.now())
+    db.close()
+  
+    return jsonify("OK")
