@@ -1,23 +1,14 @@
-# Flask Application
+#  Code Server Spawner
 
+This application prodives a web application for users to create code-server
+instances on a server. These containers are tailored with 
+the League's Python-Apprentice curiculum. 
 
 ## Development
 
-Development server:
+### Setup. 
 
-```bash
-flask --app app run --debug
-```
+After cloning, follow the [instructions for configuring secrets](https://github.com/league-infrastructure/league-infrastructure/wiki/Repository-Secrets)
 
-or
 
-```bash
-python app.py
-```
 
-Lock dependences before release: 
-
-```bash
- uv pip compile pyproject.toml -o requirements.txt
- ```
- 
