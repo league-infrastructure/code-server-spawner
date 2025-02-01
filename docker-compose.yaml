@@ -1,7 +1,7 @@
 services:
 
 
-   cs-spawner:
+  cs-spawner:
     image: cs-spawner # CHANGE to an image name specific to this project
     container_name: cs-spawner
     build:
@@ -16,7 +16,6 @@ services:
     environment:
       IMAGES_NOVNC: 'ghcr.io/league-infrastructure/novnc-service:v0.1.3'
       IMAGES_PYTHONCS: 'ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:v0.2.2'
-
 
     volumes:
       - app-data:/app/data
@@ -39,4 +38,6 @@ networks:
 
 volumes:
   app-data:
+  mongo-data:
+  mongo-config:
 

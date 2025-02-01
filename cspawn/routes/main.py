@@ -154,14 +154,7 @@ def home():
         containers = []
         return render_template("home.html", server_status=server_status, server_hostname=server_hostname, **context)
 
-def stop_novnc(client, container):
-    try:
-        novnc_name = container.labels['jtl.codeserver.vnc']
-        vnc_container = client.containers.get(novnc_name)
-        vnc_container.stop()
-    except docker.errors.NotFound:
-        current_app.logger.warning(f"VNC container not found for {container.name}")
-        pass
+
 
 @app.route("/stop")
 @login_required
@@ -174,7 +167,7 @@ def stop_server():
         
         container_name = make_container_name(current_user.primary_email)
         container = client.containers.get(container_name)
-        stop_novnc(client, container)
+ 
         container.stop()
         
         
