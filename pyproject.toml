@@ -1,5 +1,5 @@
 [project]
-name = "code-server-spawner"
+name = "cspawn"
 version = "0.3.12"
 description = "Manages code server containers"
 readme = "README.md"
@@ -21,3 +21,6 @@ dependencies = [
     "sqlitedict>=2.1.0",
     "tenacity>=9.0.0",
 ]
+
+[tool.setuptools]
+packages = ["cspawn"]
