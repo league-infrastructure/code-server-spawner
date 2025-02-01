@@ -3,7 +3,7 @@ import json
 import docker
 from datetime import datetime 
 
-from jtlutil.docker.dctl import container_state
+
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from flask import current_app   
 
@@ -210,18 +210,4 @@ def get_user_account(conn, username):
         SELECT * FROM user_accounts WHERE username = ?
     ''', (username,))
     return cursor.fetchone()
-
-def update_container_info(app, db):
-    from pathlib import Path
-    from cspawn.app import   CI_FILE
-    
-    update_container_metrics(db)
-    
-    client = docker.DockerClient(base_url=app.app_config.SSH_URI )
-    update_container_state(db,container_state(client))
-    
-    d = join_container_info(db)
-    
-    (Path(app.app_config.DATA_DIR) / CI_FILE).write_text(json.dumps(d))
-
 
