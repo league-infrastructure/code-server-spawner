@@ -3,6 +3,11 @@ import logging
 from cspawn.init import init_app
 from functools import lru_cache
 import pandas
+
+logging.basicConfig(level=logging.ERROR)
+
+from cspawn.control import logger as ctrl_logger
+
 logger = logging.getLogger(__name__)
 
 def get_logging_level(ctx): 
@@ -21,14 +26,21 @@ def get_logging_level(ctx):
 
     return log_level
 
+_app = None
+
 @lru_cache
 def get_app(ctx):
-    log_level = get_logging_level(ctx)
-    return init_app(log_level=log_level)
+    global _app
+    if _app is None:
+        log_level = get_logging_level(ctx)
+        _app = init_app(log_level=log_level)
+    
+    return _app
 
 def get_logger(ctx):
     log_level = get_logging_level(ctx)
-    
+   
+    ctrl_logger.setLevel(log_level)
     logger.setLevel(log_level)
     return logger
 
@@ -51,10 +63,11 @@ def config():
     pass
 
 @config.command()
-def show():
+@click.pass_context
+def show(ctx):
     """Show the configuration."""
     
-    app =  get_app(get_current_context())
+    app =  get_app(ctx)
     for e in app.app_config['__CONFIG_PATH']:
         print(e)
     pass
@@ -113,15 +126,34 @@ def rm(rm):
 
 @dctl.command()
 @click.argument('service_name')
-def stop(service_name):
-    """Stop the specified service."""
-    pass
+@click.pass_context
+def start(ctx,service_name):
+    """Start the specified service."""
+    from time import time, sleep
+    
+    app =  get_app(ctx)
+
+    s = app.csm.new_cs(service_name)
+    s.wait_until_ready(timeout=60)
+
+
 
 @dctl.command()
 @click.argument('service_name')
-def rm(service_name):
-    """Remove the specified service."""
-    pass
+@click.pass_context
+def stop(ctx,service_name):
+    """Stop the specified service."""
+    from docker.errors import NotFound
+    
+    app = get_app(ctx)
+    try:
+        s = app.csm.get(service_name)
+        s.stop()
+        print(f"Service {service_name} stopped successfully")
+    except NotFound:
+        print(f"Service {service_name} not found")
+
+
 
 @cli.group()
 def probe():
@@ -132,9 +164,6 @@ def probe():
 @click.pass_context
 def run(ctx):
     """Run probes."""
-    
-
-    
     
     app =  get_app(ctx)
     logger = get_logger(ctx)

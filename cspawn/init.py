@@ -80,8 +80,8 @@ def init_app(file: str | Path = None, log_level=None) -> Flask:
 
     app_dir, db_dir = configure_app_dir(app)
 
-    app.logger.info(f"App dir: {app_dir}")
-    app.logger.info(f"DB dir: {db_dir}")
+    #app.logger.info(f"App dir: {app_dir}")
+    #app.logger.info(f"DB dir: {db_dir}")
 
 
     app.config["MONGO_URI"] = app.app_config["MONGO_URL"]
