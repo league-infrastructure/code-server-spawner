@@ -5,9 +5,9 @@ from functools import lru_cache
 import pandas
 logger = logging.getLogger(__name__)
 
-def get_logging_level():
-    ctx = click.get_current_context()
-    v = ctx.parent.params.get("v", 0)
+def get_logging_level(ctx): 
+    
+    v = ctx.obj['v']
     
     log_level = None
     if v == 0:
@@ -19,16 +19,15 @@ def get_logging_level():
     else:
         log_level = logging.ERROR
 
-
     return log_level
 
 @lru_cache
-def get_app():
-    log_level = get_logging_level()
+def get_app(ctx):
+    log_level = get_logging_level(ctx)
     return init_app(log_level=log_level)
 
-def get_logger():
-    log_level = get_logging_level()
+def get_logger(ctx):
+    log_level = get_logging_level(ctx)
     
     logger.setLevel(log_level)
     return logger
@@ -36,8 +35,15 @@ def get_logger():
 @click.group()
 @click.option('-v', count=True, help="Set INFO (-v) or DEBUG (-vv) level on loggers.")
 @click.option('-c', '--config-file', type=click.Path(exists=True), help="Load only the config file.")
-def cli(v, config_file):
+@click.pass_context
+def cli(ctx, v, config_file):
     """cspawnctl - A command-line tool for managing Docker services."""
+
+    ctx.obj = {}
+    ctx.obj['v'] = v
+    ctx.obj['config_file'] = config_file
+    ctx.obj['app'] = get_app(ctx)
+    ctx.obj['logger'] = get_logger(ctx)
 
 @cli.group()
 def config():
@@ -48,7 +54,7 @@ def config():
 def show():
     """Show the configuration."""
     
-    app =  get_app()
+    app =  get_app(get_current_context())
     for e in app.app_config['__CONFIG_PATH']:
         print(e)
     pass
@@ -81,11 +87,8 @@ def ls():
                
             })
     
-
-    
     print(tabulate(rows, headers="keys"))
         
-
 @dctl.group()
 def node():
     """Manage nodes in the cluster."""
@@ -104,7 +107,9 @@ def add(add):
 @node.command()
 @click.option('-r', '--rm', required=True, help="Remove a node from the cluster.")
 def rm(rm):
-    pass
+    
+    app =  get_app()
+    
 
 @dctl.command()
 @click.argument('service_name')
@@ -124,9 +129,18 @@ def probe():
     pass
 
 @probe.command()
-def run():
+@click.pass_context
+def run(ctx):
     """Run probes."""
-    pass
+    
+
+    
+    
+    app =  get_app(ctx)
+    logger = get_logger(ctx)
+    for c in app.csm.collect_containers(generate=True):
+        print(c['service_name'])
+    
 
 @probe.command()
 @click.option('--mem', is_flag=True, help="Collect memory usage information.")

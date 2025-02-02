@@ -55,7 +55,15 @@ class CodeServerManager(DbServicesManager):
     def list(self, filters: Optional[Dict[str, Any]] = {"label":"jtl.codeserver"}) -> List[docker.models.containers.Container]:
         return super().list(filters=filters)
 
+    def containers_list_cached(self):
+        from jtlutil.docker.db import DockerContainerStats
+        
+        return self.repo.all
+         
+
     def remove_all(self):
         for c in self.list(filter={"label":"jtl.codeserver"}):
             self.repo.remove_by_id(c.id)
             c.remove()
+            
+    
