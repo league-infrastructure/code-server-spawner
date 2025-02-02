@@ -12,7 +12,7 @@ import requests
 from cspawn.__version__ import __version__ as version
 from cspawn.init import CI_FILE, get_db
 from cspawn.app import app
-from cspawn.db import insert_keystroke_data, update_container_status
+
 from flask import (abort, current_app, g, jsonify, redirect, render_template,
                    request, session, url_for, flash)
 from flask_login import current_user, login_required, logout_user
@@ -152,25 +152,14 @@ def stop_server():
         return redirect(url_for('home'))
 
     else:
-        container = client.containers.get(make_container_name(server_id))
+
+        s = app.csm.get(server_id)
+        s.stop()
         
-        container.stop()
-        
-        flash("Server stopped successfully", "success")
+        flash(f"Server {s.name} stopped successfully", "success")
         return redirect(url_for('home'))
         
-def check_server_ready(hostname_url):
-    """Check if the server is ready by making a request to it."""
-    
-    try:
-        response = requests.get(hostname_url)
-        return response.status_code in [200, 302]
-    except requests.exceptions.SSLError:
-        current_app.logger.warning(f"SSL error encountered when connecting to {hostname_url}")
-        return False
-    except requests.exceptions.RequestException as e:
-        current_app.logger.warning(f"Error checking server statusto {hostname_url}: {e}")
-        return False
+
 
 
 @app.route("/start")
@@ -183,28 +172,10 @@ def start_server():
     
     # If no hostname, this is the initial request
     if not hostname:
-        logger.setLevel(logging.DEBUG)
-        client = docker.DockerClient(base_url=current_app.app_config.SSH_URI)
-        
+
         is_devel = not is_running_under_gunicorn()
         
-        # Create the container
-        assert False
-        nvc, pa = create_cs_pair(
-            client, 
-            current_app.app_config, 
-            current_app.app_config.IMAGES_PYTHONCS,
-            current_user.primary_email,
-            port=is_devel # If true, we get a mapped port
-        )
-        
-        if port :=  get_mapped_port(client, pa.id, "8080") and is_devel:
-            hostname = f'localhost:{port}'
-            hostname_url = f"http://{hostname}"
-           
-        else:
-            hostname = pa.labels['caddy']    
-            hostname_url = f"https://{hostname}"
+        s = app.csm.new_cs(current_user.primary_email)
         
     
         # Check if server is immediately ready
@@ -252,13 +223,10 @@ def start_server():
         next_url = url_for('start_server', iteration=iteration + 1, **ctx)
         return render_template('loading.html', iteration=iteration, next_url=next_url, **ctx, **context)
 
-
 @app.route("/private/staff")
 @staff_required
 def staff():
     return render_template("private-staff.html", **context)
-
-
 
 @app.route("/telem", methods=["GET", "POST"])
 def telem():
@@ -270,28 +238,10 @@ def telem():
         
          # fix the containerID to be the same as the containerName
         telemetry_data['containerName'] = telemetry_data.get('containerID')
-        
-        try:
-            # Every report is used to update the heartbeat, but only ones with 
-            # keystrokes are used to update the keystroke data
-            update_container_status(conn, telemetry_data['containerName'], 
-                                    telemetry_data['instanceId'], telemetry_data['timestamp'])
-
-            if telemetry_data['keystrokes'] == 0:             
-                return jsonify({"status": "ignored"})
-        except KeyError as e:
-            current_app.logger.error(f"Missing required field: {e}: telemetry data: {telemetry_data}")
-            return jsonify({"status": "error", "message": f"Missing required field: {e}"})
-        
-        current_app.logger.info(f"Telemetry data received:  {telemetry_data['average30m']}kps @{telemetry_data['containerName']} ")
-        
-        try:
-            insert_keystroke_data(conn, telemetry_data)
-            return  jsonify({"status": "OK"})
-        except Exception as e:
-            current_app.logger.error(f"Error inserting telemetry data: {e}")
-            return jsonify({"status": "error"})
-        
+    
+        print (telemetry_data)
+    
+    return jsonify(telemetry_data )
         
 @app.route("/write-test", methods=["GET", "POST"])
 def write_test():
