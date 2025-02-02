@@ -2,13 +2,16 @@ import os
 import sqlite3
 from pathlib import Path
 
-import sqlitedict
+
 from flask import Flask, current_app, g
 from jinja2 import Environment
 
 from jtlutil.flask.flaskapp import *
 from .db import create_keystroke_tables
+from .control import CodeServerManager
 
+
+from flask_pymongo import PyMongo
 
 CI_FILE = "container_info.json"
 
@@ -46,7 +49,7 @@ def human_time_format(seconds):
         return seconds
     
     
-def init_app(file: str | Path = None):
+def init_app(file: str | Path = None, log_level=None) -> Flask:
 
     from jtlutil.flask.auth import auth_bp, load_user
 
@@ -73,18 +76,19 @@ def init_app(file: str | Path = None):
     configure_config_tree(app)
 
     # Initialize logger
-    init_logger(app)
+    init_logger(app, log_level=log_level)
 
     app_dir, db_dir = configure_app_dir(app)
 
     app.logger.info(f"App dir: {app_dir}")
     app.logger.info(f"DB dir: {db_dir}")
 
-    setup_sqlite_sessions(app)
 
-    # A key value store, built on top of sqlite
-    kv_db_path = db_dir / "kv.db"
-    app.kvstore = sqlitedict.SqliteDict(kv_db_path, tablename="kv", autocommit=True)
+    app.config["MONGO_URI"] = app.app_config["MONGO_URL"]
+
+    app.mongodb = PyMongo(app)
+
+    setup_sqlite_sessions(app)
 
     # A regular sql database. For this database, we need to open and
     # close per request.
@@ -94,8 +98,6 @@ def init_app(file: str | Path = None):
 
     app.user_db_path = db_dir / "users.db"
 
+    app.csm = CodeServerManager(app)
+
     return app
-
-
-
-

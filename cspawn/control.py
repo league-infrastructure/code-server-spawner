@@ -3,17 +3,25 @@ import docker
 from pymongo import MongoClient
 from typing import List, Dict, Any, Optional
 from jtlutil.docker.manager import DbServicesManager
+from jtlutil.docker.proc import Service
 from jtlutil.docker.dctl import define_cs_container
+from time import sleep
 
+class CSMService(Service):
+    
+    pass
 
 class CodeServerManager(DbServicesManager):
     
-    def __init__(self, config):
+    service_class = CSMService
+    
+    def __init__(self, app):
         
-        self.config = config
+        self.config = app.app_config
 
-        self.mongo_client = MongoClient(config.MONGO_URL)
-        self.docker_client = docker.DockerClient(base_url=config.DOCKER_SSH_URI)
+        self.mongo_client = app.mongodb.cx
+        
+        self.docker_client = docker.DockerClient(base_url=self.config.DOCKER_SSH_URI)
         
         def _hostname_f(node_name):
             return f"{node_name}.jointheleague.org"
@@ -27,13 +35,27 @@ class CodeServerManager(DbServicesManager):
  
         container_def = define_cs_container(self.config, 
                                             image or self.config.IMAGES_PYTHONCS,
-                                            username)
+                                            username,
+                                            self.config.HOSTNAME_TEMPLATE)
         
-        c = self.run(**container_def)
+        s = self.run(**container_def)
 
-        self.repo.update(c)
+        while True:
+            ci = list(s.containers_info())[0]
+            if ci['container_id'] is not None:
+                break
+            sleep(.5)
+            s.reload()
+            
+        
+        self.repo.update(ci) 
+        
+        return s
 
+    def list(self, filters: Optional[Dict[str, Any]] = {"label":"jtl.codeserver"}) -> List[docker.models.containers.Container]:
+        return super().list(filters=filters)
 
     def remove_all(self):
         for c in self.list(filter={"label":"jtl.codeserver"}):
+            self.repo.remove_by_id(c.id)
             c.remove()
