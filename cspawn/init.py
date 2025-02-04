@@ -34,7 +34,7 @@ def human_time_format(seconds):
         return seconds
     
     
-def init_app(file: str | Path = None, log_level=None) -> Flask:
+def init_app(file: str | Path = None, log_level=None, config_dir=None) -> Flask:
 
     from jtlutil.flask.auth import auth_bp, load_user
 
@@ -59,7 +59,7 @@ def init_app(file: str | Path = None, log_level=None) -> Flask:
 
     # configure_config(app)
     
-    config = configure_config_tree()
+    config = configure_config_tree(config_dir)
         # Set the Flask secret key
     app.secret_key = config["SECRET_KEY"]
     app.app_config = config
