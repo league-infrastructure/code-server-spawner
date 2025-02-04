@@ -92,7 +92,7 @@ jinja2==3.1.5
     # via
     #   cspawn (pyproject.toml)
     #   flask
-jtlutil @ git+https://github.com/league-infrastructure/jtlutil@ac9109826278c965892b34547504dbc770614ef1
+jtlutil @ git+https://github.com/league-infrastructure/jtlutil@e49d67d5c5e5702b693f2d44e6be9b4f5b726051
     # via cspawn (pyproject.toml)
 jupyter-client==8.6.3
     # via ipykernel
