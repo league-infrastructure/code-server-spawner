@@ -32,7 +32,8 @@
 <!-- Action Buttons -->
 <div class="row mb-4">
     <div class="col">
-        {% if server_status == 'running' %}
+      
+        {% if  host.status == 'running' %}
         <a href="{{ url_for('start_server') }}" class="btn btn-success float-start">Open Server</a>
         {% else %}
         <a href="{{ url_for('start_server') }}" class="btn btn-success float-start">Start Server</a>
@@ -40,7 +41,7 @@
         
         <a href="{{ url_for('auth.jtl_auth_logout') }}" class="btn btn-primary float-end">Logout</a>
 
-        {% if server_status == 'running' %}
+        {% if  host.status == 'running' %}
         <a href="{{ url_for('stop_server') }}" class="btn btn-danger float-end me-2">Stop Server</a>
         {% endif %}
         
@@ -51,7 +52,7 @@
 <div class="card mb-4">
     <div class="card-body">
         <p class="mb-2">Logged in as: {{ current_user.primary_email }} ({{current_user.role}})</p>
-        <p class="mb-0">Server Name: {{server_hostname}} ({{server_status}})</p>
+        <p class="mb-0">Server Name: {{ host.hostname}} ({{ host.status}})</p>
     </div>
 </div>
 

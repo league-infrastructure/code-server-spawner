@@ -17,13 +17,25 @@ dependencies = [
     "gunicorn>=23.0.0",
     "humanize>=4.11.0",
     "jinja2>=3.1.5",
-    "jtlutil>=0.1.19",
+    "jtlutil @ git+https://github.com/league-infrastructure/jtlutil",
     "pandas>=2.2.3",
+    "pydantic>=2.10.6",
     "python-dotenv>=1.0.1",
     "sqlitedict>=2.1.0",
     "tabulate>=0.9.0",
     "tenacity>=9.0.0",
 ]
 
-[tool.setuptools]
-packages = ["cspawn"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cspawn*"]  # Include all subpackages
+
+[dependency-groups]
+dev = [
+    "ansible>=11.2.0",
+]
+
+
+[project.scripts]
+cspawn = "cspawn.cli.ctl:cli"

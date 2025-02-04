@@ -3,15 +3,12 @@ __pycache__/
 *.pyc
 *.pyo
 
-
 # Ignore version control files
 .git
 .gitignore
 
 # Ignore log files
 *.log
-
-
 
 # Ignore temporary and lock files
 *.swp
@@ -21,11 +18,17 @@ __pycache__/
 # Ignore test directories
 test/
 
+*.egg-info
+
+Dockerfile
+docker-compose.yaml
+node-config/
 
 # Include everything else explicitly required
-!Dockerfile
+
 !requirements.txt
 !supervisord.conf
-!docker-compose.yaml
 !entrypoint.sh
-!pyproject.toml
+
+
+

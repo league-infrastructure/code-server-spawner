@@ -2,8 +2,11 @@ import click
 import logging
 from cspawn.init import init_app
 from functools import lru_cache
-import pandas
+from jtlutil.flask.flaskapp import configure_config_tree
 
+import pandas
+from docker.errors import NotFound
+    
 logging.basicConfig(level=logging.ERROR)
 
 from cspawn.control import logger as ctrl_logger
@@ -37,12 +40,17 @@ def get_app(ctx):
     
     return _app
 
+@lru_cache
 def get_logger(ctx):
     log_level = get_logging_level(ctx)
    
     ctrl_logger.setLevel(log_level)
     logger.setLevel(log_level)
     return logger
+
+@lru_cache
+def get_config():
+    return configure_config_tree()
 
 @click.group()
 @click.option('-v', count=True, help="Set INFO (-v) or DEBUG (-vv) level on loggers.")
@@ -54,8 +62,6 @@ def cli(ctx, v, config_file):
     ctx.obj = {}
     ctx.obj['v'] = v
     ctx.obj['config_file'] = config_file
-    ctx.obj['app'] = get_app(ctx)
-    ctx.obj['logger'] = get_logger(ctx)
 
 @cli.group()
 def config():
@@ -67,8 +73,8 @@ def config():
 def show(ctx):
     """Show the configuration."""
     
-    app =  get_app(ctx)
-    for e in app.app_config['__CONFIG_PATH']:
+    config = get_config()
+    for e in config['__CONFIG_PATH']:
         print(e)
     pass
 
@@ -78,11 +84,11 @@ def version():
     pass
 
 @cli.group()
-def dctl():
-    """Docker control commands."""
+def host():
+    """Start, stop and find code-server hosts"""
     pass
 
-@dctl.command()
+@host.command()
 def ls():
     """List all of the Docker containers in the system."""
     from tabulate import tabulate
@@ -102,7 +108,66 @@ def ls():
     
     print(tabulate(rows, headers="keys"))
         
-@dctl.group()
+
+    
+
+@host.command()
+@click.argument('service_name')
+@click.pass_context
+def start(ctx,service_name):
+    """Start the specified service."""
+    from time import time, sleep
+    
+    app =  get_app(ctx)
+
+    s = app.csm.new_cs(service_name)
+    s.wait_until_ready(timeout=60)
+
+
+
+@host.command()
+@click.argument('service_name')
+@click.pass_context
+def stop(ctx,service_name):
+    """Stop the specified service."""
+    
+    app = get_app(ctx)
+    try:
+        s = app.csm.get(service_name)
+        s.stop()
+        print(f"Service {service_name} stopped successfully")
+    except NotFound:
+        print(f"Service {service_name} not found")
+
+@host.command()
+@click.argument('query')
+@click.pass_context
+def find(ctx,query):
+    """Stop the specified service."""
+    from docker.errors import NotFound
+    
+    app = get_app(ctx)
+    
+    def _f():
+        
+        try:
+            return app.csm.get(query)
+        except NotFound:
+            pass
+        
+        if s :=  app.csm.get_by_hostname(query):
+            return s
+ 
+        if s:=  app.csm.get_by_username(query):
+            return s
+        
+        return None
+    
+    s = _f()
+ 
+    print (s)
+
+@cli.group()
 def node():
     """Manage nodes in the cluster."""
     pass
@@ -122,38 +187,6 @@ def add(add):
 def rm(rm):
     
     app =  get_app()
-    
-
-@dctl.command()
-@click.argument('service_name')
-@click.pass_context
-def start(ctx,service_name):
-    """Start the specified service."""
-    from time import time, sleep
-    
-    app =  get_app(ctx)
-
-    s = app.csm.new_cs(service_name)
-    s.wait_until_ready(timeout=60)
-
-
-
-@dctl.command()
-@click.argument('service_name')
-@click.pass_context
-def stop(ctx,service_name):
-    """Stop the specified service."""
-    from docker.errors import NotFound
-    
-    app = get_app(ctx)
-    try:
-        s = app.csm.get(service_name)
-        s.stop()
-        print(f"Service {service_name} stopped successfully")
-    except NotFound:
-        print(f"Service {service_name} not found")
-
-
 
 @cli.group()
 def probe():
@@ -180,6 +213,68 @@ def mem(mem):
 @click.option('--prune', is_flag=True, help="Find and shut down unused services.")
 def prune(prune):
     pass
+
+
+@probe.command()
+@click.pass_context
+@click.option('--purge', is_flag=True, help="Delete all probe records.")
+def purge(ctx, purge):
+    
+    app =  get_app(ctx)
+    app.csm.repo.delete_all()
+    
+@cli.group()
+def telem():
+    """Telemetry commands."""
+    pass
+
+@telem.command()
+@click.pass_context
+def summary(ctx):
+    """Show a summary of telemetry data."""
+    app = get_app(ctx)
+    
+    
+
+@telem.command()
+@click.pass_context
+def count(ctx):
+    """Count the number of telemetry records."""
+    app = get_app(ctx)
+    count = len(app.csm.keyrate)
+    print(f"Total telemetry records: {count}")
+
+@telem.command()
+@click.pass_context
+def purge(ctx):
+    """Purge all telemetry data."""
+    app = get_app(ctx)
+    app.csm.keyrate.delete_all()
+    print("All telemetry data purged successfully")
+
+
+@cli.group()
+def sys():
+    """System level commands."""
+    pass
+
+@sys.command()
+@click.pass_context
+def shutdown(ctx):
+    """Shutdown the system."""
+    app = get_app(ctx)
+    app.csm.remove_all()
+    print("System shutdown initiated.")
+
+@sys.command()
+@click.pass_context
+def restart(ctx):
+    """Restart the system."""
+    app = get_app(ctx)
+    
+    print("System restart initiated. haha jk")
+
+
 
 if __name__ == '__main__':
     cli()

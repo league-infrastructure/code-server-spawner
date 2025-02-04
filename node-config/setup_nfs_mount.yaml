@@ -1,0 +1,23 @@
+- name: Configure NFS Mount on Swarm Nodes
+  hosts: swarm_nodes
+  become: yes
+  tasks:
+
+    - name: Ensure NFS client is installed
+      package:
+        name: nfs-common
+        state: present
+
+    - name: Ensure the mount point exists
+      file:
+        path: /mnt/student_repos
+        state: directory
+        mode: '0755'
+
+    - name: Mount NFS share and persist in /etc/fstab
+      mount:
+        path: /mnt/student_repos
+        src: 10.124.0.9:/mnt/student_repos
+        fstype: nfs
+        opts: defaults,_netdev
+        state: mounted

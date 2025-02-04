@@ -10,13 +10,12 @@ from pathlib import Path
 import docker
 import requests
 from cspawn.__version__ import __version__ as version
-from cspawn.init import CI_FILE, get_db
+from cspawn.init import CI_FILE
 from cspawn.app import app
 
 from flask import (abort, current_app, g, jsonify, redirect, render_template,
                    request, session, url_for, flash)
 from flask_login import current_user, login_required, logout_user
-from jtlutil.docker.dctl import ( container_status, logger, make_container_name, get_mapped_port)
 from jtlutil.flask.flaskapp import insert_query_arg, is_running_under_gunicorn
 from slugify import slugify
 from humanize import naturaltime, naturaldelta
@@ -108,6 +107,10 @@ def unk_filter(v):
     return v if  v  else "?"
 
 
+class NoHost:
+    
+    status = 'does not exist'
+
 @app.route("/home", methods=["GET", "POST"])
 @login_required
 def home():
@@ -116,21 +119,22 @@ def home():
      
     username=slugify(current_user.primary_email)
     server_hostname = current_app.app_config.HOSTNAME_TEMPLATE.format(username=username)
-    client = docker.DockerClient(base_url=current_app.app_config.SSH_URI )
-    server_status = container_status(client, current_user.primary_email )
-        
+
+    host = app.csm.get_by_username(current_user.primary_email)
+
+    host = host or NoHost()
+    
     if current_user.is_staff:
         containers = app.csm.containers_list_cached()
 
-        return render_template("admin.html", server_hostname=server_hostname, server_status=server_status,
-                            containers = containers, **context)
+        return render_template("admin.html", server_hostname=server_hostname,
+                            containers = containers, host=host, **context)
             
     else:
 
         containers = []
-        return render_template("home.html", server_status=server_status, 
+        return render_template("home.html", host=host, 
                                server_hostname=server_hostname, 
-                            
                                **context)
 
 @app.route("/stop")
@@ -142,86 +146,83 @@ def stop_server():
     
     if not current_user.is_staff or not server_id:
         
-        container_name = make_container_name(current_user.primary_email)
-        container = client.containers.get(container_name)        
-        vnc_container = client.containers.get(f"{container_name}-novnc")
+        s =  app.csm.get_by_username(current_user.primary_email)
         
-        vnc_container.stop()
+        if not s:
+            flash("No server found to stop", "error")
+            return redirect(url_for('home'))
+        else:
+            s.stop()
 
         flash("Server stopped successfully", "success")
         return redirect(url_for('home'))
 
-    else:
+    elif  current_user.is_staff and server_id:
 
         s = app.csm.get(server_id)
         s.stop()
         
         flash(f"Server {s.name} stopped successfully", "success")
         return redirect(url_for('home'))
+    
+    else:
+        flash("Server stop disallowed", "error")
+        return redirect(url_for('home'))
         
-
-
-
 @app.route("/start")
 @login_required
 def start_server():
+    from docker.errors import NotFound, APIError
     # Get query parameters
-    hostname = request.args.get('hostname')
+   
+    service_id = request.args.get('service_id')
     iteration = int(request.args.get('iteration', 0))
     start_time = float(request.args.get('start_time', time.time()))
     
-    # If no hostname, this is the initial request
-    if not hostname:
+    s =  app.csm.get_by_username(current_user.primary_email)
 
-        is_devel = not is_running_under_gunicorn()
-        
+    if not s:
         s = app.csm.new_cs(current_user.primary_email)
-        
     
-        # Check if server is immediately ready
-        time.sleep(1)  # Initial pause
-        if check_server_ready(hostname_url):
-            assert False #update_container_info(current_app, get_db())
-            return redirect(hostname_url)
-            
-        ctx = {
-            'hostname': hostname,
-            'hostname_url': hostname_url,
-            'start_time': start_time
-        }
-        # If not ready, redirect to start the polling process
-        return redirect(url_for('start_server', iteration=1, **ctx, **context))
+    if s is None:
+        flash("Error starting server", "error")
+        return redirect(url_for('home'))
     
-    else:
-        # With parameters, this is a continuation of the polling process
-       
-        # If we have hostname, we're in the polling phase
-        hostname_url = f"https://{hostname}"
-        
-        # Sleep if this isn't the first iteration
-        if iteration >= 1:
-            time.sleep(1)
-        
-        # Check if server is ready
-        if check_server_ready(hostname_url):
-            return redirect(hostname_url)
-        
-        # Calculate elapsed time
-        elapsed_time = int(time.time() - start_time)
-        
-        # Maximum wait time (5 minutes)
-        if elapsed_time > 300:
-            flash("Server startup timed out after 5 minutes", "error")
-            return redirect(url_for('home'))
-        
-        # Render loading page with updated iteration
-        ctx = {
-            'hostname': hostname,
-            'hostname_url': hostname_url,
-            'start_time': start_time,
-        }
-        next_url = url_for('start_server', iteration=iteration + 1, **ctx)
-        return render_template('loading.html', iteration=iteration, next_url=next_url, **ctx, **context)
+    if s.is_ready():
+        return redirect(s.hostname_url)
+    
+    # Calculate elapsed time
+    elapsed_time = int(time.time() - start_time)
+    
+    # Maximum wait time 
+    if elapsed_time > 120:
+        flash("Server startup timed out", "error")
+        return redirect(url_for('home'))
+    
+    # Render loading page with updated iteration
+    ctx = {
+        'service_id': s.id,
+        'hostname': s.hostname,
+        'hostname_url': s.hostname_url,
+        'start_time': start_time,
+        'host': s,
+    }
+    next_url = url_for('start_server', iteration=iteration + 1, )
+    return render_template('loading.html', iteration=iteration, next_url=next_url, **ctx, **context)
+
+@app.route("/service/<service_id>/is_ready", methods=["GET"])
+@login_required
+def server_is_ready(service_id):
+    from docker.errors import NotFound 
+    
+    try:
+        s = app.csm.get(service_id)
+        if s.is_ready():
+            return jsonify({"status": "ready", "hostname_url": s.hostname_url})
+        else:
+            return jsonify({"status": "not_ready"})
+    except NotFound as e:
+        return jsonify({"status": "error", "message": str(e)})
 
 @app.route("/private/staff")
 @staff_required
@@ -231,27 +232,10 @@ def staff():
 @app.route("/telem", methods=["GET", "POST"])
 def telem():
     if request.method == "POST":
+
         
-        conn = get_db()
-        
-        telemetry_data = request.get_json()
-        
-         # fix the containerID to be the same as the containerName
-        telemetry_data['containerName'] = telemetry_data.get('containerID')
+        current_app.csm.keyrate.add_report(request.get_json())
     
-        print (telemetry_data)
     
-    return jsonify(telemetry_data )
-        
-@app.route("/write-test", methods=["GET", "POST"])
-def write_test():
-    
-    from cspawn.db import insert_user_account
-    from datetime import datetime   
-    from  uuid import uuid4
-    
-    db = get_db()
-    insert_user_account(db, str(uuid4()), 'foobar', datetime.now())
-    db.close()
-  
     return jsonify("OK")
+        

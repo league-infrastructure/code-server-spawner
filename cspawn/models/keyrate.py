@@ -1,5 +1,9 @@
 from pydantic import BaseModel
 from typing import Optional
+from pymongo import MongoClient
+from pymongo.collection import Collection
+from datetime import datetime, timezone
+from typing import List, Dict
 
 
 class FileStat(BaseModel):
@@ -10,6 +14,8 @@ class FileStat(BaseModel):
 class KeystrokeReport(BaseModel):
     timestamp: str
     containerID: str
+    serviceID: str
+    serviceName: str
     instanceId: str
     keystrokes: int
     average30m: float
@@ -24,11 +30,9 @@ class KsSummary(BaseModel):
     timestamp: str
     containerName: str  # Primary key
     average30m: float
-    seconds_since_report: int
+    heartbeatAgo: int
 
 
     model_config = {"from_attributes": True}
-
-
 
 

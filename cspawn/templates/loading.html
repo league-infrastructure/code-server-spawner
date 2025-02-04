@@ -37,21 +37,51 @@
         
         <div class="status-info">
             <p>Starting your server at {{hostname}} </p>
-            <p>Time elapsed: {{ elapsed_time }} seconds</p>
-            <p>Attempt: {{ iteration }}</p>
+            <p>Elapsed time: <span id="elapsed-time">0</span> seconds</p>
+         
         </div>
 
         <div class="cancel-container">
             <a href="{{ url_for('home') }}" class="btn btn-danger">Cancel</a>
         </div>
 
+       
+
     </div>
 </div>
 
-<!-- Auto-refresh every 1 seconds -->
+
 <script>
-    setTimeout(function() {
-        window.location.href = "{{next_url | safe}}";
-    }, 1000);
+    <!-- Polling script to check if the server is ready -->
+(function poll() {
+    const serviceId = "{{ service_id }}";
+    const url = `/service/${serviceId}/is_ready`;
+    let startTime = Date.now();
+
+    function updateElapsedTime() {
+        const elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('elapsed-time').innerText = `${elapsedTime}`;
+    }
+
+    function pollServer() {
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'ready') {
+                    window.open(data.hostname_url, '_blank');
+                    window.location.href = "{{ url_for('home') }}";
+                } else {
+                    updateElapsedTime();
+                    setTimeout(pollServer, 1000); // Retry after 1 second
+                }
+            })
+            .catch(error => {
+                updateElapsedTime();
+                setTimeout(pollServer, 1000); // Retry after 1 second in case of error
+            });
+    }
+
+    pollServer();
+})();
 </script>
 {% endblock %}
