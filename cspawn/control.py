@@ -1,20 +1,24 @@
-import docker
+import logging
+import os
+from datetime import datetime
+from functools import lru_cache
+from pathlib import Path
+from time import sleep
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
-from pymongo import MongoClient
-from typing import List, Dict, Any, Optional
+import docker
+import paramiko
+import pytz
+import requests
+from flask import current_app
 from jtlutil.docker.manager import DbServicesManager
 from jtlutil.docker.proc import Service
-
-from time import sleep
-from flask import current_app
-from cspawn.db import KeyrateDBHandler
-from functools import lru_cache
-import requests
+from pymongo import MongoClient
 from slugify import slugify
-from datetime import datetime
-import pytz
 
-import logging
+from cspawn.db import KeyrateDBHandler
+
 logger = logging.getLogger('cspawnctl')
 
 class CSMService(Service):
@@ -75,7 +79,7 @@ class CSMService(Service):
         self.update()
         return wait_time
 
-def define_cs_container(config, image, username, hostname_template, env_vars={}, port=None):
+def define_cs_container(config, image, username, hostname_template, repo=None, env_vars={}, port=None):
     # Create the container
     
     container_name = name = slugify(username)
@@ -84,14 +88,26 @@ def define_cs_container(config, image, username, hostname_template, env_vars={},
     
     hostname = hostname_template.format(username=container_name)
 
+    repo = repo or config.INITIAL_GIT_REPO
+
+    if repo:
+        clone_dir = os.path.basename(repo)
+        if clone_dir.endswith('.git'):
+            clone_dir = clone_dir[:-4]
+        workspace_folder = f"/workspace/{clone_dir}"
+    else:
+        workspace_folder = "/workspace"
+
     _env_vars = {
+        "WORKSPACE_FOLDER":workspace_folder,
         "PASSWORD": password,
         "DISPLAY": ":0",
         "VNC_URL": f"https://{hostname}/vnc/",
         "KST_REPORTING_URL": config.KST_REPORTING_URL,
         "KST_CONTAINER_ID": name,
 		"KST_REPORT_RATE": config.KST_REPORT_RATE if hasattr(config, "KST_REPORT_RATE") else 30,
-        "CS_DISABLE_GETTING_STARTED_OVERRIDE": "1" # Disable the getting started page
+        "CS_DISABLE_GETTING_STARTED_OVERRIDE": "1",  # Disable the getting started page
+        "INITIAL_GIT_REPO": repo
     }
     
     env_vars = {**_env_vars, **env_vars}
@@ -135,6 +151,7 @@ def define_cs_container(config, image, username, hostname_template, env_vars={},
         "environment": env_vars,
         "ports": ports,
         "network" : ["caddy", "jtlctl"],
+        "mounts": [f"{str(Path(config.USER_DIRS)/slugify(username))}:/workspace"],
         
     }
 
@@ -148,7 +165,7 @@ class CodeServerManager(DbServicesManager):
 
         self.mongo_client = app.mongodb.cx
         
-        self.docker_client = docker.DockerClient(base_url=self.config.DOCKER_SSH_URI)
+        self.docker_client = docker.DockerClient(base_url=self.config.DOCKER_URI)
         self.mongo_db = self.mongo_client[app.config['CSM_MONGO_DB_NAME']]
         
         def _hostname_f(node_name):
@@ -165,12 +182,42 @@ class CodeServerManager(DbServicesManager):
         return KeyrateDBHandler(self.mongo_db)
     
     
+    def make_user_dir(self, username):
+        
+        user_dir = Path(self.config['USER_DIRS']) / slugify(username)
+        user_id = self.config['USERID']
+
+        parsed_uri = urlparse(self.config['DOCKER_URI'])
+        
+        if parsed_uri.scheme == 'ssh':
+            logger.info(f"Creating directory {user_dir} on remote host {parsed_uri.hostname}")
+            
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(parsed_uri.hostname, username=parsed_uri.username)
+            
+            stdin, stdout, stderr = ssh.exec_command(f'mkdir -p {user_dir} && chown -R {user_id}:{user_id} {user_dir}')
+            exit_status = stdout.channel.recv_exit_status()
+            if exit_status != 0:
+                logger.error(f"Failed to create directory {user_dir} on remote host: {stderr.read().decode()}")
+            ssh.close()
+        else:
+            logger.info(f"Creating directory {user_dir} on local machine")
+            os.makedirs(user_dir, exist_ok=True)
+            os.system(f'chown -R {user_id}:{user_id} {user_dir}')
+
+        return user_dir
+    
+    
     def new_cs(self, username, image=None):
  
         container_def = define_cs_container(self.config, 
                                             image or self.config.IMAGES_PYTHONCS,
                                             username,
                                             self.config.HOSTNAME_TEMPLATE)
+        
+        import yaml
+        logger.debug(f"Container Definition\n {yaml.dump(container_def)}")
         
         try:
             s = self.run(**container_def)
@@ -206,6 +253,7 @@ class CodeServerManager(DbServicesManager):
 
     def containers_list_cached(self):
         from jtlutil.docker.db import DockerContainerStats
+
         
         return self.repo.all
          

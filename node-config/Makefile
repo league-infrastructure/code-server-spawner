@@ -16,3 +16,9 @@ check:
 ping:
 	@echo "Pinging all Swarm nodes..."
 	ANSIBLE_CONFIG=$(PWD)/$(ANSIBLE_CFG) ansible -i $(INVENTORY) swarm_nodes -u root -m ping
+
+
+.PHONY: remount
+remount:
+	@echo "Re-mounting NFS on all nodes..."
+	ANSIBLE_CONFIG=$(PWD)/$(ANSIBLE_CFG) ansible -i $(INVENTORY) swarm_nodes -u root -m command -a "sudo mount -o remount /mnt/student_repos"

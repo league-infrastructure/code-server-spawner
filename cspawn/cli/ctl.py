@@ -1,12 +1,16 @@
-import click
 import logging
-from cspawn.init import init_app
+import os
+import shutil
 from functools import lru_cache
-from jtlutil.flask.flaskapp import configure_config_tree
+from pathlib import Path
 
+import click
 import pandas
 from docker.errors import NotFound
-    
+from jtlutil.flask.flaskapp import configure_config_tree
+
+from cspawn.init import init_app
+
 logging.basicConfig(level=logging.ERROR)
 
 from cspawn.control import logger as ctrl_logger
@@ -50,7 +54,12 @@ def get_logger(ctx):
 
 @lru_cache
 def get_config():
-    return configure_config_tree()
+    c =  configure_config_tree()
+    
+    if len(c['__CONFIG_PATH']) == 0:
+        raise Exception("No configuration files found. Maybe you are in the wrong directory?")
+    
+    return c
 
 @click.group()
 @click.option('-v', count=True, help="Set INFO (-v) or DEBUG (-vv) level on loggers.")
@@ -59,9 +68,11 @@ def get_config():
 def cli(ctx, v, config_file):
     """cspawnctl - A command-line tool for managing Docker services."""
 
+    
     ctx.obj = {}
     ctx.obj['v'] = v
     ctx.obj['config_file'] = config_file
+    get_logger(ctx)
 
 @cli.group()
 def config():
@@ -74,6 +85,7 @@ def show(ctx):
     """Show the configuration."""
     
     config = get_config()
+   
     for e in config['__CONFIG_PATH']:
         print(e)
     pass
@@ -89,11 +101,12 @@ def host():
     pass
 
 @host.command()
-def ls():
+@click.pass_context
+def ls(ctx):
     """List all of the Docker containers in the system."""
     from tabulate import tabulate
     
-    app =  get_app()
+    app =  get_app(ctx)
     
     rows = []
     for s in app.csm.list():
@@ -116,7 +129,7 @@ def ls():
 @click.pass_context
 def start(ctx,service_name):
     """Start the specified service."""
-    from time import time, sleep
+    from time import sleep, time
     
     app =  get_app(ctx)
 
@@ -144,7 +157,6 @@ def stop(ctx,service_name):
 @click.pass_context
 def find(ctx,query):
     """Stop the specified service."""
-    from docker.errors import NotFound
     
     app = get_app(ctx)
     
@@ -166,6 +178,34 @@ def find(ctx,query):
     s = _f()
  
     print (s)
+
+@host.command()
+@click.pass_context
+@click.option('--prune', is_flag=True, help="Find and shut down unused services.")
+def prune(ctx, prune):
+    
+    
+    from tabulate import tabulate
+    
+    app =  get_app(ctx)
+    
+    app.csm.mark_all_unknown()
+    
+
+
+@host.command()
+@click.pass_context
+@click.option('--purge', is_flag=True, help="Delete all probe records.")
+def purge(ctx, purge):
+    
+    confirmation = input("Are you sure? Type 'yes' to proceed: ")
+    if confirmation.lower() != 'yes':
+        print("Operation cancelled.")
+        return
+    
+    app =  get_app(ctx)
+    app.csm.repo.delete_all()
+
 
 @cli.group()
 def node():
@@ -209,19 +249,7 @@ def run(ctx):
 def mem(mem):
     pass
 
-@probe.command()
-@click.option('--prune', is_flag=True, help="Find and shut down unused services.")
-def prune(prune):
-    pass
 
-
-@probe.command()
-@click.pass_context
-@click.option('--purge', is_flag=True, help="Delete all probe records.")
-def purge(ctx, purge):
-    
-    app =  get_app(ctx)
-    app.csm.repo.delete_all()
     
 @cli.group()
 def telem():
@@ -274,7 +302,65 @@ def restart(ctx):
     
     print("System restart initiated. haha jk")
 
+@cli.group()
+def fs():
+    """File system commands."""
+    pass
 
+@fs.command()
+@click.argument('username')
+@click.pass_context
+def mkdir(ctx, username):
+    """Create a new user directory."""
+
+    app = get_app(ctx)
+    app.csm.make_user_dir(username)
+
+@fs.command()
+@click.argument('local_dir')
+@click.argument('username')
+@click.pass_context
+def copyin(ctx, local_dir, username):
+    """Copy local files into the user directory."""
+
+    config = get_config()
+    docker_uri = config.get('DOCKER_URI')
+    
+    if docker_uri.startswith('unix'):
+        user_dir = Path(f"/home/{username}")
+        if user_dir.exists():
+            shutil.copytree(local_dir, user_dir, dirs_exist_ok=True)
+            print(f"Files from {local_dir} copied to {user_dir} successfully.")
+        else:
+            print(f"User directory {user_dir} does not exist.")
+    elif docker_uri.startswith('ssh:'):
+        os.system(f"scp -r {local_dir} {docker_uri}:/home/{username}")
+        print(f"Files from {local_dir} copied to {docker_uri}:/home/{username} successfully.")
+    else:
+        print("Unsupported DOCKER_URI scheme for copyin command.")
+
+@fs.command()
+@click.argument('username')
+@click.argument('local_dir')
+@click.pass_context
+def copyout(ctx, username, local_dir):
+    """Copy files from the user directory to local."""
+
+    config = get_config()
+    docker_uri = config.get('DOCKER_URI')
+    
+    if docker_uri.startswith('unix'):
+        user_dir = Path(f"/home/{username}")
+        if user_dir.exists():
+            shutil.copytree(user_dir, local_dir, dirs_exist_ok=True)
+            print(f"Files from {user_dir} copied to {local_dir} successfully.")
+        else:
+            print(f"User directory {user_dir} does not exist.")
+    elif docker_uri.startswith('ssh:'):
+        os.system(f"scp -r {docker_uri}:/home/{username} {local_dir}")
+        print(f"Files from {docker_uri}:/home/{username} copied to {local_dir} successfully.")
+    else:
+        print("Unsupported DOCKER_URI scheme for copyout command.")
 
 if __name__ == '__main__':
     cli()
