@@ -7,7 +7,8 @@ from pathlib import Path
 import click
 import pandas
 from docker.errors import NotFound
-from jtlutil.flask.flaskapp import configure_config_tree
+from jtlutil.flask.flaskapp import configure_config_tree  
+from jtlutil.config import find_parent_dir
 
 from cspawn.init import init_app
 
@@ -40,7 +41,7 @@ def get_app(ctx):
     global _app
     if _app is None:
         log_level = get_logging_level(ctx)
-        _app = init_app(log_level=log_level)
+        _app = init_app(config_dir=find_parent_dir(), log_level=log_level)
     
     return _app
 
@@ -54,7 +55,9 @@ def get_logger(ctx):
 
 @lru_cache
 def get_config():
-    c =  configure_config_tree()
+    
+
+    c =  configure_config_tree(find_parent_dir())
     
     if len(c['__CONFIG_PATH']) == 0:
         raise Exception("No configuration files found. Maybe you are in the wrong directory?")
@@ -126,15 +129,17 @@ def ls(ctx):
 
 @host.command()
 @click.argument('service_name')
+@click.option('--no-wait', is_flag=True, help="Do not wait for the service to be ready.")
 @click.pass_context
-def start(ctx,service_name):
+def start(ctx, service_name, no_wait):
     """Start the specified service."""
     from time import sleep, time
     
-    app =  get_app(ctx)
+    app = get_app(ctx)
 
     s = app.csm.new_cs(service_name)
-    s.wait_until_ready(timeout=60)
+    if not no_wait:
+        s.wait_until_ready(timeout=60)
 
 
 
@@ -198,15 +203,22 @@ def prune(ctx, prune):
 @click.option('--purge', is_flag=True, help="Delete all probe records.")
 def purge(ctx, purge):
     
+    app = get_app(ctx)
+
     confirmation = input("Are you sure? Type 'yes' to proceed: ")
     if confirmation.lower() != 'yes':
         print("Operation cancelled.")
         return
     
-    app =  get_app(ctx)
-    app.csm.repo.delete_all()
+    for s in app.csm.list():
+        s.remove()
+        
+    print("All services removed successfully.")
+    
+    app.csm.collect_containers()
 
-
+    print("Cleaned database.")
+    
 @cli.group()
 def node():
     """Manage nodes in the cluster."""

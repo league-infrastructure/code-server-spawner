@@ -216,8 +216,16 @@ class CodeServerManager(DbServicesManager):
                                             username,
                                             self.config.HOSTNAME_TEMPLATE)
         
-        import yaml
-        logger.debug(f"Container Definition\n {yaml.dump(container_def)}")
+        #import yaml
+        #logger.debug(f"Container Definition\n {yaml.dump(container_def)}")
+        
+        self.make_user_dir(username)
+        
+        # For later, maybe there are other mounts. 
+        #for m in container_def.get('mounts', []):
+        #    host_dir, container_dir = m.split(':')
+            
+            
         
         try:
             s = self.run(**container_def)
