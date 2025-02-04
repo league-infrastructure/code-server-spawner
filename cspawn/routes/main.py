@@ -142,7 +142,7 @@ def home():
 def stop_server():
 
     server_id = request.args.get('server_id')
-    client = docker.DockerClient(base_url=current_app.app_config.SSH_URI)
+    client = docker.DockerClient(base_url=current_app.app_config.DOCKER_URI)
     
     if not current_user.is_staff or not server_id:
         

@@ -38,4 +38,4 @@ dev = [
 
 
 [project.scripts]
-cspawn = "cspawn.cli.ctl:cli"
+cspawnctl = "cspawn.cli.ctl:cli"
