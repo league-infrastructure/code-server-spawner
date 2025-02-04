@@ -42,7 +42,7 @@ loglevel = 'debug'
 # Command line: -p FILE or --pid FILE
 # Default: None
 # A filename to use for the PID file.
-pidfile = "/var/log/docker_flask_gunicorn.pid"
+#pidfile = "/var/log/docker_flask_gunicorn.pid"
 
 # Command line: --access-logfile FILE
 # Default: None

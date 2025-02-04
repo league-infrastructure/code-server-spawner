@@ -1,7 +1,7 @@
 
 from datetime import datetime
 
-from cspawn.app import app, get_db
+from cspawn.app import app 
 from flask import (current_app, redirect, render_template,
                    request, url_for, flash, redirect, render_template, 
     request, url_for)
@@ -14,8 +14,7 @@ def check_registration_code(code: str) -> bool:
 
 @app.route("/auth/register", methods=['GET', 'POST'])
 def auth_register():
-    
-    from cspawn.db import get_user_account, insert_user_account
+  
     
     form_data = {
         'username': '',
@@ -30,7 +29,7 @@ def auth_register():
         password = request.form.get('password', '')
         password_confirm = request.form.get('password_confirm', '')
         
-        db = get_db()
+    
 
         # Validate all fields are provided
         if not all([form_data['username'], password, password_confirm, form_data['registration_code']]):
@@ -44,7 +43,7 @@ def auth_register():
 
         # Check username availability
         try:
-            existing_user = get_user_account(db, form_data['username'])
+            existing_user = current_app.ua.get_user_account(form_data['username'])
            
             if existing_user:
                 flash('Username already exists', 'error')
@@ -67,7 +66,7 @@ def auth_register():
         try:
          
             create_time = datetime.now(timezone.utc)
-            insert_user_account(db, form_data['username'], password, create_time)
+            current_app.ua.insert_user_account(form_data['username'], password, create_time)
           
             flash('Account created. You can Login', 'success')
            
@@ -86,13 +85,12 @@ def auth_register():
 @app.route("/auth/up_login", methods=['POST'])
 def auth_uplogin():
     
-    from cspawn.db import get_user_account
+   
     from jtlutil.flask.flaskapp import User
     from jtlutil.flask.auth import login_user
     
     username = request.form.get('username')
     password = request.form.get('password')
-    db = get_db()
 
     # Validate input
     if not username or not password:
@@ -100,7 +98,7 @@ def auth_uplogin():
         return redirect(url_for('login'))
 
     # Get user account
-    user_account = get_user_account(db, username)
+    user_account = current_app.ua.get_user_account(username)
     
     if not user_account:
         flash('Invalid username or password', 'error')

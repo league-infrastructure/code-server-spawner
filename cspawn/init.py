@@ -7,7 +7,7 @@ from flask import Flask, current_app, g
 from jinja2 import Environment
 
 from jtlutil.flask.flaskapp import *
-from .db import create_keystroke_tables
+from .db import UserAccounts
 from .control import CodeServerManager
 
 
@@ -16,21 +16,6 @@ from flask_pymongo import PyMongo
 CI_FILE = "container_info.json"
 
 
-def get_db():
-    if "db" not in g:
-        g.db = sqlite3.connect(current_app.db_path)
-        g.db.row_factory = sqlite3.Row  # Optional: Return rows as dictionaries
-    return g.db
-
-
-def initialize_database(path: Path):
-
-    conn = sqlite3.connect(path)
-
-    create_keystroke_tables(conn)
-
-    conn.commit()
-    conn.close()
 
 def human_time_format(seconds):
 
@@ -73,31 +58,29 @@ def init_app(file: str | Path = None, log_level=None) -> Flask:
     app.login_manager.login_view = "login"
 
     # configure_config(app)
-    configure_config_tree(app)
+    
+    config = configure_config_tree()
+        # Set the Flask secret key
+    app.secret_key = config["SECRET_KEY"]
+    app.app_config = config
 
     # Initialize logger
     init_logger(app, log_level=log_level)
 
     app_dir, db_dir = configure_app_dir(app)
 
-    #app.logger.info(f"App dir: {app_dir}")
-    #app.logger.info(f"DB dir: {db_dir}")
+    
+    app.logger.info(f"App dir: {app_dir} DB dir: {db_dir}. CONFIGS: {app.app_config['__CONFIG_PATH']}")
 
 
     app.config["MONGO_URI"] = app.app_config["MONGO_URL"]
-
+    app.config['CSM_MONGO_DB_NAME'] = 'code-spawner'
     app.mongodb = PyMongo(app)
 
-    setup_sqlite_sessions(app)
-
-    # A regular sql database. For this database, we need to open and
-    # close per request.
-    app.db_path = db_dir / "app.db"
-
-    initialize_database(app.db_path)
-
-    app.user_db_path = db_dir / "users.db"
+    setup_sessions(app)
 
     app.csm = CodeServerManager(app)
+
+    app.ua = UserAccounts(app)
 
     return app

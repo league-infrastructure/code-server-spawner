@@ -12,3 +12,12 @@ After cloning, follow the [instructions for configuring secrets](https://github.
 
 
 
+## NFS Volumes
+
+
+docker volume create \
+  --driver local \
+  --opt type=nfs \
+  --opt o=addr=10.124.0.9,rw \
+  --opt device=:/mnt/student_repos \
+  student_repos
