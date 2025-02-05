@@ -15,5 +15,5 @@ names=(
 
 for name in "${names[@]}"; do
     echo "Starting host: $name"
-    cspawnctl host start  --no-wait "$name" 
+    cspawnctl -v host start  --no-wait "$name" 
 done

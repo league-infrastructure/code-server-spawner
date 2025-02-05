@@ -14,7 +14,6 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # the application crashes without emitting any logs due to buffering.
 ENV PYTHONUNBUFFERED=1
 
-
 # Install git with proper preparation and cleanup
 RUN apt-get update && \
     apt-get install -y \
@@ -62,15 +61,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 RUN python -m pip install /app
 
-# Switch to the non-privileged user to run the application.
-# USER appuser
-
-
-
-
 # Expose the port that the application listens on.
 EXPOSE 8000
-
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
