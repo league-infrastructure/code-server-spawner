@@ -2,29 +2,27 @@ import os
 from pathlib import Path
 import pytest
 import warnings
-
-
 import logging
 logger = logging.getLogger(__name__)
 
 logging.basicConfig(level=logging.ERROR)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
+
+
 
 warnings.filterwarnings("ignore")
 warnings.filterwarnings("ignore", module='passlib.handlers.bcrypt')
-
 
 this_dir  = Path(__file__).parent
 
 @pytest.fixture
 def app():
+    import cspawn
     from cspawn.init import init_app
     # Set the environment variable for the config directory
-    config_dir = Path(__file__).parent.parent 
+    config_dir = Path(cspawn.__file__).parent.parent
 
-    logging.debug(f"XXX config_dir: {config_dir}")
-
-    app = init_app(config_dir=config_dir, sqlitefile=this_dir/'test.db')
+    app = init_app(config_dir=config_dir, sqlfile=this_dir/'test.db')
     
     return app
 
@@ -37,7 +35,8 @@ def test_secret_key(app):
     
     
 def test_user_db(app):
-    from cspawn.models.users import User, db    
+    from cspawn.auth.models.user import User
+    from cspawn.init import db
 
     with app.app_context():
         db.create_all()
@@ -69,7 +68,8 @@ def test_user_db(app):
   
   
 def test_delete_all_users(app):
-    from cspawn.models.users import User, db    
+    from cspawn.auth.models.user import User
+    from cspawn.init import db
 
     with app.app_context():
         db.create_all()

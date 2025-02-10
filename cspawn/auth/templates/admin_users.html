@@ -1,0 +1,37 @@
+{% extends "page.html" %}
+
+{% block content %}
+<h1>Admin Users</h1>
+<table>
+    <thead>
+        <tr>
+            <th>Username</th>
+            <th>Email</th>
+            <th>OAuth Provider</th>
+            <th>OAuth ID</th>
+            <th>Avatar URL</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in users %}
+        <tr>
+            <td>{{ user.username }}</td>
+            <td>{{ user.email }}</td>
+            <td>{{ user.oauth_provider }}</td>
+            <td>{{ user.oauth_id }}</td>
+            <td><img src="{{ user.avatar_url }}" alt="Avatar" width="50"></td>
+            <td>
+                <form method="POST" action="{{ url_for('auth.admin_user', userid=user.id) }}">
+                    <button type="submit">Edit</button>
+                </form>
+                <form method="POST" action="{{ url_for('auth.admin_user', userid=user.id) }}">
+                    <input type="hidden" name="delete" value="true">
+                    <button type="submit">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

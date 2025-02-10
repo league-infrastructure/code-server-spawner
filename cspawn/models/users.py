@@ -10,7 +10,6 @@ from flask_dance.consumer.storage.sqla import OAuthConsumerMixin
 from cspawn.init import db
 
 
-
 # Association table for many-to-many relationship between User and Role
 user_roles = Table(
     'user_roles', db.metadata,
