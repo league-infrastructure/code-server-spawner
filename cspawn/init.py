@@ -25,7 +25,6 @@ default_context = {
     "current_user": current_user,
 }
 
-
 GOOGLE_LOGIN_SCOPES = [
     'https://www.googleapis.com/auth/userinfo.profile', 
     'https://www.googleapis.com/auth/userinfo.email', 
@@ -99,7 +98,7 @@ def init_app(config_dir=None , log_level=None, sqlfile=None) -> Flask:
 
     @login_manager.user_loader
     def load_user(user_id):
-        from cspawn.models.users import User
+        from cspawn.auth.models.user import User
 
         return User.query.get(user_id)
 

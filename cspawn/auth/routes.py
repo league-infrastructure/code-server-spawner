@@ -5,29 +5,35 @@ from oauthlib.oauth2.rfc6749.errors import TokenExpiredError, InvalidClientError
 
 from . import auth_bp, logger
 
+
+def default_context():
+    from cspawn.init import default_context # Breaks circular import
+    return default_context
+
 @auth_bp.route("/")
 def login_index():
     return redirect(url_for("auth.login"))
 
 @auth_bp.route("/profile")
 def profile():
-    from cspawn.init import default_context
+   
     if current_user.is_authenticated:
-        return render_template("profile.html", user=current_user, **default_context)
+        return render_template("profile.html", user=current_user, **default_context())
     else:
         return render_template("profile.html", user=None, **default_context)
 
 @auth_bp.route("/login")
 def login():
-    from cspawn.init import default_context
-    return render_template("login.html", **default_context)
+
+    return render_template("login.html", **default_context())
 
 @auth_bp.route("/login/google")
 def google_login():
     
-    from cspawn.models.users import User, db
+    from cspawn.auth.models.user import User, db
     
     if not google.authorized:
+        
         return redirect(url_for("google.login"))
     
     resp = google.get("/oauth2/v1/userinfo")
@@ -82,13 +88,13 @@ def logout():
 
 @auth_bp.route("/uplogin", methods=["POST", "GET"])
 def uplogin():
-    from cspawn.init import default_context
-    return render_template("login.html", **default_context)
+  
+    return render_template("login.html", **default_context())
 
 @auth_bp.route("/register", methods=["POST", "GET"])
 def register():
-    from cspawn.init import default_context
-    from cspawn.models.users import User, db
+    
+    from cspawn.auth.models.user import User, db
     
     if request.method == "POST":
         form = request.form
@@ -111,19 +117,47 @@ def register():
             db.session.commit()
         else:
             flash("Username is taken", "error")
-            return render_template("register.html", form=form, **default_context)
+            return render_template("register.html", form=form, **default_context())
         
         flash("User created. You can login", "success")
         return redirect(url_for("auth.login"))
     else:
         form = {}
     
-    return render_template("register.html", form=form, **default_context)
+    return render_template("register.html", form=form, **default_context())
 
-@auth_bp.route("/xlogin")
-def xlogin():
-    provider = request.args.get('provider')
-    if provider == 'google':
-        return redirect(url_for("google.login"))
-    # Add more providers here as needed
-    return "Invalid provider", 400
+
+@auth_bp.route("/admin/users")
+@login_required
+def admin_users():
+    from cspawn.auth.models.user import User, db
+    users = User.query.all()
+    return render_template("admin_users.html", users=users, **default_context())
+
+
+@auth_bp.route("/admin/user/<int:userid>", methods=["GET", "POST"])
+@login_required
+def admin_user(userid):
+    from cspawn.auth.models.user import User, db
+     
+    user = User.query.get_or_404(userid)
+    
+    if request.method == "POST":
+        if "delete" in request.form:
+            db.session.delete(user)
+            db.session.commit()
+            flash("User deleted", "success")
+            return redirect(url_for("auth.admin_users"))
+        
+        user.username = request.form.get("username")
+        user.email = request.form.get("email")
+        user.oauth_provider = request.form.get("oauth_provider")
+        user.oauth_id = request.form.get("oauth_id")
+        user.avatar_url = request.form.get("avatar_url")
+        
+        db.session.commit()
+        flash("User updated", "success")
+        return redirect(url_for("auth.admin_user", userid=userid))
+    
+    return render_template("admin_user.html", user=user)
+
