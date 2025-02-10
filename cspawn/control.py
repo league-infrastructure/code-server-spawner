@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from time import sleep
@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 
 import docker
 import paramiko
+from pymongo.collection import Collection
+from pymongo.database import Database as MongoDatabase
 import pytz
 import requests
 from flask import current_app
@@ -17,7 +19,6 @@ from jtlutil.docker.proc import Service
 from pymongo import MongoClient
 from slugify import slugify
 
-from cspawn.db import KeyrateDBHandler
 
 logger = logging.getLogger('cspawnctl')
 
@@ -154,6 +155,59 @@ def define_cs_container(config, image, username, hostname_template, repo=None, e
         "mounts": [f"{str(Path(config.USER_DIRS)/slugify(username))}:/workspace"],
         
     }
+
+
+class KeyrateDBHandler:
+    def __init__(self, mongo_db: MongoDatabase):
+
+        assert isinstance(mongo_db, MongoDatabase)
+
+        self.db = mongo_db
+        self.collection: Collection = self.db["keyrate"]
+        self.collection.create_index("serviceID")
+        self.collection.create_index("timestamp")
+
+    def add_report(self, report: Dict):
+        self.collection.insert_one(report)
+
+    def summarize_latest(self, services: Optional[List[str]] = None) :
+
+
+        pipeline = [
+            {"$match": {"serviceID": {"$in": services}}} if services else {"$match": {}},
+            {"$sort": {"timestamp": -1}},
+            {"$group": {
+                "_id": "$serviceID",
+                "latestReport": {"$first": "$$ROOT"}
+            }}
+        ]
+
+        results = self.collection.aggregate(pipeline)
+
+        now = datetime.now(timezone.utc)
+
+        for result in results:
+            report = result["latestReport"]
+            timestamp = datetime.fromisoformat(report["timestamp"])
+            heartbeat_ago = int((now - timestamp).total_seconds())
+
+
+            yield report
+            continue
+
+            yield KsSummary(
+                timestamp=report["timestamp"],
+                containerName=report["containerName"],
+                average30m=report["average30m"],
+                heartbeatAgo=heartbeat_ago
+            )
+
+
+    def delete_all(self):
+        self.collection.delete_many({})
+
+    def __len__(self):
+        return self.collection.count_documents({})
 
 class CodeServerManager(DbServicesManager):
     

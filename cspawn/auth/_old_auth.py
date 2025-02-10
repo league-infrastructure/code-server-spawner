@@ -7,12 +7,14 @@ from flask import (current_app, redirect, render_template,
     request, url_for)
 
 from datetime import datetime, timezone
-
+from cspawn.init import default_context
 
 def check_registration_code(code: str) -> bool:
     return code == 'Code4Life'
 
-@app.route("/auth/register", methods=['GET', 'POST'])
+
+
+@app.route("/x/auth/register", methods=['GET', 'POST'])
 def auth_register():
   
     
@@ -82,7 +84,7 @@ def auth_register():
     # GET request - display the registration form
     return render_template('register.html', form=form_data)
 
-@app.route("/auth/up_login", methods=['POST'])
+@app.route("/x/auth/up_login", methods=['POST'])
 def auth_uplogin():
     
    

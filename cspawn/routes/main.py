@@ -10,7 +10,7 @@ from pathlib import Path
 import docker
 import requests
 from cspawn.__version__ import __version__ as version
-from cspawn.init import CI_FILE
+
 from cspawn.app import app
 
 from flask import (abort, current_app, g, jsonify, redirect, render_template,
@@ -40,7 +40,8 @@ def ensure_session():
 @app.before_request
 def before_request():
     ensure_session()
-    app.load_user(current_app)
+    
+    #app.load_user(current_app)
 
 
 
@@ -86,8 +87,6 @@ empty_status = {
     'port': None
 }
 
-
-
 @app.route("/")
 def index():
     if current_user.is_authenticated:
@@ -95,15 +94,8 @@ def index():
     else:
         return redirect(url_for("login"))
     
-@app.route("/login")
-def login():
-    
-    return render_template("login.html", **context)
-
-
 
 def unk_filter(v):
-
     return v if  v  else "?"
 
 

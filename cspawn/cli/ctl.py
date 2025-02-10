@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.ERROR)
 
 from cspawn.control import logger as ctrl_logger
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("cspawnctl")
 
 def get_logging_level(ctx): 
     
@@ -125,7 +125,7 @@ def ls(ctx):
     print(tabulate(rows, headers="keys"))
         
 
-    
+
 
 @host.command()
 @click.argument('service_name')
@@ -254,15 +254,12 @@ def run(ctx):
     logger = get_logger(ctx)
     for c in app.csm.collect_containers(generate=True):
         print(c['service_name'])
-    
 
 @probe.command()
 @click.option('--mem', is_flag=True, help="Collect memory usage information.")
 def mem(mem):
     pass
 
-
-    
 @cli.group()
 def telem():
     """Telemetry commands."""
@@ -272,10 +269,18 @@ def telem():
 @click.pass_context
 def summary(ctx):
     """Show a summary of telemetry data."""
-    app = get_app(ctx)
-    
+    from itertools import islice
     
 
+    app = get_app(ctx)
+    
+    a = [ e.service_name for e in app.csm.repo.all]
+    
+   
+    for r in islice(app.csm.keyrate.summarize_latest(a), 100):
+        print(r)
+    
+    
 @telem.command()
 @click.pass_context
 def count(ctx):
@@ -373,6 +378,28 @@ def copyout(ctx, username, local_dir):
         print(f"Files from {docker_uri}:/home/{username} copied to {local_dir} successfully.")
     else:
         print("Unsupported DOCKER_URI scheme for copyout command.")
+
+
+    @cli.group()
+    def db():
+        """Database commands."""
+        pass
+
+    @db.command()
+    @click.pass_context
+    def create(ctx):
+        """Create all database tables."""
+        app = get_app(ctx)
+        app.db.create_all()
+        print("Database tables created successfully.")
+
+    @db.command()
+    @click.pass_context
+    def destroy(ctx):
+        """Destroy all database tables."""
+        app = get_app(ctx)
+        app.db.drop_all()
+        print("Database tables destroyed successfully.")
 
 if __name__ == '__main__':
     cli()
