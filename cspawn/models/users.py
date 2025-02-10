@@ -11,8 +11,6 @@ from cspawn.init import db
 
 
 
-
-
 # Association table for many-to-many relationship between User and Role
 user_roles = Table(
     'user_roles', db.metadata,
@@ -55,27 +53,6 @@ class Class(db.Model):
     def __repr__(self):
         return f"<Class(id={self.id}, name={self.name})>"
 
-
-class User(UserMixin, db.Model):
-    __tablename__ = 'users'
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    username = Column(String(50), unique=True, nullable=True)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    password = Column(PasswordType(schemes=['bcrypt']), nullable=True)
-    
-    # OAuth fields
-    oauth_provider = Column(String(50), nullable=True)  # 'google', 'github', 'cleaver'
-    oauth_id = Column(String(255), unique=True, nullable=True)  # Provider-specific ID
-    avatar_url = Column(String(500), nullable=True)
-    
-    is_admin = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=func.now())
-
-    roles = relationship('Role', secondary=user_roles, back_populates='users')
-
-    def __repr__(self):
-        return f"<User(id={self.id}, username={self.username}, email={self.email}, provider={self.oauth_provider})>"
 
 
 class Role(db.Model):

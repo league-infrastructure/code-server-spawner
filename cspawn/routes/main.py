@@ -20,7 +20,6 @@ from jtlutil.flask.flaskapp import insert_query_arg, is_running_under_gunicorn
 from slugify import slugify
 from humanize import naturaltime, naturaldelta
 
-
 context = {
     "version": version,
     "current_user": current_user,
@@ -97,7 +96,6 @@ def index():
 
 def unk_filter(v):
     return v if  v  else "?"
-
 
 class NoHost:
     
@@ -227,7 +225,6 @@ def telem():
 
         
         current_app.csm.keyrate.add_report(request.get_json())
-    
     
     return jsonify("OK")
         

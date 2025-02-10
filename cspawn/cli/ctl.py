@@ -9,7 +9,7 @@ import pandas
 from docker.errors import NotFound
 from jtlutil.flask.flaskapp import configure_config_tree  
 from jtlutil.config import find_parent_dir
-
+from cspawn.models.users import *
 from cspawn.init import init_app
 
 logging.basicConfig(level=logging.ERROR)
@@ -380,24 +380,27 @@ def copyout(ctx, username, local_dir):
         print("Unsupported DOCKER_URI scheme for copyout command.")
 
 
-    @cli.group()
-    def db():
-        """Database commands."""
-        pass
+@cli.group()
+def db():
+    """Database commands."""
+    pass
 
-    @db.command()
-    @click.pass_context
-    def create(ctx):
-        """Create all database tables."""
-        app = get_app(ctx)
+@db.command()
+@click.pass_context
+def create(ctx):
+    """Create all database tables."""
+    
+    app = get_app(ctx)
+    with app.app_context():
         app.db.create_all()
         print("Database tables created successfully.")
 
-    @db.command()
-    @click.pass_context
-    def destroy(ctx):
-        """Destroy all database tables."""
-        app = get_app(ctx)
+@db.command()
+@click.pass_context
+def destroy(ctx):
+    """Destroy all database tables."""
+    app = get_app(ctx)
+    with app.app_context():
         app.db.drop_all()
         print("Database tables destroyed successfully.")
 

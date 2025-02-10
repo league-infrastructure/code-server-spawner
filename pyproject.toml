@@ -31,6 +31,7 @@ dependencies = [
     "cspawn",
     "passlib>=1.7.4",
     "flask-dance>=7.1.0",
+    "flask-migrate>=4.1.0",
 ]
 
 
