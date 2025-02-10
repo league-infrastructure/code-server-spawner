@@ -20,7 +20,7 @@
                     <p class="text-muted flex-grow-1">
                         Sign in quickly and securely using your Google account.
                     </p>
-                    <a href="{{ url_for('auth.jtl_ga_auth_login') }}" class="d-grid">
+                    <a href="{{ url_for('auth.google_login') }}" class="d-grid">
                         <button type="button" class="btn btn-outline-primary btn-lg">
                                 <svg class="me-2" style="height: 1.5em; vertical-align: middle;" viewBox="0 0 24 24">
                                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -40,7 +40,7 @@
             <div class="card h-100">
                 <div class="card-body d-flex flex-column">
                     <h2 class="card-title mb-4">Login with Username</h2>
-                    <form action="{{ url_for('auth_uplogin') }}" method="POST" class="flex-grow-1 d-flex flex-column">
+                    <form action="{{ url_for('auth.uplogin') }}" method="POST" class="flex-grow-1 d-flex flex-column">
                         <div class="mb-3">
                             <label for="username" class="form-label">Username:</label>
                             <input type="text" class="form-control" id="username" name="username" required>
@@ -66,7 +66,7 @@
             <div class="card">
                 <div class="card-body text-center">
                     <h2 class="card-title mb-4">New to Code Server?</h2>
-                    <form action="{{ url_for('auth_register')}}" method="GET">
+                    <form action="{{ url_for('auth.register')}}" method="GET">
                         <div class="d-grid">
                             <button type="submit" class="btn btn-success btn-lg">
                                 Create New Account

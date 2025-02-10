@@ -5,6 +5,7 @@ description = "Manages code server containers"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "authlib>=1.4.1",
     "click>=8.1.8",
     "flask>=3.1.0",
     "flask-httpauth>=4.8.0",
@@ -17,13 +18,19 @@ dependencies = [
     "gunicorn>=23.0.0",
     "humanize>=4.11.0",
     "jinja2>=3.1.5",
-    "jtlutil @ git+https://github.com/league-infrastructure/jtlutil",
+    "jtlutil",
+    #"jtlutil @ git+https://github.com/league-infrastructure/jtlutil",
     "pandas>=2.2.3",
+    "psycopg2-binary>=2.9.10",
     "pydantic>=2.10.6",
     "python-dotenv>=1.0.1",
+    "sqlalchemy-utils>=0.41.2",
     "sqlitedict>=2.1.0",
     "tabulate>=0.9.0",
     "tenacity>=9.0.0",
+    "cspawn",
+    "passlib>=1.7.4",
+    "flask-dance>=7.1.0",
 ]
 
 
@@ -31,9 +38,13 @@ dependencies = [
 where = ["."]
 include = ["cspawn*"]  # Include all subpackages
 
+[tool.uv.sources]
+jtlutil = { path = "../jtlutil" }
+
 [dependency-groups]
 dev = [
     "ansible>=11.2.0",
+    "pytest>=8.3.4",
 ]
 
 

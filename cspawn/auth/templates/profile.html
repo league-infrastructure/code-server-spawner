@@ -1,0 +1,51 @@
+{% extends "page.html" %}
+
+{% block title %}Profile - League Code Server{% endblock %}
+
+{% block header %}
+<div class="text-center">
+    <h1 class="mb-4">User Profile</h1>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-6 offset-md-3">
+            <div class="card">
+                <div class="card-body">
+                    <h2 class="card-title">Profile Details</h2>
+                    {% if user %}
+                        <p><strong>Username:</strong> {{ user.username }}</p>
+                        <p><strong>Email:</strong> {{ user.email }}</p>
+                        <p><strong>OAuth Provider:</strong> {{ user.oauth_provider }}</p>
+                        <p><strong>OAuth ID:</strong> {{ user.oauth_id }}</p>
+                        <p><strong>Avatar:</strong></p>
+                        <img src="{{ user.avatar_url }}" alt="User Avatar" class="img-fluid rounded-circle">
+                        <div class="mt-4">
+                            <a href="{{ url_for('auth.logout') }}" class="btn btn-secondary">Logout</a>
+                        </div>
+                    {% else %}
+                        <p>You are not logged in.</p>
+                        <div class="mt-4">
+                            <a href="{{ url_for('auth.login') }}" class="btn btn-primary">Login</a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block footer %}
+<div class="row mt-4">
+    <div class="col">
+        <span class="text-muted">code-server-spawner {{version}}</span>
+    </div>
+    <div class="col text-end">
+        <img class="inline me-2" src="{{ url_for('static', filename='flag.png') }}" alt="Flag">
+        <a href="https://www.jointheleague.org">Join the League</a>
+    </div>
+</div>
+{% endblock %}
