@@ -35,7 +35,7 @@ def test_secret_key(app):
     
     
 def test_user_db(app):
-    from cspawn.auth.models.user import User
+    from cspawn.auth.models import User
     from cspawn.init import db
 
     with app.app_context():
@@ -68,7 +68,7 @@ def test_user_db(app):
   
   
 def test_delete_all_users(app):
-    from cspawn.auth.models.user import User
+    from cspawn.auth.models import User
     from cspawn.init import db
 
     with app.app_context():

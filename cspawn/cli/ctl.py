@@ -9,7 +9,7 @@ import pandas
 from docker.errors import NotFound
 from jtlutil.flask.flaskapp import configure_config_tree  
 from jtlutil.config import find_parent_dir
-from cspawn.models.users import *
+from cspawn.users.models import *
 from cspawn.init import init_app
 
 logging.basicConfig(level=logging.ERROR)

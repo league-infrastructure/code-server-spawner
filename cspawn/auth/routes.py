@@ -30,7 +30,7 @@ def login():
 @auth_bp.route("/login/google")
 def google_login():
     
-    from cspawn.auth.models.user import User, db
+    from cspawn.auth.models import User, db
     
     if not google.authorized:
         
@@ -94,7 +94,7 @@ def uplogin():
 @auth_bp.route("/register", methods=["POST", "GET"])
 def register():
     
-    from cspawn.auth.models.user import User, db
+    from cspawn.auth.models import User, db
     
     if request.method == "POST":
         form = request.form
@@ -130,7 +130,7 @@ def register():
 @auth_bp.route("/admin/users")
 @login_required
 def admin_users():
-    from cspawn.auth.models.user import User, db
+    from cspawn.auth.models import User, db
     users = User.query.all()
     return render_template("admin_users.html", users=users, **default_context())
 
@@ -138,7 +138,7 @@ def admin_users():
 @auth_bp.route("/admin/user/<int:userid>", methods=["GET", "POST"])
 @login_required
 def admin_user(userid):
-    from cspawn.auth.models.user import User, db
+    from cspawn.auth.models import User, db
      
     user = User.query.get_or_404(userid)
     

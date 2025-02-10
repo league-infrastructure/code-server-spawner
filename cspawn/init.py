@@ -22,7 +22,6 @@ db = SQLAlchemy(model_class=Base)
 
 default_context = {
     "version": version,
-    "current_user": current_user,
 }
 
 GOOGLE_LOGIN_SCOPES = [
@@ -98,7 +97,7 @@ def init_app(config_dir=None , log_level=None, sqlfile=None) -> Flask:
 
     @login_manager.user_loader
     def load_user(user_id):
-        from cspawn.auth.models.user import User
+        from cspawn.auth.models import User
 
         return User.query.get(user_id)
 
