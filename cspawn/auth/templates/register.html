@@ -1,6 +1,6 @@
 {% extends "page.html" %}
 
-{% block title %}Register - League Code Server{% endblock %}
+{% block title %}Register For An Account{% endblock %}
 
 {% block header %}
 <div class="text-center">
@@ -14,7 +14,7 @@
         <div class="card-body">
             <h2 class="card-title mb-4">Registration Details</h2>
             
-            <form action="{{ url_for('auth_register') }}" method="POST">
+            <form action="{{ url_for('auth.register') }}" method="POST">
                 <!-- Username Field -->
                 <div class="mb-3">
                     <label for="username" class="form-label">Username:</label>
@@ -66,25 +66,13 @@
                         <button type="submit" class="btn btn-primary btn-lg w-100">Create Account</button>
                     </div>
                     <div class="col-6">
-                        <a href="{{ url_for('login') }}" class="btn btn-outline-secondary btn-lg w-100">
+                        <a href="{{ url_for('auth.login') }}" class="btn btn-outline-secondary btn-lg w-100">
                             Back to Login
                         </a>
                     </div>
                 </div>
             </form>
         </div>
-    </div>
-</div>
-{% endblock %}
-
-{% block footer %}
-<div class="row mt-4">
-    <div class="col">
-        <span class="text-muted">code-server-spawner {{version}}</span>
-    </div>
-    <div class="col text-end">
-        <img class="inline me-2" src="{{ url_for('static', filename='flag.png') }}" alt="Flag">
-        <a href="https://www.jointheleague.org">Join the League</a>
     </div>
 </div>
 {% endblock %}

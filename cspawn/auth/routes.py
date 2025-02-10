@@ -1,16 +1,9 @@
-from flask import Blueprint, redirect, url_for, request, render_template, session
+from flask import Blueprint, redirect, url_for, request, render_template, session, flash
 from flask_login import login_user, current_user, login_required, logout_user
 from flask_dance.contrib.google import google
 from oauthlib.oauth2.rfc6749.errors import TokenExpiredError, InvalidClientError
 
-import logging  
-
-auth_bp = Blueprint('auth', __name__, template_folder='templates')
-
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.ERROR)
-logger.setLevel(logging.DEBUG)
-logger.debug("Auth blueprint loaded")
+from . import auth_bp, logger
 
 @auth_bp.route("/")
 def login_index():
@@ -87,15 +80,45 @@ def logout():
     logout_user()
     return redirect(url_for("auth.login"))
 
-@auth_bp.route("/uplogin")
+@auth_bp.route("/uplogin", methods=["POST", "GET"])
 def uplogin():
     from cspawn.init import default_context
     return render_template("login.html", **default_context)
 
-@auth_bp.route("/register")
+@auth_bp.route("/register", methods=["POST", "GET"])
 def register():
     from cspawn.init import default_context
-    return render_template("login.html", **default_context)
+    from cspawn.models.users import User, db
+    
+    if request.method == "POST":
+        form = request.form
+        
+        username = form.get("username")       
+        password = form.get("password")
+        
+        user = User.query.filter_by(username=username).first()
+        if user is None:
+            user = User(
+                username=username,
+                email=None,
+                oauth_provider=None,
+                oauth_id=None,
+                avatar_url=None,
+                password=password
+            )
+   
+            db.session.add(user)
+            db.session.commit()
+        else:
+            flash("Username is taken", "error")
+            return render_template("register.html", form=form, **default_context)
+        
+        flash("User created. You can login", "success")
+        return redirect(url_for("auth.login"))
+    else:
+        form = {}
+    
+    return render_template("register.html", form=form, **default_context)
 
 @auth_bp.route("/xlogin")
 def xlogin():

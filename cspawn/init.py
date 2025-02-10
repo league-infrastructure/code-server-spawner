@@ -4,6 +4,7 @@ from flask_dance.contrib.google import make_google_blueprint
 from flask_login import LoginManager, current_user
 from flask_pymongo import PyMongo
 from flask_sqlalchemy import SQLAlchemy
+
 from sqlalchemy.orm import DeclarativeBase
 
 from cspawn.__version__ import __version__ as version
@@ -31,7 +32,7 @@ GOOGLE_LOGIN_SCOPES = [
     'openid',
 ]
 
-def init_app(config_dir=None , log_level=None ) -> Flask:
+def init_app(config_dir=None , log_level=None, sqlfile=None) -> Flask:
     # Initialize Flask application
     app = Flask(__name__)
 
@@ -60,7 +61,10 @@ def init_app(config_dir=None , log_level=None ) -> Flask:
     app.mongodb = PyMongo(app)
 
     # Configure PostgreSQL database
-    app.config['SQLALCHEMY_DATABASE_URI'] = app.app_config["POSTGRES_URL"]
+    if sqlfile is not None:
+        app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{sqlfile}"
+    else:
+        app.config['SQLALCHEMY_DATABASE_URI'] = app.app_config["POSTGRES_URL"]
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     app.db = db
