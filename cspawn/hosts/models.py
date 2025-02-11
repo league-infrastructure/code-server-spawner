@@ -4,16 +4,14 @@ from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 
 from cspawn.init import db
-from cspawn.users.models import Role
-
+from cspawn.auth.models import User
 
 class CodeHost(db.Model):
     __tablename__ = 'code_host'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    role_id = Column(Integer, ForeignKey('roles.id'), nullable=False)
-    role = relationship("Role", backref="code_host")
-    
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    user = relationship("User", backref="code_hosts")
         
     service_id = Column(String, nullable=False)
     service_name = Column(String, nullable=False)
@@ -34,14 +32,14 @@ class FileStat(db.Model):
     id = Column(Integer, primary_key=True, autoincrement=True)
     keystrokes = Column(Integer, nullable=False)
     last_modified = Column(String, nullable=False)
+    keystroke_report_id = Column(Integer, ForeignKey('keystroke_reports.id'), nullable=False)
 
 class KeystrokeReport(db.Model):
     __tablename__ = 'keystroke_reports'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     code_host_id = Column(Integer, ForeignKey('code_host.id'), nullable=False)
-    code_host = relationship("CodeHost", backref="keystroke_reports")
-    
+
     timestamp = Column(String, nullable=False)
     instance_id = Column(String, nullable=False)
     
@@ -67,7 +65,8 @@ class KeystrokeReport(db.Model):
         for file_stat_data in data['file_stats']:
             file_stat = FileStat(
                 keystrokes=file_stat_data['keystrokes'],
-                last_modified=file_stat_data['last_modified']
+                last_modified=file_stat_data['last_modified'],
+                keystroke_report=keystroke_report
             )
             keystroke_report.file_stats.append(file_stat)
     

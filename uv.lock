@@ -316,6 +316,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "authlib" },
     { name = "click" },
+    { name = "faker" },
     { name = "flask" },
     { name = "flask-dance" },
     { name = "flask-httpauth" },
@@ -352,6 +353,7 @@ requires-dist = [
     { name = "authlib", specifier = ">=1.4.1" },
     { name = "click", specifier = ">=8.1.8" },
     { name = "cspawn" },
+    { name = "faker", specifier = ">=36.1.0" },
     { name = "flask", specifier = ">=3.1.0" },
     { name = "flask-dance", specifier = ">=7.1.0" },
     { name = "flask-httpauth", specifier = ">=4.8.0" },
@@ -443,6 +445,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/91/50/a9d80c47ff289c611ff12e63f7c5d13942c65d68125160cefd768c73e6e4/executing-2.2.0.tar.gz", hash = "sha256:5d108c028108fe2551d1a7b2e8b713341e2cb4fc0aa7dcf966fa4327a5226755", size = 978693 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7b/8f/c4d9bafc34ad7ad5d8dc16dd1347ee0e507a52c3adb6bfa8887e1c6a26ba/executing-2.2.0-py2.py3-none-any.whl", hash = "sha256:11387150cad388d62750327a53d3339fad4888b39a6fe233c3afbb54ecffd3aa", size = 26702 },
+]
+
+[[package]]
+name = "faker"
+version = "36.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "tzdata" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/50/00/43012033ef13ecd4bf00d8d936508a49abaf1a66f8d420db3b7aaafd42b3/faker-36.1.0.tar.gz", hash = "sha256:f40510350aecfe006f45cb3f8879b35e861367cf347f51a7f2ca2c0571fdcc0b", size = 1874804 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/eb/02/72c93c1df2eff2502bfb94d6c3937192c1090c8095c389bc24533a55d327/Faker-36.1.0-py3-none-any.whl", hash = "sha256:aa0b93487d3adf7cd89953d172e3df896cb7b35d8a5222c0da873edbe2f7adf5", size = 1917678 },
 ]
 
 [[package]]

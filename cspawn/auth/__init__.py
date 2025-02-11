@@ -7,6 +7,5 @@ import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.ERROR)
 logger.setLevel(logging.ERROR)
-logger.debug("Auth blueprint loaded")
 
 from .routes import *
