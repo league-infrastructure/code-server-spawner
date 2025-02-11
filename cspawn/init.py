@@ -3,9 +3,7 @@ from flask import Flask, g
 from flask_dance.contrib.google import make_google_blueprint
 from flask_login import LoginManager, current_user
 from flask_pymongo import PyMongo
-from flask_sqlalchemy import SQLAlchemy
 
-from sqlalchemy.orm import DeclarativeBase
 
 from cspawn.__version__ import __version__ as version
 
@@ -16,11 +14,7 @@ from .control import CodeServerManager
 from .util import (configure_app_dir, configure_config_tree, human_time_format,
                    init_logger, setup_sessions)
 
-
-class Base(DeclarativeBase):
-  pass
-
-db = SQLAlchemy(model_class=Base)
+from .models import db
 
 default_context = {
     "version": version,
@@ -99,7 +93,7 @@ def init_app(config_dir=None , log_level=None, sqlfile=None) -> Flask:
 
     @login_manager.user_loader
     def load_user(user_id):
-        from cspawn.auth.models import User
+        from cspawn.models import User
 
         return User.query.get(user_id)
 

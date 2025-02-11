@@ -19,7 +19,6 @@ from jtlutil.docker.proc import Service
 from pymongo import MongoClient
 from slugify import slugify
 
-
 logger = logging.getLogger('cspawnctl')
 
 class CSMService(Service):

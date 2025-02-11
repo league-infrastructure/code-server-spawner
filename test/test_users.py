@@ -5,6 +5,8 @@ import warnings
 
 
 import logging
+
+from cspawn.models import User
 logger = logging.getLogger(__name__)
 
 logging.basicConfig(level=logging.ERROR)
@@ -36,7 +38,7 @@ def test_secret_key(app):
     
     
 def test_user_db(app):
-    from cspawn.users.models import User, db    
+    from cspawn.users.models import db    
 
     with app.app_context():
         db.create_all()
@@ -68,7 +70,7 @@ def test_user_db(app):
   
   
 def test_delete_all_users(app):
-    from cspawn.users.models import User, db    
+    from cspawn.users.models import db    
 
     with app.app_context():
         db.create_all()
