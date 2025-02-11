@@ -11,8 +11,7 @@ import docker
 import requests
 from cspawn.__version__ import __version__ as version
 
-from cspawn.app import app
-
+from cspawn.main import main_bp, logger
 
 from flask import (abort, current_app, g, jsonify, redirect, render_template,
                    request, session, url_for, flash)
@@ -37,7 +36,7 @@ def ensure_session():
     else:
         pass
 
-@app.before_request
+@main_bp.before_request
 def before_request():
     ensure_session()
     
@@ -89,13 +88,13 @@ empty_status = {
 
 def unk_filter(v):
     return v if  v  else "?"
-app.jinja_env.filters['unk_filter'] = unk_filter
 
-class NoHost:
-    status = 'does not exist'
+@main_bp.before_app_request
+def add_template_filters():
+    current_app.jinja_env.filters['unk_filter'] = unk_filter
 
 
-@app.route("/")
+@main_bp.route("/")
 def index():
 
 
@@ -118,7 +117,7 @@ def index():
     return render_template("index.html", **context)
         
 
-@app.route("/stop")
+@main_bp.route("/stop")
 @login_required
 def stop_server():
 
@@ -150,7 +149,7 @@ def stop_server():
         flash("Server stop disallowed", "error")
         return redirect(url_for('home'))
         
-@app.route("/start")
+@main_bp.route("/start")
 @login_required
 def start_server():
     from docker.errors import NotFound, APIError
@@ -191,7 +190,7 @@ def start_server():
     next_url = url_for('start_server', iteration=iteration + 1, )
     return render_template('loading.html', iteration=iteration, next_url=next_url, **ctx, **context)
 
-@app.route("/service/<service_id>/is_ready", methods=["GET"])
+@main_bp.route("/service/<service_id>/is_ready", methods=["GET"])
 @login_required
 def server_is_ready(service_id):
     from docker.errors import NotFound 
@@ -205,12 +204,12 @@ def server_is_ready(service_id):
     except NotFound as e:
         return jsonify({"status": "error", "message": str(e)})
 
-@app.route("/private/staff")
+@main_bp.route("/private/staff")
 @staff_required
 def staff():
     return render_template("private-staff.html", **context)
 
-@app.route("/telem", methods=["GET", "POST"])
+@main_bp.route("/telem", methods=["GET", "POST"])
 def telem():
     if request.method == "POST":
 
