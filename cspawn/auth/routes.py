@@ -1,15 +1,20 @@
-from flask import Blueprint, redirect, url_for, request, render_template, session, flash, current_app
-from flask_login import login_user, current_user, login_required, logout_user
-from flask_dance.contrib.google import google
-from oauthlib.oauth2.rfc6749.errors import TokenExpiredError, InvalidClientError
 import json
+
+from flask import (Blueprint, current_app, flash, redirect, render_template,
+                   request, session, url_for)
+from flask_dance.contrib.google import google
+from flask_login import current_user, login_required, login_user, logout_user
+from oauthlib.oauth2.rfc6749.errors import (InvalidClientError,
+                                            TokenExpiredError)
+
 from cspawn.models import User, db
+from cspawn.util import role_from_email
 
 from . import auth_bp, logger
 
 
 def default_context():
-    from cspawn.init import default_context # Breaks circular import
+    from cspawn.init import default_context  # Breaks circular import
     return default_context
 
 @auth_bp.route("/")
@@ -53,10 +58,10 @@ def google_login():
     
     email = user_info.get("email")  
     
-    if email in json.loads(current_app.app_config["ADMIN_EMAILS"]):
-        is_admin = True
-    else:
-        is_admin = False
+    
+    role = role_from_email(current_app.app_config, email)
+    
+
         
     
     user = User.query.filter_by(email=user_info["email"]).first()
@@ -64,7 +69,9 @@ def google_login():
         user = User(
             username=None,
             user_id=user_info["id"],
-            is_admin=is_admin,
+            is_admin= role == "admin",
+            is_instructor= role == "instructor" or role == "admin",
+            is_student= role == "student",
             email=user_info.get("email"),
             oauth_provider="google",
             oauth_id=user_info["id"],
@@ -86,22 +93,26 @@ def logout():
     # Revoke the token
     if google.authorized:
         token = google.blueprint.token["access_token"]
-        resp = google.post(
-            "https://accounts.google.com/o/oauth2/revoke",
-            params={"token": token},
-            headers={"content-type": "application/x-www-form-urlencoded"}
-        )
-        if resp.ok:
-            logger.info("Token revoked successfully")
-        else:
-            logger.error("Failed to revoke token")
+        try:
+            resp = google.post(
+                "https://accounts.google.com/o/oauth2/revoke",
+                params={"token": token},
+                headers={"content-type": "application/x-www-form-urlencoded"}
+            )
+            if resp.ok:
+                logger.info("Token revoked successfully")
+            else:
+                logger.error("Failed to revoke token")
+        except TokenExpiredError as e:
+            logger.error("Token expired")
     
     # Clear the session
     session.clear()
     
     # Log out the user
     logout_user()
-    return redirect(url_for("auth.login"))
+    
+    return redirect(url_for("index"))
 
 @auth_bp.route("/uplogin", methods=["POST", "GET"])
 def uplogin():
