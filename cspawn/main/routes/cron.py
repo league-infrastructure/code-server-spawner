@@ -2,9 +2,11 @@
 
 
 from flask import current_app, jsonify
-from cspawn.app import app
 
-@app.route("/cron/minutely")
+from cspawn.main import main_bp, logger
+
+
+@main_bp.route("/cron/minutely")
 def minutely():
     current_app.logger.info("Minutely cron job")
 
@@ -12,13 +14,13 @@ def minutely():
 
     return jsonify({"status": "OK"})
 
-@app.route("/cron/hourly")
+@main_bp.route("/cron/hourly")
 def hourly():
     current_app.logger.info("Hourly cron job")
     
     return jsonify({"status": "OK"})
 
-@app.route("/cron/daily")
+@main_bp.route("/cron/daily")
 def daily():
     current_app.logger.info("Daily cron job")
     

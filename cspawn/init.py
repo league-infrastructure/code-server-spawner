@@ -10,6 +10,7 @@ from cspawn.__version__ import __version__ as version
 from .auth import auth_bp  
 from .hosts import hosts_bp 
 from .users import users_bp
+from .main import main_bp
 from .hosts.control import CodeServerManager
 from .util import (configure_app_dir, configure_config_tree, human_time_format,
                    init_logger, setup_sessions)
@@ -85,6 +86,7 @@ def init_app(config_dir=None , log_level=None, sqlfile=None) -> Flask:
 
     # Register the auth blueprint
     app.register_blueprint(auth_bp, url_prefix="/auth")
+    app.register_blueprint(main_bp, url_prefix="/", static_folder='static')
 
     # Initialize Flask-Login
     login_manager = LoginManager()

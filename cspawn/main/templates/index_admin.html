@@ -34,14 +34,14 @@
     <div class="col">
       
         {% if  host.status == 'running' %}
-        <a href="{{ url_for('start_server') }}" class="btn btn-success float-start">Open Server</a>
+        <a href="{{ url_for('main.start_server') }}" class="btn btn-success float-start">Open Server</a>
         {% else %}
-        <a href="{{ url_for('start_server') }}" class="btn btn-success float-start">Start Server</a>
+        <a href="{{ url_for('main.start_server') }}" class="btn btn-success float-start">Start Server</a>
         {% endif %}
                
 
         {% if  host.status == 'running' %}
-        <a href="{{ url_for('stop_server') }}" class="btn btn-danger float-end me-2">Stop Server</a>
+        <a href="{{ url_for('main.stop_server') }}" class="btn btn-danger float-end me-2">Stop Server</a>
         {% endif %}
         
     </div>
