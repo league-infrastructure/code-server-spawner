@@ -14,6 +14,63 @@
     {% block styles %}{% endblock %}
   </head>
   <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+      <div class="container-fluid">
+        <a class="navbar-brand" href="{{ url_for('index') }}">
+          <img src="{{ url_for('static', filename='flag.png') }}" alt="Flag" width="40" height="40">
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+          <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('index') }}">Home</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="#">Code Host</a>
+            </li>
+            {% if current_user.is_authenticated %}
+              {% if current_user.is_instructor %}
+                <li class="nav-item">
+                  <a class="nav-link" href="#">Classes (Teaching)</a>
+                </li>
+              {% endif %}
+              {% if current_user.is_student %}
+                <li class="nav-item">
+                  <a class="nav-link" href="#">Classes (Attending)</a>
+                </li>
+              {% endif %}
+              {% if current_user.is_admin %}
+                <li class="nav-item">
+                  <a class="nav-link" href="#">Admin</a>
+                </li>
+              {% endif %}
+            {% endif %}
+          </ul>
+          <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
+            {% if current_user.is_authenticated %}
+              <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('auth.profile') }}">Profile</a>
+              </li>
+              <li class="nav-item">
+                <img src="{{ current_user.avatar_url }}" alt="Avatar" class="rounded-circle" width="30" height="30">
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('auth.logout') }}">Logout</a>
+              </li>
+            {% else %}
+              <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('auth.login') }}">Login</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="#">Sign Up</a>
+              </li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+    </nav>
     <div class="container">
       <header class="mb-4">
           {% block header %}

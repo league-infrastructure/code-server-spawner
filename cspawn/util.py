@@ -276,6 +276,7 @@ def role_from_email(config, email):
     
     """
     import json 
+    import re
     
     if email in json.loads(config["ADMIN_EMAILS"]):
         return "admin"

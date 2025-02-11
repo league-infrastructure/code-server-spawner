@@ -13,6 +13,7 @@ from cspawn.__version__ import __version__ as version
 
 from cspawn.app import app
 
+
 from flask import (abort, current_app, g, jsonify, redirect, render_template,
                    request, session, url_for, flash)
 from flask_login import current_user, login_required, logout_user
@@ -86,48 +87,36 @@ empty_status = {
     'port': None
 }
 
-@app.route("/")
-def index():
-    if current_user.is_authenticated:
-        return redirect(url_for("home"))
-    else:
-        return redirect(url_for("login"))
-    
-
 def unk_filter(v):
     return v if  v  else "?"
+app.jinja_env.filters['unk_filter'] = unk_filter
 
 class NoHost:
     status = 'does not exist'
 
 
+@app.route("/")
+def index():
 
 
-@app.route("/home", methods=["GET", "POST"])
-@login_required
-def home():
-     
-    app.jinja_env.filters['unk_filter'] = unk_filter
-     
-    username=slugify(current_user.email)
-    server_hostname = current_app.app_config.HOSTNAME_TEMPLATE.format(username=username)
 
-    host = app.csm.get_by_username(current_user.email)
-
-    host = host or NoHost()
-    
-    if current_user.is_admin:
-        containers = app.csm.containers_list_cached()
-
-        return render_template("admin.html", server_hostname=server_hostname,
-                            containers = containers, host=host, **context)
+    if  current_user.is_authenticated:
+        
+        if current_user.is_admin:
             
+            return render_template("index_admin.html", host={},  **context)
+        
+        elif current_user.is_instructor:
+            
+            return render_template("index_instructor.html", **context)
+        
+        elif current_user.is_student:
+            
+            return render_template("index_student.html", **context)
+        
     else:
-
-        containers = []
-        return render_template("home.html", host=host, 
-                               server_hostname=server_hostname, 
-                               **context)
+        return render_template("index.html", **context)
+        
 
 @app.route("/stop")
 @login_required

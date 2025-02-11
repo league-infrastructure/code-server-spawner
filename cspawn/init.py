@@ -79,7 +79,7 @@ def init_app(config_dir=None , log_level=None, sqlfile=None) -> Flask:
         client_id=app.app_config["GOOGLE_CLIENT_ID"],
         client_secret=app.app_config["GOOGLE_CLIENT_SECRET"],
         #storage=SQLAlchemyStorage(OAuth, db.session, user=current_user),
-        redirect_to="auth.google_login"
+        redirect_to="index"
     )
     app.register_blueprint(google_bp, url_prefix="/oauth/")
 
