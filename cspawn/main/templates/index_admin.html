@@ -1,0 +1,115 @@
+{% extends "page.html" %}
+
+{% block title %}Admin Dashboard - League Code Server{% endblock %}
+
+{% block styles %}
+<style>
+    /* Override container width for admin page */
+    .container {
+        min-width: 600px !important;
+        max-width: 1200px !important;
+        width: auto !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+
+    /* Ensure table remains readable on smaller screens */
+    @media (max-width: 800px) {
+        .small-text {
+            font-size: 0.7rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block header %}
+<div class="text-center">
+    <h1 class="mb-4">League Code Server - Admin Dashboard</h1>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Action Buttons -->
+<div class="row mb-4">
+    <div class="col">
+      
+        {% if  host.status == 'running' %}
+        <a href="{{ url_for('start_server') }}" class="btn btn-success float-start">Open Server</a>
+        {% else %}
+        <a href="{{ url_for('start_server') }}" class="btn btn-success float-start">Start Server</a>
+        {% endif %}
+               
+
+        {% if  host.status == 'running' %}
+        <a href="{{ url_for('stop_server') }}" class="btn btn-danger float-end me-2">Stop Server</a>
+        {% endif %}
+        
+    </div>
+</div>
+
+<!-- User Info -->
+<div class="card mb-4">
+    <div class="card-body">
+        <p class="mb-2">Logged in as: {{ current_user.primary_email }} ({{current_user.role}})</p>
+        <p class="mb-0">Server Name: {{ host.hostname}} ({{ host.status}})</p>
+    </div>
+</div>
+
+<!-- Containers Table -->
+<div class="card">
+    <div class="card-body">
+        <h2 class="card-title mb-4">Containers</h2>
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Username</th>
+                        <th>Password</th>
+                        <th>Status</th>
+                        <th>Login</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in containers %}
+                    <tr>
+                        <td>
+                            <a href="https://{{ c.hostname }}" 
+                               target="_blank"
+                               class="text-decoration-none">
+                                {{ c.service_name }}
+                            </a>
+                        </td>
+                        <td>
+                            <div class="small text-muted">
+                                {{c.state}}<br/>
+                                ❤️{{c.heartbeatAgo|unk_filter}} 🗝️{{c.seconds_since_report|unk_filter}}<br/>
+                                Mem: {{c.memory_usage|unk_filter}} MB<br/>               
+                            </div>
+                        </td>
+                        <td>
+                            {% if c.state == 'running' %}
+                            <form action="https://{{c.hostname }}/login" 
+                                  method="POST" 
+                                  target="_blank">
+                                <input type="hidden" name="base" value=".">
+                                <input type="hidden" name="href" value="https://{{ c.hostname }}">
+                                <input type="hidden" name="password" value="{{ c.password }}">
+                                <button type="submit" class="btn btn-primary btn-sm">Login</button>
+                            </form>
+
+                            <a href="{{ url_for('stop_server', server_id=c.service_id) }}" class="btn btn-danger btn-sm mt-2">Stop Server</a>
+
+                            {% endif %}
+                
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% endblock %}

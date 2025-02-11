@@ -113,9 +113,9 @@ def index():
         elif current_user.is_student:
             
             return render_template("index_student.html", **context)
-        
-    else:
-        return render_template("index.html", **context)
+       
+    
+    return render_template("index.html", **context)
         
 
 @app.route("/stop")

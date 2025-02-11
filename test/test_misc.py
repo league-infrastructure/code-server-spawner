@@ -2,7 +2,7 @@
 import unittest             
 from faker import Faker
 
-from cspawn.models import CodeHost, User, HostImage
+from cspawn.main.models import CodeHost, User, HostImage
 from cspawn.init import db
         
 import unittest
