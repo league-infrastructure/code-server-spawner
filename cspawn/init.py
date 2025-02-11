@@ -10,11 +10,11 @@ from cspawn.__version__ import __version__ as version
 from .auth import auth_bp  
 from .hosts import hosts_bp 
 from .users import users_bp
-from .control import CodeServerManager
+from .hosts.control import CodeServerManager
 from .util import (configure_app_dir, configure_config_tree, human_time_format,
                    init_logger, setup_sessions)
 
-from .models import db
+from .main.models import db
 
 default_context = {
     "version": version,
@@ -79,7 +79,7 @@ def init_app(config_dir=None , log_level=None, sqlfile=None) -> Flask:
         client_id=app.app_config["GOOGLE_CLIENT_ID"],
         client_secret=app.app_config["GOOGLE_CLIENT_SECRET"],
         #storage=SQLAlchemyStorage(OAuth, db.session, user=current_user),
-        redirect_to="index"
+        redirect_to="auth.google_login",
     )
     app.register_blueprint(google_bp, url_prefix="/oauth/")
 
@@ -93,7 +93,7 @@ def init_app(config_dir=None , log_level=None, sqlfile=None) -> Flask:
 
     @login_manager.user_loader
     def load_user(user_id):
-        from cspawn.models import User
+        from cspawn.main.models import User
       
         return User.query.get(user_id)
 

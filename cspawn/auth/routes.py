@@ -7,7 +7,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from oauthlib.oauth2.rfc6749.errors import (InvalidClientError,
                                             TokenExpiredError)
 
-from cspawn.models import User, db
+from cspawn.main.models import User, db
 from cspawn.util import role_from_email
 
 from . import auth_bp, logger
@@ -39,10 +39,7 @@ def login():
 @auth_bp.route("/login/google")
 def google_login():
     
-    
-    
     if not google.authorized:
-        
         return redirect(url_for("google.login"))
     
     try:
@@ -51,21 +48,18 @@ def google_login():
         logger.error("Token expired")
         return redirect(url_for("google.login"))
 
+    
     assert resp.ok
     
     user_info = resp.json()
 
-    
     email = user_info.get("email")  
-    
     
     role = role_from_email(current_app.app_config, email)
     
-
-        
-    
     user = User.query.filter_by(email=user_info["email"]).first()
     if user is None:
+
         user = User(
             username=None,
             user_id=user_info["id"],
@@ -84,8 +78,8 @@ def google_login():
         user = User.query.filter_by(email=user_info["email"]).first()
         
     login_user(user)
-    
-    return redirect(url_for("auth.profile"))
+
+    return redirect(url_for("index"))
 
 @auth_bp.route("/logout")
 

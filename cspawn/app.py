@@ -5,8 +5,8 @@ app = init_app()
 
 migrate = Migrate(app, db)
 
-from .routes.main import *
-from .routes.cron import *
+from main.routes.main import *
+from main.routes.cron import *
 
 
 if __name__ == "__main__":

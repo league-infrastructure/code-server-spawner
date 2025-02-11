@@ -15,7 +15,7 @@ from sqlalchemy import MetaData
 
 logging.basicConfig(level=logging.ERROR)
 
-from cspawn.control import logger as ctrl_logger
+from cspawn.hosts.control import logger as ctrl_logger
 
 logger = logging.getLogger("cspawnctl")
 

@@ -22,14 +22,9 @@
                         <p><strong>OAuth ID:</strong> {{ user.oauth_id }}</p>
                         <p><strong>Avatar:</strong></p>
                         <img src="{{ user.avatar_url }}" alt="User Avatar" class="img-fluid rounded-circle">
-                        <div class="mt-4">
-                            <a href="{{ url_for('auth.logout') }}" class="btn btn-secondary">Logout</a>
-                        </div>
+
                     {% else %}
                         <p>You are not logged in.</p>
-                        <div class="mt-4">
-                            <a href="{{ url_for('auth.login') }}" class="btn btn-primary">Login</a>
-                        </div>
                     {% endif %}
                 </div>
             </div>
