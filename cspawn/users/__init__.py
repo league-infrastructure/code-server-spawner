@@ -1,6 +1,6 @@
 from flask import Blueprint
 
-class_bp = Blueprint('classes', __name__, template_folder='templates')
+users_bp = Blueprint('users', __name__, template_folder='templates')
 
 import logging  
 

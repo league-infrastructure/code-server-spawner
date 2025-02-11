@@ -9,7 +9,9 @@ from sqlalchemy.orm import DeclarativeBase
 
 from cspawn.__version__ import __version__ as version
 
-from .auth import auth_bp  # Import the auth blueprint
+from .auth import auth_bp  
+from .hosts import hosts_bp 
+from .users import users_bp
 from .control import CodeServerManager
 from .util import (configure_app_dir, configure_config_tree, human_time_format,
                    init_logger, setup_sessions)

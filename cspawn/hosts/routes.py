@@ -3,5 +3,8 @@ from flask_login import login_user, current_user, login_required, logout_user
 from flask_dance.contrib.google import google
 from oauthlib.oauth2.rfc6749.errors import TokenExpiredError, InvalidClientError
 
-from . import auth_bp, logger
+from .  import hosts_bp, logger
 
+@hosts_bp.route("/foo")
+def fooroute():
+    pass

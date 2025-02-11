@@ -1,6 +1,6 @@
 from flask import Blueprint
 
-host_bp = Blueprint('hosts', __name__, template_folder='templates')
+hosts_bp = Blueprint('hosts', __name__, template_folder='templates')
 
 import logging  
 
