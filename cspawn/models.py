@@ -15,7 +15,8 @@ db = SQLAlchemy(model_class=Base)
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True) 
+    user_id = Column(String(200), nullable=False, index=True)
     username = Column(String(50), unique=True, nullable=True)
     email = Column(String(255), unique=True, nullable=True, index=True)
     password = Column(PasswordType(schemes=['bcrypt']), nullable=True)

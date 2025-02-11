@@ -11,6 +11,7 @@ from jtlutil.flask.flaskapp import configure_config_tree
 from jtlutil.config import find_parent_dir
 from cspawn.users.models import *
 from cspawn.init import init_app
+from sqlalchemy import MetaData
 
 logging.basicConfig(level=logging.ERROR)
 
@@ -400,8 +401,16 @@ def create(ctx):
 def destroy(ctx):
     """Destroy all database tables."""
     app = get_app(ctx)
+    
+    
     with app.app_context():
-        app.db.drop_all()
+        db = app.db
+        e = db.engine
+        
+        m = MetaData()
+        m.reflect(e)
+
+        m.drop_all(e)
         print("Database tables destroyed successfully.")
 
 if __name__ == '__main__':
