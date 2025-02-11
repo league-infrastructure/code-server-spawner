@@ -1,9 +1,9 @@
-from flask import Blueprint, redirect, url_for, request, render_template, session, flash
+from flask import Blueprint, redirect, url_for, request, render_template, session, flash, current_app
 from flask_login import login_user, current_user, login_required, logout_user
 from flask_dance.contrib.google import google
 from oauthlib.oauth2.rfc6749.errors import TokenExpiredError, InvalidClientError
-
-from cspawn.models import User
+import json
+from cspawn.models import User, db
 
 from . import auth_bp, logger
 
@@ -19,10 +19,12 @@ def login_index():
 @auth_bp.route("/profile")
 def profile():
    
+    print("XXXX", current_user)
+   
     if current_user.is_authenticated:
         return render_template("profile.html", user=current_user, **default_context())
     else:
-        return render_template("profile.html", user=None, **default_context)
+        return render_template("profile.html", user=None, **default_context())
 
 @auth_bp.route("/login")
 def login():
@@ -32,22 +34,37 @@ def login():
 @auth_bp.route("/login/google")
 def google_login():
     
-    from cspawn.auth.models import db
+    
     
     if not google.authorized:
         
         return redirect(url_for("google.login"))
     
-    resp = google.get("/oauth2/v1/userinfo")
+    try:
+        resp = google.get("/oauth2/v1/userinfo")
+    except TokenExpiredError as e:
+        logger.error("Token expired")
+        return redirect(url_for("google.login"))
 
     assert resp.ok
     
     user_info = resp.json()
+
+    
+    email = user_info.get("email")  
+    
+    if email in json.loads(current_app.app_config["ADMIN_EMAILS"]):
+        is_admin = True
+    else:
+        is_admin = False
+        
     
     user = User.query.filter_by(email=user_info["email"]).first()
     if user is None:
         user = User(
             username=None,
+            user_id=user_info["id"],
+            is_admin=is_admin,
             email=user_info.get("email"),
             oauth_provider="google",
             oauth_id=user_info["id"],
@@ -58,8 +75,6 @@ def google_login():
         db.session.commit()
     
         user = User.query.filter_by(email=user_info["email"]).first()
-        
-    print("XXX", user)
         
     login_user(user)
     

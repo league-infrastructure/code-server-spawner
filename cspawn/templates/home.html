@@ -20,7 +20,7 @@
         <a href="{{ url_for('start_server') }}" class="btn btn-success float-start">Start Server</a>
         {% endif %}
         
-        <a href="{{ url_for('auth.jtl_auth_logout') }}" class="btn btn-primary float-end">Logout</a>
+        <a href="{{ url_for('auth.logout') }}" class="btn btn-primary float-end">Logout</a>
 
         {% if  host.status == 'running' %}
         <a href="{{ url_for('stop_server') }}" class="btn btn-danger float-end me-2">Stop Server</a>

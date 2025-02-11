@@ -98,8 +98,10 @@ def unk_filter(v):
     return v if  v  else "?"
 
 class NoHost:
-    
     status = 'does not exist'
+
+
+
 
 @app.route("/home", methods=["GET", "POST"])
 @login_required
@@ -107,14 +109,14 @@ def home():
      
     app.jinja_env.filters['unk_filter'] = unk_filter
      
-    username=slugify(current_user.primary_email)
+    username=slugify(current_user.email)
     server_hostname = current_app.app_config.HOSTNAME_TEMPLATE.format(username=username)
 
-    host = app.csm.get_by_username(current_user.primary_email)
+    host = app.csm.get_by_username(current_user.email)
 
     host = host or NoHost()
     
-    if current_user.is_staff:
+    if current_user.is_admin:
         containers = app.csm.containers_list_cached()
 
         return render_template("admin.html", server_hostname=server_hostname,

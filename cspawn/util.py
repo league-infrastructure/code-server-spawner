@@ -18,7 +18,7 @@ from flask_session import Session
 from jtlutil.config import get_config, get_config_tree
 
 
-class User(UserMixin):
+class GoogleUser(UserMixin):
     """Represents a user with attributes fetched from Google OAuth."""
     def __init__(self, user_data):
         self.user_data = user_data
@@ -265,3 +265,23 @@ class GUID(TypeDecorator):
         return uuid.UUID(value)
 
 
+def role_from_email(config, email):
+    """Determine the role of the user based on the email address.
+    
+    The config has these variables:
+    
+    ADMIN_EMAILS='["eric.busboom@jointheleague.org", "admin@jointheleague.org", "it@jointheleague.org"]'
+    INSTRUCTOR_EMAIL_REXEX='^[^@]+@jointheleague\.org$'
+    STUDENT_EMAIL_REGEX='^[^@]+@students\.jointheleague\.org$'
+    
+    """
+    import json 
+    
+    if email in json.loads(config["ADMIN_EMAILS"]):
+        return "admin"
+    elif re.match(config["INSTRUCTOR_EMAIL_REXEX"], email):
+        return "instructor"
+    elif re.match(config["STUDENT_EMAIL_REGEX"], email):
+        return "student"
+    else:
+        return "public"
