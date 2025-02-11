@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from typing import List, Dict
 
 
-# Mongo Objects, there are also SQLAlchemy objects in the hosts/models.py file
 
 class FileStat(BaseModel):
     keystrokes: int

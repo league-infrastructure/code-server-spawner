@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
+from sqlalchemy import String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.types import TypeDecorator
 import sqlitedict
 from dotenv import dotenv_values
 from flask import Flask, current_app, session, g
@@ -234,5 +237,31 @@ def insert_query_arg(url, key, value):
     query_params[key] = value
     new_query_string = urlencode(query_params, doseq=True)
     return urlunparse(parsed_url._replace(query=new_query_string))
+
+
+class GUID(TypeDecorator):
+    """Platform-independent GUID type.
+
+    Uses PostgreSQL's UUID type, and stores as string in SQLite.
+    """
+    impl = String
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(UUID(as_uuid=True))
+        else:
+            return dialect.type_descriptor(String(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, uuid.UUID):
+            return str(value)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return uuid.UUID(value)
 
 
