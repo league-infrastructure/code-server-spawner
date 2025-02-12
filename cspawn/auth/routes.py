@@ -8,7 +8,8 @@ from oauthlib.oauth2.rfc6749.errors import (InvalidClientError,
                                             TokenExpiredError)
 
 from cspawn.main.models import User, db
-from cspawn.util import role_from_email
+from cspawn.util import  set_role_from_email, find_username
+from slugify import slugify
 
 from . import auth_bp, logger
 
@@ -24,8 +25,7 @@ def login_index():
 @auth_bp.route("/profile")
 def profile():
    
-    print("XXXX", current_user)
-   
+
     if current_user.is_authenticated:
         return render_template("profile.html", user=current_user, **default_context())
     else:
@@ -48,34 +48,32 @@ def google_login():
         logger.error("Token expired")
         return redirect(url_for("google.login"))
 
-    
+
     assert resp.ok
     
     user_info = resp.json()
 
     email = user_info.get("email")  
     
-    role = role_from_email(current_app.app_config, email)
-    
-    user = User.query.filter_by(email=user_info["email"]).first()
+    user = User.query.filter_by(email=email).first()
     if user is None:
 
         user = User(
-            username=None,
-            user_id=user_info["id"],
-            is_admin= role == "admin",
-            is_instructor= role == "instructor" or role == "admin",
-            is_student= role == "student",
-            email=user_info.get("email"),
+            username='not_set',
+            user_id="google_"+user_info["id"],
+            email=email,
             oauth_provider="google",
             oauth_id=user_info["id"],
             avatar_url=user_info["picture"]
         )
         
+        set_role_from_email(current_app, user)
+        user.username = find_username(user)
+        
         db.session.add(user)
         db.session.commit()
     
-        user = User.query.filter_by(email=user_info["email"]).first()
+        user = User.query.filter_by(email=email).first()
         
     login_user(user)
 

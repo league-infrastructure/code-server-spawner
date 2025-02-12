@@ -8,7 +8,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from oauthlib.oauth2.rfc6749.errors import (InvalidClientError,
                                             TokenExpiredError)
 
-from cspawn.main.models import User, HostImage, CodeHost, db
+from cspawn.main.models import User, HostImage, CodeHost, Class, db
 from cspawn.util import role_from_email
 
 from . import admin_bp, logger
@@ -22,6 +22,13 @@ def default_context():
 @login_required
 def index():
     return render_template("admin/index.html", **default_context())
+
+
+@admin_bp.route("/classes")
+@login_required
+def list_classes():
+    classes = Class.query.all()
+    return render_template("admin/classes.html", classes=classes)
 
 @admin_bp.route("/images")
 @login_required

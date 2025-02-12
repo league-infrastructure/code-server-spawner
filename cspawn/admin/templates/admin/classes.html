@@ -1,0 +1,43 @@
+{% extends "admin/admin_base.html" %}
+
+{% block title %}Classes{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Classes</h1>
+    <a href="{{ url_for('admin.new_class') }}" class="btn btn-primary mb-3">Create New Class</a>
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Start Date</th>
+                <th>Class Code</th>
+                <th>Host Images</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for class in classes %}
+            <tr>
+                <td>{{ class.name }}</td>
+                <td>{{ class.description }}</td>
+                <td>{{ class.start_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ class.class_code }}</td>
+                <td>
+                    {% for host_image in class.host_images %}
+                        {{ host_image.name }}{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                </td>
+                <td>
+                    <a href="{{ url_for('admin.edit_class', class_id=class.id) }}" class="btn btn-sm btn-warning">Edit</a>
+                    <form action="{{ url_for('admin.delete_class', class_id=class.id) }}" method="post" style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

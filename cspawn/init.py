@@ -91,6 +91,7 @@ def init_app(config_dir=None , log_level=None, sqlfile=None) -> Flask:
     app.register_blueprint(main_bp, url_prefix="/")
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
+    app.register_blueprint(hosts_bp, url_prefix="/host")
     
 
     

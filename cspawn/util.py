@@ -244,6 +244,7 @@ class GUID(TypeDecorator):
 
     Uses PostgreSQL's UUID type, and stores as string in SQLite.
     """
+    import uuid
     impl = String
 
     def load_dialect_impl(self, dialect):
@@ -309,3 +310,31 @@ def set_role_from_email(app, user):
     else:
         pass
         
+        
+def find_username(user):
+    from cspawn.main.models import User
+    from slugify import slugify
+    
+    
+    def split_email(email):
+        return slugify(email.split("@")[0])
+    
+    def username_exists(username):
+        return User.query.filter_by(username=username).first() is not None  
+    
+    email = user.email
+    username = split_email(email)
+    
+    if not username_exists(username):
+        return username
+    
+    if not username_exists(email):
+        return email
+    
+    for i in range(1, 100):
+        new_username = f"{username}_{i}"
+        if not username_exists(new_username):
+            return new_username
+        
+    return username+'_'+secrets.token_urlsafe(8)
+    
