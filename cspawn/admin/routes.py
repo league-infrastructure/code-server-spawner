@@ -17,6 +17,7 @@ def default_context():
     from cspawn.init import default_context  # Breaks circular import
     return default_context
 
-@auth_bp.route("/")
-def login_index():
-    return redirect(url_for("auth.login"))
+@admin_bp.route("/")
+@login_required
+def index():
+    return render_template("admin/index.html", **default_context())
