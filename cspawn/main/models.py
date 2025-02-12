@@ -5,6 +5,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Table, Text, func
 from sqlalchemy_utils import PasswordType
+from cspawn.util import role_from_email
 
 class Base(DeclarativeBase):
   pass
@@ -48,6 +49,8 @@ class User(UserMixin, db.Model):
 
     def __repr__(self):
         return f"<User(id={self.id}, username={self.username}, email={self.email}, provider={self.oauth_provider})>"
+
+
 
 
 class Class(db.Model):

@@ -1,36 +1,9 @@
-{% extends "page.html" %}
+{% extends "admin/base.html" %}
 
 {% block title %}Admin Dashboard - League Code Server{% endblock %}
 
-{% block styles %}
-<style>
-    /* Override container width for admin page */
-    .container {
-        min-width: 600px !important;
-        max-width: 1200px !important;
-        width: auto !important;
-        padding-left: 1rem !important;
-        padding-right: 1rem !important;
-    }
-
-    /* Ensure table remains readable on smaller screens */
-    @media (max-width: 800px) {
-        .small-text {
-            font-size: 0.7rem;
-        }
-    }
-</style>
-{% endblock %}
-
-{% block header %}
-<div class="text-center">
-    <h1 class="mb-4">League Code Server - Admin Dashboard</h1>
-</div>
-{% endblock %}
+{
 
 {% block content %}
 <p> nice admin!</p>
-{% endblock %}
-
-{% block scripts %}
 {% endblock %}

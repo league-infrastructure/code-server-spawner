@@ -13,7 +13,7 @@ from sqlalchemy import MetaData
 
 from cspawn.init import init_app
 from cspawn.main.models import *
-from .util import make_data
+from .util import make_data, load_data
 
 
 
@@ -437,6 +437,8 @@ def recreate(ctx, demo):
         
         db.create_all()
         print("Database tables created successfully.")
+        
+        load_data(app)
         
         if demo:
             make_data(app)

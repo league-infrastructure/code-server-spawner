@@ -8,7 +8,7 @@ from faker import Faker
 from cspawn.main.models import CodeHost, User, HostImage
 from cspawn.init import db
 
-from cspawn.cli.util import create_users, make_data
+from cspawn.cli.util import create_demo_users, make_data
 
 class CSUnitTest(unittest.TestCase):
     
