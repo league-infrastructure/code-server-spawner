@@ -5,18 +5,53 @@ from flask import (current_app, flash, jsonify, redirect,
                    render_template, request, url_for)
 from flask_login import current_user, login_required
 
-
 from cspawn.hosts import hosts_bp
+from cspawn.main.models import HostImage, CodeHost
 
+# Example route in your Flask application
+from flask import render_template
 
-@hosts_bp.route("/")
+@hosts_bp.route('/')
+@login_required
 def index():
-    return render_template("hosts/index.html")
+   
+    iframe_url = "http://jointheleague.org"  # Replace with the actual URL you want to load in the iframe
+    
+    extant_host = CodeHost.query.filter_by(user_id=current_user.id).first()
+    
+    host_images = HostImage.query.all()
+    
+    return render_template('hosts/index.html', host=extant_host, host_images=host_images, iframe_url=iframe_url)
+
+@hosts_bp.route("/start")
+@login_required
+def start_host():
+    
+    
+    
+    image_id = request.args.get('image_id')
+
+    image = HostImage.query.get(image_id)
+
+    if not image:
+        flash("Image not found", "error")
+        return redirect(url_for('hosts.index'))
+
+    # Look for an existing CodeHost for the current user
+    extant_host = CodeHost.query.filter_by(user_id=current_user.id).first()
+
+    if extant_host:
+        flash("A host is already running for the current user", "info")
+        return redirect(url_for('hosts.index'))
+
+
+   
+    
 
 
 @hosts_bp.route("/start")
 @login_required
-def start_server():
+def x_start_server():
     from docker.errors import APIError, NotFound
 
     # Get query parameters
@@ -94,7 +129,7 @@ def server_is_ready(service_id):
     from docker.errors import NotFound 
     
     try:
-        s = app.csm.get(service_id)
+        s = current_app.csm.get(service_id)
         if s.is_ready():
             return jsonify({"status": "ready", "hostname_url": s.hostname_url})
         else:

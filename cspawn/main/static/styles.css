@@ -25,3 +25,8 @@ footer .right {
 center {
     text-align: center;
 }
+
+.offscreen{
+    position: absolute;
+    left: -5000px;
+}

@@ -62,7 +62,7 @@ class Class(db.Model):
     location = Column(String(255), nullable=True)
     reference = Column(String(255), nullable=True)  # URL or other reference
     start_date = Column(DateTime, nullable=False)
-    end_date = Column(DateTime, nullable=False)
+    end_date = Column(DateTime, nullable=True)
     recurrence_rule = Column(String(255), nullable=True)
 
     start_script = Column(Text, nullable=False)
@@ -135,6 +135,9 @@ class HostImage(db.Model):
     name = Column(String, nullable=False)
     image_uri = Column(String, nullable=False)
     repo_uri = Column(String, nullable=True)
+    repo_branch = Column(String, nullable=True)
+    repo_dir = Column(String, nullable=True)    
+    
     startup_script = Column(String, nullable=True)
 
     is_public = Column(Boolean, default=False, nullable=False)
