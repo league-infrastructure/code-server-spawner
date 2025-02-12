@@ -1,10 +1,14 @@
 from cspawn.main.models import *
 from faker import Faker
+from pathlib import Path
 
-def create_users(app):
+
+def create_demo_users(app):
     """Function to load demo data into the database."""
     # Implement your demo data loading logic here
     # Delete all users with email addresses in the 'example.com' domain
+    
+    from cspawn.util import set_role_from_email
     
     faker = Faker()
     users = [
@@ -15,6 +19,7 @@ def create_users(app):
 
     for user in users:
         user = User(**user)
+        set_role_from_email(app, user)
         db.session.add(user)
         
     db.session.commit()
@@ -22,7 +27,7 @@ def create_users(app):
     assert len( User.query.all()) >= 3
       
     
-def create_images(app):
+def create_demo_images(app):
     
     host_images = [
         {
@@ -56,7 +61,7 @@ def create_images(app):
     
     assert len(HostImage.query.all()) >= 3
 
-def create_code_hosts(app):
+def create_demo_code_hosts(app):
 
     """
     Create CodeHost records with fake data and associate them with HostImage records.
@@ -103,6 +108,45 @@ def make_data(app):
         with app.app_context():
            
          
-            create_users(app)
-            create_images(app)
-            create_code_hosts(app)
+            create_demo_users(app)
+            create_demo_images(app)
+            create_demo_code_hosts(app)
+
+
+def load_data(app):
+    
+    import cspawn
+    import json
+    from cspawn.util import set_role_from_email
+    
+    data_dir = Path(cspawn.__file__).parent.parent / 'data'
+    
+    users_file = data_dir / 'users.json'
+    
+    if users_file.exists():
+        with open(users_file, 'r') as f:
+            users_data = json.load(f)
+        
+        for user_data in users_data:
+            if 'is_admin' in user_data and user_data['is_admin']:
+                user_data['password'] = app.app_config['ADMIN_PASSWORD']
+            user = User(**user_data)
+            set_role_from_email(app, user)   
+            db.session.add(user)
+        
+        db.session.commit()
+        
+        
+    images_file = data_dir / 'images.json'
+    
+    if images_file.exists():
+        with open(images_file, 'r') as f:
+            images_data = json.load(f)
+        
+        for image_data in images_data:
+            image = HostImage(**image_data)
+            db.session.add(image)
+        
+        db.session.commit()
+    
+    

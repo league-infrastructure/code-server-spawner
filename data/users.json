@@ -1,0 +1,14 @@
+[
+    {
+        "user_id": "user_zero",
+        "username": "admin",
+        "email": null,
+        "password": null,
+        "is_active": true,
+        "is_admin": true,
+        "is_student": true,
+        "is_instructor": true,
+        "display_name": "Admin",
+        "birth_year": 1900
+    }
+]

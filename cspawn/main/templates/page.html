@@ -14,6 +14,7 @@
     {% block styles %}{% endblock %}
   </head>
   <body>
+    {% block navbar %}
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
       <div class="container-fluid">
         <a class="navbar-brand" href="{{ url_for('main.index') }}">
@@ -43,7 +44,7 @@
               {% endif %}
               {% if current_user.is_admin %}
                 <li class="nav-item">
-                  <a class="nav-link" href="#">Admin</a>
+                    <a class="nav-link" href="{{ url_for('admin.index') }}">Admin</a>
                 </li>
               {% endif %}
             {% endif %}
@@ -71,6 +72,11 @@
         </div>
       </div>
     </nav>
+    {% endblock %}
+
+    {% block subnavbar %}
+    {% endblock %}
+
     <div class="container">
       <header class="mb-4">
           {% block header %}
@@ -92,7 +98,7 @@
 
           <div class="left">code-server-spawner {{version}}</div>
           <div class="right">
-              <img class="inline" src="{{ url_for('static', filename='flag.png') }}" alt="Flag">
+            <img src="{{ url_for('main.static', filename='flag.png') }}" alt="Flag" class="inline"">
               <a href="https://www.jointheleague.org">Join the League</a>
               
           </div>

@@ -1,0 +1,14 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Import Host Images</h1>
+    <form action="{{ url_for('admin.import_images') }}" method="post" enctype="multipart/form-data">
+        <div class="mb-3">
+            <label for="file" class="form-label">Select JSON File</label>
+            <input type="file" class="form-control" id="file" name="file" accept=".json" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Import</button>
+    </form>
+</div>
+{% endblock %}

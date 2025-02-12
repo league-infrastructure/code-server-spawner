@@ -1,0 +1,16 @@
+[
+    {
+        "name": "Python Apprentice",
+        "image_uri": "ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:latest",
+        "repo_uri": "https://github.com/league-curriculum/Python-Apprentice",
+        "is_public": true,
+        "creator_id": 1
+    },
+    {
+        "name": "Python Games",
+        "image_uri": "ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:latest",
+        "repo_uri": "https://github.com/league-curriculum/Python-Games",
+        "is_public": true,
+        "creator_id": 1
+    }
+]

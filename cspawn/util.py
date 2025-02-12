@@ -278,6 +278,9 @@ def role_from_email(config, email):
     import json 
     import re
     
+    if not email:
+        return "public"
+    
     if email in json.loads(config["ADMIN_EMAILS"]):
         return "admin"
     elif re.match(config["INSTRUCTOR_EMAIL_REXEX"], email):
@@ -286,3 +289,23 @@ def role_from_email(config, email):
         return "student"
     else:
         return "public"
+    
+def set_role_from_email(app, user):
+    """Set the role of the user based on the email address."""
+    
+    config = app.app_config
+
+    
+    role = role_from_email(config, user.email)
+    
+    if role == "admin":
+        user.is_admin = True
+        user.is_instructor = True
+        user.is_student = True
+    elif role == "instructor":
+        user.is_instructor = True
+    elif role == "student":
+        user.is_student = True
+    else:
+        pass
+        
