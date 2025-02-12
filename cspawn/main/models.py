@@ -134,6 +134,11 @@ class HostImage(db.Model):
     repo_uri = Column(String, nullable=True)
     startup_script = Column(String, nullable=True)
 
+    is_public = Column(Boolean, default=False, nullable=False)
+    
+    creator_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+    creator = relationship("User", backref="host_images")
+
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc), nullable=False)
     

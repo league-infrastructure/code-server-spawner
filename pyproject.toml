@@ -33,6 +33,7 @@ dependencies = [
     "flask-dance>=7.1.0",
     "flask-migrate>=4.1.0",
     "faker>=36.1.0",
+    "flask-admin[export,images,pymongo,s3,sqlalchemy]>=1.6.1",
 ]
 
 

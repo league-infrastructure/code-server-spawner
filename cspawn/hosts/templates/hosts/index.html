@@ -1,0 +1,39 @@
+{% extends "page.html" %}
+
+
+{% block header %}
+<div class="text-center">
+    <h1 class="mb-4">League Code Server</h1>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Regular user page stays in standard container -->
+<!-- Action Buttons -->
+<div class="row mb-4">
+    <div class="col">
+      
+        {% if  host.status == 'running' %}
+        <a href="{{ url_for('start_server') }}" class="btn btn-success float-start">Open Server</a>
+        {% else %}
+        <a href="{{ url_for('start_server') }}" class="btn btn-success float-start">Start Server</a>
+        {% endif %}
+        
+        <a href="{{ url_for('auth.logout') }}" class="btn btn-primary float-end">Logout</a>
+
+        {% if  host.status == 'running' %}
+        <a href="{{ url_for('stop_server') }}" class="btn btn-danger float-end me-2">Stop Server</a>
+        {% endif %}
+        
+    </div>
+</div>
+
+<!-- User Info -->
+<div class="card">
+    <div class="card-body">
+        <p class="mb-2">Logged in as: {{ current_user.primary_email }} ({{current_user.role}})</p>
+        <p class="mb-0">Server Name: {{host.hostname}} ({{host.status}})</p>
+    </div>
+</div>
+{% endblock %}
+

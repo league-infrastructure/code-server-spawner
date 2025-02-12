@@ -10,7 +10,7 @@
     <!-- Your custom CSS -->
     <link rel="stylesheet" href="{{ url_for('main.static', filename='styles.css') }}" />
     
-    <title>{% block title %}Title{% endblock %}</title>
+    <title>{% block title %}Code Server{% endblock %}</title>
     {% block styles %}{% endblock %}
   </head>
   <body>
@@ -43,7 +43,7 @@
               {% endif %}
               {% if current_user.is_admin %}
                 <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.index') }}">Admin</a>
+                  <a class="nav-link" href="#">Admin</a>
                 </li>
               {% endif %}
             {% endif %}

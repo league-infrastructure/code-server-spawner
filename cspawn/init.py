@@ -19,6 +19,8 @@ from .util import (configure_app_dir, configure_config_tree, human_time_format,
 
 from .main.models import db
 
+from flask_admin import Admin
+
 default_context = {
     "version": version,
 }
@@ -89,7 +91,10 @@ def init_app(config_dir=None , log_level=None, sqlfile=None) -> Flask:
     app.register_blueprint(main_bp, url_prefix="/")
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
-   
+    
+
+    
+    
     # Initialize Flask-Login
     login_manager = LoginManager()
     login_manager.init_app(app)
