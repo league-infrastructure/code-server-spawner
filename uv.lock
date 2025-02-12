@@ -318,6 +318,7 @@ dependencies = [
     { name = "click" },
     { name = "faker" },
     { name = "flask" },
+    { name = "flask-admin" },
     { name = "flask-dance" },
     { name = "flask-httpauth" },
     { name = "flask-login" },
@@ -355,6 +356,7 @@ requires-dist = [
     { name = "cspawn" },
     { name = "faker", specifier = ">=36.1.0" },
     { name = "flask", specifier = ">=3.1.0" },
+    { name = "flask-admin", extras = ["export", "images", "pymongo", "s3", "sqlalchemy"], specifier = ">=1.6.1" },
     { name = "flask-dance", specifier = ">=7.1.0" },
     { name = "flask-httpauth", specifier = ">=4.8.0" },
     { name = "flask-login", specifier = ">=0.6.3" },
@@ -473,6 +475,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/89/50/dff6380f1c7f84135484e176e0cac8690af72fa90e932ad2a0a60e28c69b/flask-3.1.0.tar.gz", hash = "sha256:5f873c5184c897c8d9d1b05df1e3d01b14910ce69607a117bd3277098a5836ac", size = 680824 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/af/47/93213ee66ef8fae3b93b3e29206f6b251e65c97bd91d8e1c5596ef15af0a/flask-3.1.0-py3-none-any.whl", hash = "sha256:d667207822eb83f1c4b50949b1623c8fc8d51f2341d65f72e1a1815397551136", size = 102979 },
+]
+
+[[package]]
+name = "flask-admin"
+version = "1.6.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "flask" },
+    { name = "wtforms" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/be/4d/7cad383a93e3e1dd9378f1fcf05ddc532c6d921fb30c19ce8f8583630f24/Flask-Admin-1.6.1.tar.gz", hash = "sha256:24cae2af832b6a611a01d7dc35f42d266c1d6c75a426b869d8cb241b78233369", size = 6651224 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/61/b3/656c78dfef163517dbbc9fd106f0604e37b436ad51f9d9450b60e9407e35/Flask_Admin-1.6.1-py3-none-any.whl", hash = "sha256:fd8190f1ec3355913a22739c46ed3623f1d82b8112cde324c60a6fc9b21c9406", size = 7498141 },
 ]
 
 [[package]]

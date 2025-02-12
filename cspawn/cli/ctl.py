@@ -7,11 +7,15 @@ from pathlib import Path
 import click
 import pandas
 from docker.errors import NotFound
-from jtlutil.flask.flaskapp import configure_config_tree  
 from jtlutil.config import find_parent_dir
-from cspawn.users.models import *
-from cspawn.init import init_app
+from jtlutil.flask.flaskapp import configure_config_tree
 from sqlalchemy import MetaData
+
+from cspawn.init import init_app
+from cspawn.main.models import *
+from .util import make_data
+
+
 
 logging.basicConfig(level=logging.ERROR)
 
@@ -412,6 +416,34 @@ def destroy(ctx):
 
         m.drop_all(e)
         print("Database tables destroyed successfully.")
+
+
+@db.command()
+@click.option('-d', '--demo', is_flag=True, help="Load demo data after recreating the database.")
+@click.pass_context
+def recreate(ctx, demo):
+    """Destroy and recreate all database tables."""
+    app = get_app(ctx)
+    
+    
+    with app.app_context():
+        db = app.db
+        e = db.engine
+        
+        m = MetaData()
+        m.reflect(e)
+        m.drop_all(e)
+        print("Database tables destroyed successfully.")
+        
+        db.create_all()
+        print("Database tables created successfully.")
+        
+        if demo:
+            make_data(app)
+            print("Demo data loaded successfully.")
+
+
+    
 
 if __name__ == '__main__':
     cli()
