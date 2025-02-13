@@ -122,7 +122,15 @@ def is_ready(service_id):
     from docker.errors import NotFound 
     
     try:
+        host = CodeHost.query.filter_by(user_id=current_user.id).first()
+        
         s = current_app.csm.get(service_id)
+        
+        if host and host.service_id != service_id:
+            return jsonify({"status": "error", "message": "Service ID mismatch"})
+        
+        host.update_from_ci(list(s.containers_info())[0])
+        
         if s.is_ready():
             return jsonify({"status": "ready", "hostname_url": s.hostname_url})
         else:
