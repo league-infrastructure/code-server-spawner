@@ -16,7 +16,7 @@ from cspawn.main import main_bp, logger
 from flask import (abort, current_app, g, jsonify, redirect, render_template,
                    request, session, url_for, flash)
 from flask_login import current_user, login_required, logout_user
-from jtlutil.flask.flaskapp import insert_query_arg, is_running_under_gunicorn
+
 from slugify import slugify
 from humanize import naturaltime, naturaldelta
 

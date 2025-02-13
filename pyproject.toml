@@ -18,8 +18,6 @@ dependencies = [
     "gunicorn>=23.0.0",
     "humanize>=4.11.0",
     "jinja2>=3.1.5",
-    "jtlutil",
-    #"jtlutil @ git+https://github.com/league-infrastructure/jtlutil",
     "pandas>=2.2.3",
     "psycopg2-binary>=2.9.10",
     "pydantic>=2.10.6",
@@ -33,16 +31,19 @@ dependencies = [
     "flask-dance>=7.1.0",
     "flask-migrate>=4.1.0",
     "faker>=36.1.0",
-    "flask-admin[export,images,pymongo,s3,sqlalchemy]>=1.6.1",
+    "bootstrap-flask>=2.4.1",
+    "jtlutil>=0.3.5",
 ]
 
+[tool.uv]
+package = true
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["cspawn*"]  # Include all subpackages
 
 [tool.uv.sources]
-jtlutil = { path = "../jtlutil" }
+jtlutil = { git = "https://github.com/league-infrastructure/jtlutil" }
 
 [dependency-groups]
 dev = [

@@ -1,4 +1,4 @@
-from .ctl import cli
+from .root import cli
 
 if __name__ == '__main__':
     cli()

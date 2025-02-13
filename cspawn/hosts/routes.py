@@ -6,7 +6,7 @@ from flask import (current_app, flash, jsonify, redirect,
 from flask_login import current_user, login_required
 
 from cspawn.hosts import hosts_bp
-from cspawn.main.models import HostImage, CodeHost
+from cspawn.main.models import db, HostImage, CodeHost
 
 # Example route in your Flask application
 from flask import render_template
@@ -17,17 +17,17 @@ def index():
    
     iframe_url = "http://jointheleague.org"  # Replace with the actual URL you want to load in the iframe
     
-    extant_host = CodeHost.query.filter_by(user_id=current_user.id).first()
+    host = CodeHost.query.filter_by(user_id=current_user.id).first()
+    
+    print("!!!!", host)
     
     host_images = HostImage.query.all()
     
-    return render_template('hosts/index.html', host=extant_host, host_images=host_images, iframe_url=iframe_url)
+    return render_template('hosts/index.html', host=host, host_images=host_images, iframe_url=iframe_url)
 
 @hosts_bp.route("/start")
 @login_required
-def start_host():
-    
-    
+def start_host():  
     
     image_id = request.args.get('image_id')
 
@@ -44,10 +44,33 @@ def start_host():
         flash("A host is already running for the current user", "info")
         return redirect(url_for('hosts.index'))
 
-
-   
+    # Create a new CodeHost instance
     
-
+    # There should not be one, but if there is , get it. 
+    s =  current_app.csm.get_by_username(current_user.username)
+    
+    if not s:
+        s = current_app.csm.new_cs(
+                username = current_user.username,
+                image = image.image_uri,
+                repo = image.repo_uri,         
+            )
+    
+    host = CodeHost(
+        user_id=current_user.id, 
+        host_image_id=image.id,
+        service_id = s.id,
+        service_name = s.name,
+        container_id = None,
+        container_name = None
+    )
+    
+    # Commit the new host to the database
+    db.session.add(host)
+    db.session.commit()
+    
+    flash(f"Host {s.name} started successfully", "success")
+    return redirect(url_for('hosts.index'))
 
 @hosts_bp.route("/start")
 @login_required

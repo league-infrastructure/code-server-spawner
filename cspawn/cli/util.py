@@ -1,7 +1,14 @@
+
+from cspawn.hosts.control import logger as ctrl_logger
+from cspawn.init import init_app
+from jtlutil.config import find_parent_dir
+from functools import lru_cache
 from cspawn.main.models import *
 from faker import Faker
 from pathlib import Path
+import logging
 
+logger = logging.getLogger(__name__)
 
 def create_demo_users(app):
     """Function to load demo data into the database."""
@@ -148,5 +155,55 @@ def load_data(app):
             db.session.add(image)
         
         db.session.commit()
+
+
+def get_logging_level(ctx):
+
+    v = ctx.obj['v']
+
+    log_level = None
+    if v == 0:
+        log_level = logging.ERROR
+    if v == 1:
+        log_level = logging.INFO
+    elif v >= 2:
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.ERROR
+
+    return log_level
+
+
+
+@lru_cache
+def get_app(ctx):
+ 
+    log_level = get_logging_level(ctx)
+    return init_app(config_dir=find_parent_dir(), log_level=log_level)
+
+
+
+
+@lru_cache
+def get_logger(ctx):
+    log_level = get_logging_level(ctx)
+
+    ctrl_logger.setLevel(log_level)
+    logger.setLevel(log_level)
+    return logger
+
+
+@lru_cache
+def get_config():
+
+
+    c =  configure_config_tree(find_parent_dir())
+
+    if len(c['__CONFIG_PATH']) == 0:
+        raise Exception("No configuration files found. Maybe you are in the wrong directory?")
+
+    return c
+
+
     
     

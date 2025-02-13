@@ -19,7 +19,8 @@ from .util import (configure_app_dir, configure_config_tree, human_time_format,
 
 from .main.models import db
 
-from flask_admin import Admin
+
+from flask_bootstrap import Bootstrap5
 
 default_context = {
     "version": version,
@@ -94,7 +95,7 @@ def init_app(config_dir=None , log_level=None, sqlfile=None) -> Flask:
     app.register_blueprint(hosts_bp, url_prefix="/host")
     
 
-    
+    app.bootstrap = Bootstrap5(app)
     
     # Initialize Flask-Login
     login_manager = LoginManager()

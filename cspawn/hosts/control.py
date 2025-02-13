@@ -88,8 +88,6 @@ def define_cs_container(config, image, username, hostname_template, repo=None, e
     
     hostname = hostname_template.format(username=container_name)
 
-    repo = repo or config.INITIAL_GIT_REPO
-
     if repo:
         clone_dir = os.path.basename(repo)
         if clone_dir.endswith('.git'):
@@ -262,12 +260,13 @@ class CodeServerManager(DbServicesManager):
         return user_dir
     
     
-    def new_cs(self, username, image=None):
+    def new_cs(self, username, image=None, repo = None):
  
-        container_def = define_cs_container(self.config, 
-                                            image or self.config.IMAGES_PYTHONCS,
-                                            username,
-                                            self.config.HOSTNAME_TEMPLATE)
+        container_def = define_cs_container(config = self.config, 
+                                            image = image,
+                                            repo = repo, 
+                                            username = username,
+                                            hostname_template = self.config.HOSTNAME_TEMPLATE)
         
         #import yaml
         #logger.debug(f"Container Definition\n {yaml.dump(container_def)}")
@@ -278,8 +277,6 @@ class CodeServerManager(DbServicesManager):
         #for m in container_def.get('mounts', []):
         #    host_dir, container_dir = m.split(':')
             
-            
-        
         try:
             s = self.run(**container_def)
         except docker.errors.APIError as e:
