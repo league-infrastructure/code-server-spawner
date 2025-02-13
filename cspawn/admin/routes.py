@@ -30,6 +30,26 @@ def list_classes():
     classes = Class.query.all()
     return render_template("admin/classes.html", classes=classes)
 
+@admin_bp.route("/code_hosts")
+@login_required
+def list_code_hosts():
+    code_hosts = CodeHost.query.all()
+    return render_template("admin/code_hosts.html", code_hosts=code_hosts)
+
+@admin_bp.route("/delete_host", methods=["POST"])
+@login_required
+def delete_host():
+    host_id = request.form.get('host_id')
+    if not host_id:
+        flash("No host ID provided", "danger")
+        return redirect(url_for("admin.list_code_hosts"))
+    
+    code_host = CodeHost.query.get_or_404(host_id)
+    db.session.delete(code_host)
+    db.session.commit()
+    flash("Host deleted successfully", "success")
+    return redirect(url_for("admin.list_code_hosts"))
+
 @admin_bp.route("/images")
 @login_required
 def list_images():

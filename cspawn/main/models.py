@@ -113,8 +113,8 @@ class CodeHost(db.Model):
 
     service_id = Column(String, nullable=False)
     service_name = Column(String, nullable=False)
-    container_id = Column(String, nullable=False)
-    container_name = Column(String, nullable=False)
+    container_id = Column(String, nullable=True)
+    container_name = Column(String, nullable=True)
 
     state = Column(String, default='unknown', nullable=False)
 
@@ -126,6 +126,9 @@ class CodeHost(db.Model):
 
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc), nullable=False)
+
+    def __repr__(self):
+        return f"<CodeHost(id={self.id}, user_id={self.user_id}, service_id={self.service_id})>"
 
 
 class HostImage(db.Model):
