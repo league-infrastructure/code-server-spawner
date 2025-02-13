@@ -1,91 +1,35 @@
-{% extends "page.html" %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loading</title>
+    <style>
+        .spinner {
+            width: 100px;
+            height: 100px;
+            background: url('{{ url_for("main.static", filename="bolt.png") }}') no-repeat center center;
+            background-size: contain;
+            animation: spin 2s linear infinite;
+            margin: 100px auto;
+        }
 
-{% block title %}Starting Server - League Code Server{% endblock %}
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
 
-{% block styles %}
-<style>
-    .spinner-container {
-        text-align: center;
-        padding: 2rem;
-    }
-    
-    .spinner-border {
-        width: 4rem;
-        height: 4rem;
-    }
-    
-    .status-info {
-        margin-top: 2rem;
-        text-align: center;
-    }
-    
-    .cancel-container {
-        margin-top: 2rem;
-        text-align: center;
-    }
-</style>
-{% endblock %}
-
-{% block content %}
-<div class="card">
-    <div class="card-body">
-        <div class="spinner-container">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-        </div>
-        
-        <div class="status-info">
-            <p>Starting your server at {{hostname}} </p>
-            <p>Elapsed time: <span id="elapsed-time">0</span> seconds</p>
-         
-        </div>
-
-        <div class="cancel-container">
-            <a href="{{ url_for('home') }}" class="btn btn-danger">Cancel</a>
-        </div>
-
-       
-
-    </div>
-</div>
-
-
-{% endblock %}
-
-{% block scripts %}
-
-<script>
-    <!-- Polling script to check if the server is ready -->
-(function poll() {
-    const serviceId = "{{ service_id }}";
-    const url = `/service/${serviceId}/is_ready`;
-    let startTime = Date.now();
-
-    function updateElapsedTime() {
-        const elapsedTime = Math.floor((Date.now() - startTime) / 1000);
-        document.getElementById('elapsed-time').innerText = `${elapsedTime}`;
-    }
-
-    function pollServer() {
-        fetch(url)
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'ready') {
-                    window.open(data.hostname_url, '_blank');
-                    window.location.href = "{{ url_for('home') }}";
-                } else {
-                    updateElapsedTime();
-                    setTimeout(pollServer, 1000); // Retry after 1 second
-                }
-            })
-            .catch(error => {
-                updateElapsedTime();
-                setTimeout(pollServer, 1000); // Retry after 1 second in case of error
-            });
-    }
-
-    pollServer();
-})();
-</script>
-{% endblock %}
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="spinner"></div>
+</body>
+</html>

@@ -19,6 +19,7 @@ def run(ctx):
     logger = get_logger(ctx)
     for c in app.csm.collect_containers(generate=True):
         print(c['service_name'])
+        print(c)
         
         with app.app_context():  
             code_host = CodeHost.query.filter_by(service_id=c['service_id']).first()
@@ -33,17 +34,22 @@ def run(ctx):
                 username = c['labels'].get('jtl.codeserver.username')
                 user = User.query.filter_by(username=username).first() if username else User.query.get(1)
                 
+                image_uri = c['image_uri']
+                host_image = HostImage.query.filter_by(image_uri=image_uri).first() # Might not get the right repo_uri
+                
                 user = User.query.get(1)
                 new_code_host = CodeHost(
                     service_id=c['service_id'],
                     service_name=c['service_name'],
                     container_id=c['container_id'],
                     node_id=c['node_id'],
+                    host_image=host_image,
                     state=c['state'],
                     user=user
                 )
-                #app.db.session.add(new_code_host)
-                #app.db.session.commit()
+                
+                app.db.session.add(new_code_host)
+                app.db.session.commit()
             
 
 @probe.command()

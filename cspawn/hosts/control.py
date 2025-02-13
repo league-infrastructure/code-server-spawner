@@ -9,15 +9,17 @@ from urllib.parse import urlparse
 
 import docker
 import paramiko
-from pymongo.collection import Collection
-from pymongo.database import Database as MongoDatabase
 import pytz
 import requests
 from flask import current_app
+from pymongo import MongoClient
+from pymongo.collection import Collection
+from pymongo.database import Database as MongoDatabase
+from slugify import slugify
+
 from cspawn.docker.manager import DbServicesManager
 from cspawn.docker.proc import Service
-from pymongo import MongoClient
-from slugify import slugify
+from cspawn.main.models import User
 
 logger = logging.getLogger('cspawnctl')
 
@@ -260,7 +262,9 @@ class CodeServerManager(DbServicesManager):
         return user_dir
     
     
-    def new_cs(self, username, image=None, repo = None):
+    def new_cs(self, user: User, image=None, repo = None):
+ 
+        username = user.username
  
         container_def = define_cs_container(config = self.config, 
                                             image = image,
@@ -270,6 +274,7 @@ class CodeServerManager(DbServicesManager):
         
         #import yaml
         #logger.debug(f"Container Definition\n {yaml.dump(container_def)}")
+        
         
         self.make_user_dir(username)
         

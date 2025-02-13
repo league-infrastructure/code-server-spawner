@@ -1,0 +1,98 @@
+{% extends "page.html" %}
+
+{% block messages %}{% endblock %}
+
+{% block navbar %}
+<nav id="running_nav" class="navbar navbar-expand-lg navbar-light bg-light" style="height: 40px;">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="{{ url_for('main.index') }}">
+            <img src="{{ url_for('main.static', filename='flag.png') }}" alt="Flag" width="30" height="30">
+          </a>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav w-100">
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('main.index') }}">Home</a>
+                </li>
+                
+                <li class="nav-item ms-auto"></li>
+                    <a id="open-new-window-btn" href="https://{{host.public_url}}" 
+                    target="_blank" aria-disabled="true" class=" nav-link  disabled float-left"
+                    style="pointer-events: none; opacity: 0.5;">
+                        <i class="fas fa-external-link-alt" ></i> 
+                    </a>
+                </li>
+                <li class="nav-item ms-2">
+                    &nbsp;
+                </li>
+
+                <li class="nav-item ">
+                    <a id="stop-server-btn" href="{{ url_for('hosts.stop_host', host_id=host.id) }}" 
+                    aria-disabled="true" class="nav-link  disabled float-right"
+                    style="pointer-events: none; opacity: 0.5;">
+                        <i id="stop-server-icon"  class="fas fa-ban" style="color:grey;"></i>
+                    </a>
+                
+                </li>
+
+            </ul>
+        </div>
+    </div>
+</nav>
+{% endblock %} 
+
+
+{% block container %}
+<div id="host_view" class="w-100 p-0"></div>
+<iframe id="host_view_iframe" src="{{ url_for('hosts.loading') }}" style="width: 100%; height: calc(100vh - 40px); border: none;"></iframe>
+</div>
+{%endblock%}
+
+{% block footer %} {% endblock %}
+
+{% block scripts %}
+
+<script>
+    <!-- Polling script to check if the server is ready -->
+(function poll() {
+    
+    const url = `{{ url_for('hosts.is_ready', service_id=host.service_id) }}`;
+    let startTime = Date.now();
+
+
+    function pollServer() {
+       
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                console.log("Code host status " + data.status);
+                if (data.status === 'ready') {
+                    // Enable the buttons and reload the iframe. 
+                    const onwb = document.getElementById('open-new-window-btn');
+                    onwb.classList.remove('disabled');
+                    onwb.removeAttribute('aria-disabled');
+                    onwb.style.pointerEvents = 'auto';
+                    onwb.style.opacity = '1';
+
+                    const ssb = document.getElementById('stop-server-btn');
+                    ssb.classList.remove('disabled');
+                    ssb.removeAttribute('aria-disabled');
+                    ssb.style.pointerEvents = 'auto';
+                    ssb.style.opacity = '1';
+                    document.getElementById('stop-server-icon').style.color = 'red';
+                    document.getElementById('host_view_iframe').src = `https://{{host.public_url}}`;
+
+                } else {
+
+                    setTimeout(pollServer, 2000); // Retry after 1 second
+                }
+            })
+            .catch(error => {
+            
+                setTimeout(pollServer, 2000); // Retry after 1 second in case of error
+            });
+    }
+
+    pollServer();
+})();
+</script>
+{% endblock %}

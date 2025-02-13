@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en" class="h-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Code Server{% endblock %}</title>
+    {{ bootstrap.load_css() }}
+    {{ font_awesome.load_css() }}
+    <link rel="stylesheet" href="{{ url_for('main.static', filename='styles.css') }}" />
+    {% block head %}{% endblock %}
+    {% block styles %}{% endblock %}
+</head>
+<body class="d-flex flex-column h-100">
+    {% block navbar %}{% endblock %}
+    {% block subnavbar %}{% endblock %}
+    {% block messages %}{% endblock %}
+    {% block container %}
+    <div class="container flex-grow-1">
+        <header class="mb-4">
+            {% block header %}
+            
+            {% endblock %}
+        </header>
+    
+        <main>
+            {% block content %}
+            <!-- Default content -->
+            {% endblock %}
+        </main>
+    </div>
+    {% endblock %}
+
+    <footer class="mt-auto py-3 bg-light">
+        <div class="container">
+        {% block footer %}
+        {% endblock %}
+        </div>
+    </footer>
+
+
+    {{ bootstrap.load_js() }}
+    {% block scripts %}{% endblock %}
+
+
+</body>
+</html>

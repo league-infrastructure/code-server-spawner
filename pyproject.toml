@@ -32,7 +32,7 @@ dependencies = [
     "flask-migrate>=4.1.0",
     "faker>=36.1.0",
     "bootstrap-flask>=2.4.1",
-
+    "font-awesome-flask>=0.1.4",
 ]
 
 [tool.uv]

@@ -3,6 +3,7 @@ from sqlalchemy.orm import relationship, DeclarativeBase
 from flask_sqlalchemy import SQLAlchemy
 
 from flask_login import UserMixin
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Table, Text, func
 from sqlalchemy_utils import PasswordType
 from cspawn.util import role_from_email
@@ -31,6 +32,18 @@ class User(UserMixin, db.Model):
     is_admin = Column(Boolean, default=False, nullable=False)
     is_student = Column(Boolean, default=False, nullable=False)
     is_instructor = Column(Boolean, default=False, nullable=False)
+    
+    @hybrid_property
+    def role(self):
+        if self.is_admin:
+            return "admin"
+        elif self.is_instructor:
+            return "instructor"
+        elif self.is_student:
+            return "student"
+        else:
+            return "public"
+    
     display_name = Column(String(255), nullable=True)
     birth_year = Column(Integer, nullable=True)
 
@@ -123,12 +136,21 @@ class CodeHost(db.Model):
 
     node_id = Column(String, nullable=True)
     public_url = Column(String, nullable=True)
+    #password = Column(String, nullable=True)
 
     user_activity_rate = Column(Float, default=0.0, nullable=True)
     last_heartbeat_ago = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc), nullable=False)
+
+    def update_from_ci(self, ci):
+        self.service_name = ci['service_name']
+        self.container_id = ci['container_id']
+        self.node_id = ci['node_id']
+        self.state = ci['state']
+        self.public_url = ci['hostname']
+      
 
     def __repr__(self):
         return f"<CodeHost(id={self.id}, user_id={self.user_id}, service_id={self.service_id})>"
