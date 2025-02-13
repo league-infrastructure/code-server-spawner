@@ -14,6 +14,7 @@
                 <th>Service Name</th>
                 <th>State</th>
                 <th>Host Image</th>
+                <th>Url</th>
                 <th>User Activity Rate</th>
                 <th>Last Heartbeat</th>
             </tr>
@@ -26,6 +27,7 @@
                 <td>{{ code_host.service_name }}</td>
                 <td>{{ code_host.state }}</td>
                 <td>{{ code_host.host_image.name }}</td>
+                <td><a href="https://{{ code_host.public_url }}" target="_blank">{{ code_host.public_url }}</a></td>
                 <td>{{ code_host.user_activity_rate }}</td>
                 <td>{{ code_host.last_heartbeat_ago.strftime('%Y-%m-%d %H:%M:%S') if code_host.last_heartbeat_ago else 'N/A' }}</td>
                 <td>

@@ -1,125 +1,87 @@
+{% extends "base_app.html" %}
 {% from 'bootstrap5/utils.html' import render_messages %}
 
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    
-    <!-- Bootstrap CSS -->
-   
-    {{ bootstrap.load_css() }}
-
-    <!-- Your custom CSS -->
-    <link rel="stylesheet" href="{{ url_for('main.static', filename='styles.css') }}" />
-    
-    <title>{% block title %}Code Server{% endblock %}</title>
-    {% block styles %}{% endblock %}
-  </head>
-  <body>
-    {% block navbar %}
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-      <div class="container-fluid">
-        <a class="navbar-brand" href="{{ url_for('main.index') }}">
-          <img src="{{ url_for('main.static', filename='flag.png') }}" alt="Flag" width="40" height="40">
-        </a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-          <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+{% block navbar %}
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="{{ url_for('main.index') }}">
+      <img src="{{ url_for('main.static', filename='flag.png') }}" alt="Flag" width="40" height="40">
+    </a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarNav">
+      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('main.index') }}">Home</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('hosts.index') }}">Code Host</a>
+        </li>
+        {% if current_user.is_authenticated %}
+          {% if current_user.is_instructor %}
             <li class="nav-item">
-                <a class="nav-link" href="{{ url_for('main.index') }}">Home</a>
+              <a class="nav-link" href="#">Classes (Teaching)</a>
             </li>
+          {% endif %}
+          {% if current_user.is_student %}
             <li class="nav-item">
-                <a class="nav-link" href="{{ url_for('hosts.index') }}">Code Host</a>
+              <a class="nav-link" href="#">Classes (Attending)</a>
             </li>
-            {% if current_user.is_authenticated %}
-              {% if current_user.is_instructor %}
-                <li class="nav-item">
-                  <a class="nav-link" href="#">Classes (Teaching)</a>
-                </li>
-              {% endif %}
-              {% if current_user.is_student %}
-                <li class="nav-item">
-                  <a class="nav-link" href="#">Classes (Attending)</a>
-                </li>
-              {% endif %}
-              {% if current_user.is_admin %}
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.index') }}">Admin</a>
-                </li>
-              {% endif %}
-            {% endif %}
-          </ul>
-          <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
-            {% if current_user.is_authenticated %}
-              <li class="nav-item">
-                <a class="nav-link" href="{{ url_for('auth.profile') }}">Profile</a>
-              </li>
-              {% if current_user.avatar_url %}
-              <li class="nav-item">
-                <img src="{{ current_user.avatar_url }}" alt="Avatar" class="rounded-circle" width="30" height="30">
-              </li>
-              {% endif %}
-              <li class="nav-item">
-                <a class="nav-link" href="{{ url_for('auth.logout') }}">Logout</a>
-              </li>
-            {% else %}
-              <li class="nav-item">
-                <a class="nav-link" href="{{ url_for('auth.login') }}">Login</a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link" href="#">Sign Up</a>
-              </li>
-            {% endif %}
-          </ul>
-        </div>
-      </div>
-    </nav>
-    {% endblock %}
-
-    {% block subnavbar %}
-    {% endblock %}
-
-
-    {{ render_messages(container=True) }}
-
-    <div aria-live="polite" aria-atomic="true" class="position-relative">
-      <div class="toast-container position-absolute top-0 end-0 p-3">
-        
-      </div>
+          {% endif %}
+          {% if current_user.is_admin %}
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('admin.index') }}">Admin</a>
+            </li>
+          {% endif %}
+        {% endif %}
+      </ul>
+      <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
+        {% if current_user.is_authenticated %}
+          <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('auth.profile') }}">Profile</a>
+          </li>
+          {% if current_user.avatar_url %}
+          <li class="nav-item">
+            <img src="{{ current_user.avatar_url }}" alt="Avatar" class="rounded-circle" width="30" height="30">
+          </li>
+          {% endif %}
+          <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('auth.logout') }}">Logout</a>
+          </li>
+        {% else %}
+          <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('auth.login') }}">Login</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#">Sign Up</a>
+          </li>
+        {% endif %}
+      </ul>
     </div>
+  </div>
+</nav>
+{% endblock %}
 
-    <div class="container">
-      <header class="mb-4">
-          {% block header %}
-          
-          {% endblock %}
-      </header>
+{% block subnavbar %}{% endblock %}
 
-      <main>
-          {% block content %}
-          <!-- Default content -->
-          {% endblock %}
-      </main>
+{% block messages %}{{ render_messages(container=True) }}{% endblock %}
 
-      <footer class="mt-4">
-          {% block footer %}
+{% block header %}{% endblock %}
 
-          <div class="left">code-server-spawner {{version}}</div>
-          <div class="right">
-            <img src="{{ url_for('main.static', filename='flag.png') }}" alt="Flag" class="inline"">
-              <a href="https://www.jointheleague.org">Join the League</a>
-              
-          </div>
+{% block content %}{% endblock %}
 
-          {% endblock %}
-      </footer>
-    </div>
+{% block footer %}
 
+<div class="left">code-server-spawner {{version}}</div>
+<div class="right">
+  <img src="{{ url_for('main.static', filename='flag.png') }}" alt="Flag" class="inline"">
+    <a href="https://www.jointheleague.org">Join the League</a>
+    
+</div>
 
-    {{ bootstrap.load_js() }}
+{% endblock %}
+
     {% block scripts %}{% endblock %}
   </body>
 </html>

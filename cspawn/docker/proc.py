@@ -127,15 +127,14 @@ class Service(ProcessBase):
             hostname = labels.get('caddy')
             labels = {k: v for k, v in labels.items() if not k.startswith('caddy')}
             
-            import pprint
-            pprint(t)
-            
+
             yield {
                 'service_id': self.id,
                 'service_name': self.name,
                 'container_id':t["Status"].get("ContainerStatus", {}).get("ContainerID"),
                 'node_id': t.get('NodeID'),
                 'state': t['Status']['State'],
+                'image_uri': t['Spec']['ContainerSpec']['Image'],
                 'hostname': hostname,
                 'timestamp': t['Status']['Timestamp'],
                 'labels': labels,

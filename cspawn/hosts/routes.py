@@ -17,13 +17,18 @@ def index():
    
     iframe_url = "http://jointheleague.org"  # Replace with the actual URL you want to load in the iframe
     
-    host = CodeHost.query.filter_by(user_id=current_user.id).first()
+    host_rec = CodeHost.query.filter_by(user_id=current_user.id).first()
     
-    print("!!!!", host)
+    if host_rec:
     
-    host_images = HostImage.query.all()
+        s =  current_app.csm.get_by_username(current_user.username)
+        
+        return render_template('hosts/index_running.html', host=host_rec, service=s, iframe_url=iframe_url)
+    else:
+  
+        host_images = HostImage.query.all()
     
-    return render_template('hosts/index.html', host=host, host_images=host_images, iframe_url=iframe_url)
+        return render_template('hosts/index_stopped.html', host_images=host_images)
 
 @hosts_bp.route("/start")
 @login_required
@@ -51,7 +56,7 @@ def start_host():
     
     if not s:
         s = current_app.csm.new_cs(
-                username = current_user.username,
+                user = current_user,
                 image = image.image_uri,
                 repo = image.repo_uri,         
             )
@@ -65,6 +70,8 @@ def start_host():
         container_name = None
     )
     
+    host.update_from_ci(list(s.containers_info())[0])
+    
     # Commit the new host to the database
     db.session.add(host)
     db.session.commit()
@@ -72,83 +79,46 @@ def start_host():
     flash(f"Host {s.name} started successfully", "success")
     return redirect(url_for('hosts.index'))
 
-@hosts_bp.route("/start")
-@login_required
-def x_start_server():
-    from docker.errors import APIError, NotFound
-
-    # Get query parameters
-   
-    service_id = request.args.get('service_id')
-    iteration = int(request.args.get('iteration', 0))
-    start_time = float(request.args.get('start_time', time.time()))
-    
-    s =  current_app.csm.get_by_username(current_user.primary_email)
-
-    if not s:
-        s = current_app.csm.new_cs(current_user.primary_email)
-    
-    if s is None:
-        flash("Error starting server", "error")
-        return redirect(url_for('home'))
-    
-    if s.is_ready():
-        return redirect(s.hostname_url)
-    
-    # Calculate elapsed time
-    elapsed_time = int(time.time() - start_time)
-    
-    # Maximum wait time 
-    if elapsed_time > 120:
-        flash("Server startup timed out", "error")
-        return redirect(url_for('home'))
-    
-    # Render loading page with updated iteration
-    ctx = {
-        'service_id': s.id,
-        'hostname': s.hostname,
-        'hostname_url': s.hostname_url,
-        'start_time': start_time,
-        'host': s,
-    }
-    next_url = url_for('start_server', iteration=iteration + 1, )
-    return render_template('loading.html', iteration=iteration, next_url=next_url, **ctx, **context)
-
 @hosts_bp.route("/stop")
 @login_required
-def stop_server():
+def stop_host():
 
-    server_id = request.args.get('server_id')
-    client = docker.DockerClient(base_url=current_app.app_config.DOCKER_URI)
+    host_id = request.args.get('host_id')
+
+    if not host_id:
+        flash("No host found to stop (no host_id)", "error")
+        return redirect(url_for('hosts.index'))
+
+    extant_host = CodeHost.query.filter_by(user_id=current_user.id).first()
+
+    if not extant_host:
+        flash("No host found to stop (no host record)", "error")
+        return redirect(url_for('hosts.index'))
     
-    if not current_user.is_staff or not server_id:
-        
-        s =  app.csm.get_by_username(current_user.primary_email)
-        
-        if not s:
-            flash("No server found to stop", "error")
-            return redirect(url_for('home'))
-        else:
-            s.stop()
+    if host_id and str(extant_host.id) != str(host_id):
+        flash(f"Host stop disallowed (host id mismatch {host_id} != {extant_host.id})", "error")
+        return redirect(url_for('hosts.index'))
 
-        flash("Server stopped successfully", "success")
+    s =  current_app.csm.get_by_username(current_user.username)
+        
+    if not s:
+        flash("No server found to stop", "error")
         return redirect(url_for('home'))
-
-    elif  current_user.is_staff and server_id:
-
-        s = app.csm.get(server_id)
-        s.stop()
-        
-        flash(f"Server {s.name} stopped successfully", "success")
-        return redirect(url_for('home'))
+      
+    s.stop()
     
-    else:
-        flash("Server stop disallowed", "error")
-        return redirect(url_for('home'))
+    db.session.delete(extant_host)
+    db.session.commit()
+
+
+    flash("Server stopped successfully", "success")
+    return redirect(url_for('hosts.index'))
+
+
 
 @hosts_bp.route("/service/<service_id>/is_ready", methods=["GET"])
 @login_required
-def server_is_ready(service_id):
+def is_ready(service_id):
     from docker.errors import NotFound 
     
     try:
@@ -159,3 +129,8 @@ def server_is_ready(service_id):
             return jsonify({"status": "not_ready"})
     except NotFound as e:
         return jsonify({"status": "error", "message": str(e)})
+    
+    
+@hosts_bp.route("/loading")
+def loading():
+    return render_template('hosts/loading.html')
