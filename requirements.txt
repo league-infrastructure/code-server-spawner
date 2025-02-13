@@ -4,14 +4,8 @@ alembic==1.14.1
     # via flask-migrate
 annotated-types==0.7.0
     # via pydantic
-appnope==0.1.4
-    # via ipykernel
-asttokens==3.0.0
-    # via stack-data
 authlib==1.4.1
     # via cspawn (pyproject.toml)
-bcrypt==4.2.1
-    # via paramiko
 blinker==1.9.0
     # via flask
 bootstrap-flask==2.4.1
@@ -21,33 +15,17 @@ cachelib==0.13.0
 certifi==2024.12.14
     # via requests
 cffi==1.17.1
-    # via
-    #   cryptography
-    #   pynacl
+    # via cryptography
 charset-normalizer==3.4.1
     # via requests
 click==8.1.8
     # via
     #   cspawn (pyproject.toml)
     #   flask
-cmdkit==2.7.7
-    # via names-generator
-comm==0.2.2
-    # via ipykernel
 cryptography==44.0.0
-    # via
-    #   authlib
-    #   paramiko
-debugpy==1.8.12
-    # via ipykernel
-decorator==5.1.1
-    # via ipython
+    # via authlib
 dnspython==2.7.0
     # via pymongo
-docker==7.1.0
-    # via jtlutil
-executing==2.2.0
-    # via stack-data
 faker==36.1.0
     # via cspawn (pyproject.toml)
 flask==3.1.0
@@ -62,23 +40,18 @@ flask==3.1.0
     #   flask-session
     #   flask-sqlalchemy
     #   flask-wtf
-    #   jtlutil
 flask-dance==7.1.0
     # via cspawn (pyproject.toml)
 flask-httpauth==4.8.0
     # via cspawn (pyproject.toml)
 flask-login==0.6.3
-    # via
-    #   cspawn (pyproject.toml)
-    #   jtlutil
+    # via cspawn (pyproject.toml)
 flask-migrate==4.1.0
     # via cspawn (pyproject.toml)
 flask-pymongo==2.3.0
     # via cspawn (pyproject.toml)
 flask-session==0.8.0
-    # via
-    #   cspawn (pyproject.toml)
-    #   jtlutil
+    # via cspawn (pyproject.toml)
 flask-sqlalchemy==3.1.1
     # via
     #   cspawn (pyproject.toml)
@@ -97,28 +70,14 @@ humanize==4.11.0
     # via cspawn (pyproject.toml)
 idna==3.10
     # via requests
-ipykernel==6.29.5
-    # via jtlutil
-ipython==8.31.0
-    # via ipykernel
 itsdangerous==2.2.0
     # via
     #   flask
     #   flask-wtf
-jedi==0.19.2
-    # via ipython
 jinja2==3.1.5
     # via
     #   cspawn (pyproject.toml)
     #   flask
-jtlutil @ git+https://github.com/league-infrastructure/jtlutil@dd9c9f2fcb44d70f18aaf8e9c24e7737aeecd6f1
-    # via cspawn (pyproject.toml)
-jupyter-client==8.6.3
-    # via ipykernel
-jupyter-core==5.7.2
-    # via
-    #   ipykernel
-    #   jupyter-client
 mako==1.3.9
     # via alembic
 markupsafe==3.0.2
@@ -127,18 +86,8 @@ markupsafe==3.0.2
     #   mako
     #   werkzeug
     #   wtforms
-matplotlib-inline==0.1.7
-    # via
-    #   ipykernel
-    #   ipython
 msgspec==0.19.0
     # via flask-session
-names-generator==0.2.0
-    # via jtlutil
-namesgenerator==0.3
-    # via jtlutil
-nest-asyncio==1.6.0
-    # via ipykernel
 numpy==2.2.2
     # via pandas
 oauthlib==3.2.2
@@ -146,77 +95,30 @@ oauthlib==3.2.2
     #   flask-dance
     #   requests-oauthlib
 packaging==24.2
-    # via
-    #   gunicorn
-    #   ipykernel
+    # via gunicorn
 pandas==2.2.3
     # via cspawn (pyproject.toml)
-paramiko==3.5.0
-    # via jtlutil
-parso==0.8.4
-    # via jedi
 passlib==1.7.4
     # via cspawn (pyproject.toml)
-pexpect==4.9.0
-    # via ipython
-platformdirs==4.3.6
-    # via jupyter-core
-prompt-toolkit==3.0.50
-    # via ipython
-psutil==6.1.1
-    # via ipykernel
 psycopg2-binary==2.9.10
     # via cspawn (pyproject.toml)
-ptyprocess==0.7.0
-    # via pexpect
-pure-eval==0.2.3
-    # via stack-data
 pycparser==2.22
     # via cffi
-pycryptodome==3.21.0
-    # via jtlutil
 pydantic==2.10.6
-    # via
-    #   cspawn (pyproject.toml)
-    #   pydantic-mongo
+    # via cspawn (pyproject.toml)
 pydantic-core==2.27.2
     # via pydantic
-pydantic-mongo==2.3.0
-    # via jtlutil
-pygments==2.19.1
-    # via ipython
-pyjwt==2.10.1
-    # via jtlutil
 pymongo==4.10.1
-    # via
-    #   flask-pymongo
-    #   pydantic-mongo
-pynacl==1.5.0
-    # via paramiko
+    # via flask-pymongo
 python-dateutil==2.9.0.post0
-    # via
-    #   jtlutil
-    #   jupyter-client
-    #   pandas
+    # via pandas
 python-dotenv==1.0.1
-    # via
-    #   cspawn (pyproject.toml)
-    #   jtlutil
-python-slugify==8.0.4
-    # via jtlutil
+    # via cspawn (pyproject.toml)
 pytz==2024.2
-    # via
-    #   jtlutil
-    #   pandas
-pyzmq==26.2.0
-    # via
-    #   ipykernel
-    #   jupyter-client
+    # via pandas
 requests==2.32.3
     # via
-    #   docker
     #   flask-dance
-    #   jtlutil
     #   requests-oauthlib
 requests-oauthlib==2.0.0
     # via flask-dance
@@ -234,35 +136,14 @@ sqlalchemy==2.0.37
 sqlalchemy-utils==0.41.2
     # via cspawn (pyproject.toml)
 sqlitedict==2.1.0
-    # via
-    #   cspawn (pyproject.toml)
-    #   jtlutil
-stack-data==0.6.3
-    # via ipython
+    # via cspawn (pyproject.toml)
 tabulate==0.9.0
     # via cspawn (pyproject.toml)
 tenacity==9.0.0
-    # via
-    #   cspawn (pyproject.toml)
-    #   jtlutil
-text-unidecode==1.3
-    # via python-slugify
-tornado==6.4.2
-    # via
-    #   ipykernel
-    #   jupyter-client
-traitlets==5.14.3
-    # via
-    #   comm
-    #   ipykernel
-    #   ipython
-    #   jupyter-client
-    #   jupyter-core
-    #   matplotlib-inline
+    # via cspawn (pyproject.toml)
 typing-extensions==4.12.2
     # via
     #   alembic
-    #   ipython
     #   pydantic
     #   pydantic-core
     #   sqlalchemy
@@ -271,13 +152,9 @@ tzdata==2025.1
     #   faker
     #   pandas
 urllib3==2.3.0
-    # via
-    #   docker
-    #   requests
+    # via requests
 urlobject==2.4.3
     # via flask-dance
-wcwidth==0.2.13
-    # via prompt-toolkit
 werkzeug==3.1.3
     # via
     #   flask

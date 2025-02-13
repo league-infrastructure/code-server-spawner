@@ -15,7 +15,7 @@ from dotenv import dotenv_values
 from flask import Flask, current_app, session, g
 from flask_login import LoginManager, UserMixin
 from flask_session import Session
-from jtlutil.config import get_config, get_config_tree
+from .config import get_config, get_config_tree
 
 
 class GoogleUser(UserMixin):

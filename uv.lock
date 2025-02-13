@@ -382,7 +382,7 @@ requires-dist = [
     { name = "gunicorn", specifier = ">=23.0.0" },
     { name = "humanize", specifier = ">=4.11.0" },
     { name = "jinja2", specifier = ">=3.1.5" },
-    { name = "jtlutil", git = "https://github.com/league-infrastructure/jtlutil" },
+    { name = "jtlutil", specifier = ">=0.3.5" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "passlib", specifier = ">=1.7.4" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
@@ -800,7 +800,7 @@ wheels = [
 [[package]]
 name = "jtlutil"
 version = "0.3.5"
-source = { git = "https://github.com/league-infrastructure/jtlutil#dd9c9f2fcb44d70f18aaf8e9c24e7737aeecd6f1" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "docker" },
     { name = "flask" },
@@ -820,6 +820,10 @@ dependencies = [
     { name = "requests" },
     { name = "sqlitedict" },
     { name = "tenacity" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/af/8e/1d5b1387e1511cc838802f1c1ca91e8bf6ca5e0e92e194f68ef22d7cd382/jtlutil-0.3.5.tar.gz", hash = "sha256:b9f3015aaf00b6833a180f3c13b4c128dc4647af15203671424483472009ce18", size = 73518 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/22/ba/e5f380aaec7dc9a44c87259d270982314cd7e97f56f7b8044037cdd63adc/jtlutil-0.3.5-py3-none-any.whl", hash = "sha256:f7781c1affbe5ead2cfddd0425d9c2a4d11bcd87ee384fa473cbdaa99e631031", size = 13485 },
 ]
 
 [[package]]
