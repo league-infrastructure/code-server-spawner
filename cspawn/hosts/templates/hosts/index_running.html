@@ -82,13 +82,11 @@
                     document.getElementById('host_view_iframe').src = `https://{{host.public_url}}`;
 
                 } else {
-
-                    setTimeout(pollServer, 2000); // Retry after 1 second
+                    setTimeout(pollServer, 2000); 
                 }
             })
             .catch(error => {
-            
-                setTimeout(pollServer, 2000); // Retry after 1 second in case of error
+                setTimeout(pollServer, 2000); 
             });
     }
 
