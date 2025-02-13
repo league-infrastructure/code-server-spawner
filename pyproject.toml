@@ -32,7 +32,7 @@ dependencies = [
     "flask-migrate>=4.1.0",
     "faker>=36.1.0",
     "bootstrap-flask>=2.4.1",
-    "jtlutil>=0.3.5",
+
 ]
 
 [tool.uv]
@@ -42,8 +42,6 @@ package = true
 where = ["."]
 include = ["cspawn*"]  # Include all subpackages
 
-[tool.uv.sources]
-jtlutil = { git = "https://github.com/league-infrastructure/jtlutil" }
 
 [dependency-groups]
 dev = [

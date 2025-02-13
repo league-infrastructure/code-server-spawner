@@ -14,8 +14,8 @@ from pymongo.database import Database as MongoDatabase
 import pytz
 import requests
 from flask import current_app
-from jtlutil.docker.manager import DbServicesManager
-from jtlutil.docker.proc import Service
+from cspawn.docker.manager import DbServicesManager
+from cspawn.docker.proc import Service
 from pymongo import MongoClient
 from slugify import slugify
 
@@ -310,7 +310,7 @@ class CodeServerManager(DbServicesManager):
         return super().list(filters=filters)
 
     def containers_list_cached(self):
-        from jtlutil.docker.db import DockerContainerStats
+        from cspawn.docker.db import DockerContainerStats
 
         
         return self.repo.all

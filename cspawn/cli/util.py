@@ -1,9 +1,10 @@
 
 from cspawn.hosts.control import logger as ctrl_logger
 from cspawn.init import init_app
-from jtlutil.config import find_parent_dir
+from cspawn.config import find_parent_dir
 from functools import lru_cache
 from cspawn.main.models import *
+from cspawn.util import configure_config_tree
 from faker import Faker
 from pathlib import Path
 import logging

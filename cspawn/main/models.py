@@ -118,8 +118,11 @@ class CodeHost(db.Model):
 
     state = Column(String, default='unknown', nullable=False)
 
-    host_image_id = Column(Integer, ForeignKey('host_images.id'), nullable=False)
+    host_image_id = Column(Integer, ForeignKey('host_images.id'), nullable=True)
     host_image = relationship("HostImage", backref="code_hosts")
+
+    node_id = Column(String, nullable=True)
+    public_url = Column(String, nullable=True)
 
     user_activity_rate = Column(Float, default=0.0, nullable=True)
     last_heartbeat_ago = Column(DateTime, nullable=True)
