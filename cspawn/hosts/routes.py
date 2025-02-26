@@ -7,35 +7,30 @@ from flask_login import current_user, login_required
 
 from cspawn.hosts import hosts_bp
 from cspawn.main.models import db, HostImage, CodeHost
+from cspawn.apptypes import App
 
-# Example route in your Flask application
-from flask import render_template
+from typing import cast
+
+ca = cast(App, current_app)
 
 @hosts_bp.route('/')
 @login_required
-def index():
-   
+def index() -> str:
     iframe_url = "http://jointheleague.org"  # Replace with the actual URL you want to load in the iframe
     
     host_rec = CodeHost.query.filter_by(user_id=current_user.id).first()
     
     if host_rec:
-    
-        s =  current_app.csm.get_by_username(current_user.username)
-        
+        s = ca.csm.get_by_username(current_user.username)
         return render_template('hosts/index_running.html', host=host_rec, service=s, iframe_url=iframe_url)
     else:
-  
         host_images = HostImage.query.all()
-    
         return render_template('hosts/index_stopped.html', host_images=host_images)
 
 @hosts_bp.route("/start")
 @login_required
-def start_host():  
-    
+def start_host() -> str:
     image_id = request.args.get('image_id')
-
     image = HostImage.query.get(image_id)
 
     if not image:
@@ -50,24 +45,22 @@ def start_host():
         return redirect(url_for('hosts.index'))
 
     # Create a new CodeHost instance
-    
-    # There should not be one, but if there is , get it. 
-    s =  current_app.csm.get_by_username(current_user.username)
+    s = ca.csm.get_by_username(current_user.username)
     
     if not s:
-        s = current_app.csm.new_cs(
-                user = current_user,
-                image = image.image_uri,
-                repo = image.repo_uri,         
-            )
+        s = ca.csm.new_cs(
+            user=current_user,
+            image=image.image_uri,
+            repo=image.repo_uri,
+        )
     
     host = CodeHost(
-        user_id=current_user.id, 
+        user_id=current_user.id,
         host_image_id=image.id,
-        service_id = s.id,
-        service_name = s.name,
-        container_id = None,
-        container_name = None
+        service_id=s.id,
+        service_name=s.name,
+        container_id=None,
+        container_name=None
     )
     
     host.update_from_ci(list(s.containers_info())[0])
@@ -81,8 +74,7 @@ def start_host():
 
 @hosts_bp.route("/stop")
 @login_required
-def stop_host():
-
+def stop_host() -> str:
     host_id = request.args.get('host_id')
 
     if not host_id:
@@ -99,7 +91,7 @@ def stop_host():
         flash(f"Host stop disallowed (host id mismatch {host_id} != {extant_host.id})", "error")
         return redirect(url_for('hosts.index'))
 
-    s =  current_app.csm.get_by_username(current_user.username)
+    s = ca.csm.get_by_username(current_user.username)
         
     if not s:
         flash("No server found to stop", "error")
@@ -110,21 +102,18 @@ def stop_host():
     db.session.delete(extant_host)
     db.session.commit()
 
-
     flash("Server stopped successfully", "success")
     return redirect(url_for('hosts.index'))
 
-
-
 @hosts_bp.route("/service/<service_id>/is_ready", methods=["GET"])
 @login_required
-def is_ready(service_id):
+def is_ready(service_id: str) -> jsonify:
     from docker.errors import NotFound 
     
     try:
         host = CodeHost.query.filter_by(user_id=current_user.id).first()
         
-        s = current_app.csm.get(service_id)
+        s = ca.csm.get(service_id)
         
         if host and host.service_id != service_id:
             return jsonify({"status": "error", "message": "Service ID mismatch"})
@@ -138,7 +127,6 @@ def is_ready(service_id):
     except NotFound as e:
         return jsonify({"status": "error", "message": str(e)})
     
-    
 @hosts_bp.route("/loading")
-def loading():
+def loading() -> str:
     return render_template('hosts/loading.html')

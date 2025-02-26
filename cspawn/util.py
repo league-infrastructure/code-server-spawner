@@ -2,6 +2,8 @@ import logging
 import os
 import secrets
 import sqlite3
+import uuid 
+
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict
@@ -16,6 +18,7 @@ from flask import Flask, current_app, session, g
 from flask_login import LoginManager, UserMixin
 from flask_session import Session
 from .config import get_config, get_config_tree
+
 
 
 class GoogleUser(UserMixin):

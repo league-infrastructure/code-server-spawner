@@ -81,7 +81,7 @@ class CSMService(Service):
         self.update()
         return wait_time
 
-def define_cs_container(config, image, username, hostname_template, repo=None, env_vars={}, port=None):
+def define_cs_container(config, image, username, hostname_template, repo=None, syllabus=None, env_vars={}, port=None):
     # Create the container
     
     container_name = name = slugify(username)
@@ -102,12 +102,13 @@ def define_cs_container(config, image, username, hostname_template, repo=None, e
         "WORKSPACE_FOLDER":workspace_folder,
         "PASSWORD": password,
         "DISPLAY": ":0",
-        "VNC_URL": f"https://{hostname}/vnc/",
+        "VNC_URL": "http://localhost:6080",
         "KST_REPORTING_URL": config.KST_REPORTING_URL,
         "KST_CONTAINER_ID": name,
 		"KST_REPORT_RATE": config.KST_REPORT_RATE if hasattr(config, "KST_REPORT_RATE") else 30,
         "CS_DISABLE_GETTING_STARTED_OVERRIDE": "1",  # Disable the getting started page
-        "INITIAL_GIT_REPO": repo
+        "INITIAL_GIT_REPO": repo,
+        "JTL_SYLLABUS": syllabus
     }
     
     env_vars = {**_env_vars, **env_vars}
@@ -228,7 +229,6 @@ class CodeServerManager(DbServicesManager):
         super().__init__(self.docker_client,
                          hostname_f=_hostname_f, mongo_db=self.mongo_db)
     
-    
     @property
     @lru_cache()
     def keyrate(self):
@@ -262,15 +262,17 @@ class CodeServerManager(DbServicesManager):
         return user_dir
     
     
-    def new_cs(self, user: User, image=None, repo = None):
+    def new_cs(self, user: User, image=None, repo = None, syllabus=None):
  
         username = user.username
  
         container_def = define_cs_container(config = self.config, 
-                                            image = image,
-                                            repo = repo, 
                                             username = username,
-                                            hostname_template = self.config.HOSTNAME_TEMPLATE)
+                                            image = image,                                
+                                            hostname_template = self.config.HOSTNAME_TEMPLATE,
+                                            repo = repo,
+                                            syllabus=syllabus
+                                            )
         
         #import yaml
         #logger.debug(f"Container Definition\n {yaml.dump(container_def)}")
