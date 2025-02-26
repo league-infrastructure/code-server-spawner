@@ -110,3 +110,4 @@ def init_app(config_dir=None , log_level=None, sqlfile=None) -> Flask:
         return User.query.get(user_id)
 
     return app
+

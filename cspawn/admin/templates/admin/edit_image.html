@@ -1,6 +1,5 @@
 {% extends "admin/base.html" %}
 
-
 {% block header %}
 <div class="text-center">
     <h1 class="mb-4">Host Images</h1>
@@ -8,8 +7,7 @@
 {% endblock %}
 
 {% block content %}
-
-<div class="container mt-4"></div>
+<div class="container mt-4">
     <a href="{{ url_for('admin.list_images') }}" class="btn btn-secondary">Back to Images List</a>
 </div>
 
@@ -27,6 +25,10 @@
         <div class="mb-3">
             <label for="repo_uri" class="form-label">Repo URI</label>
             <input type="text" class="form-control" id="repo_uri" name="repo_uri" value="{{ image.repo_uri if image else '' }}">
+        </div>
+        <div class="mb-3"></div>
+            <label for="syllabus_path" class="form-label">Syllabus Path</label>
+            <input type="text" class="form-control" id="syllabus_path" name="syllabus_path" value="{{ image.syllabus_path if image and image.syllabus_path else '' }}">
         </div>
         <div class="form-check mb-3">
             <input class="form-check-input" type="checkbox" id="is_public" name="is_public" {% if image and image.is_public %}checked{% endif %}>

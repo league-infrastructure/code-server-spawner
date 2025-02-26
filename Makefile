@@ -5,6 +5,8 @@
 VERSION := $(shell grep '^version =' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
 
 
+FAPP := cspawn.app:app 
+
 ver:
 	@echo $(VERSION)
 
@@ -25,6 +27,15 @@ build:
 	docker compose build 
 
 
-
+# for development database
 dbshell:
-	PGPASSWORD=password psql -h localhost -p 5432 -U pguser -d pguser_db
+	PGPASSWORD=password psql -h localhost -p 5432 -U pguser -d pguser_db 
+
+routes:
+	@flask --app $(FAPP) routes
+
+migrate:
+	@flask --app $(FAPP) db migrate -m'.'
+
+upgrade:
+	@flask --app $(FAPP) db upgrade

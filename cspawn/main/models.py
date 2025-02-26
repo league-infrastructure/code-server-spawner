@@ -136,7 +136,7 @@ class CodeHost(db.Model):
 
     node_id = Column(String, nullable=True)
     public_url = Column(String, nullable=True)
-    #password = Column(String, nullable=True)
+    password = Column(String, nullable=True)
 
     user_activity_rate = Column(Float, default=0.0, nullable=True)
     last_heartbeat_ago = Column(DateTime, nullable=True)
@@ -164,7 +164,9 @@ class HostImage(db.Model):
     image_uri = Column(String, nullable=False)
     repo_uri = Column(String, nullable=True)
     repo_branch = Column(String, nullable=True)
-    repo_dir = Column(String, nullable=True)    
+    repo_dir = Column(String, nullable=True)   
+    
+    syllabus_path = Column(String, nullable=True) 
     
     startup_script = Column(String, nullable=True)
 

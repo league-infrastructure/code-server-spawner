@@ -72,6 +72,8 @@ def edit_image(image_id):
         image.name = request.form["name"]
         image.image_uri = request.form["image_uri"]
         image.repo_uri = request.form["repo_uri"]
+        image.syllabus_path = request.form["syllabus_path"]
+        
         image.is_public = "is_public" in request.form
         db.session.commit()
         flash("Image updated successfully", "success")
