@@ -3,6 +3,7 @@ from flask_login import current_user
 from flask import session
 from bson.objectid import ObjectId
 
+
 class MongoDBStorage(BaseStorage):
     def __init__(self, mongo, collection_name="oauth_tokens"):
         """
@@ -17,7 +18,7 @@ class MongoDBStorage(BaseStorage):
         """Retrieve the OAuth token for the current user and provider."""
         if not current_user.is_authenticated:
             return session.get(f"{blueprint.name}_oauth_token")
-        
+
         user = self.collection.find_one({"user_id": str(current_user.id), "provider": blueprint.name})
         return user["token"] if user else None
 
@@ -26,11 +27,11 @@ class MongoDBStorage(BaseStorage):
         if not current_user.is_authenticated:
             session[f"{blueprint.name}_oauth_token"] = token
             return
-        
+
         self.collection.update_one(
             {"user_id": str(current_user.id), "provider": blueprint.name},
             {"$set": {"token": token}},
-            upsert=True  # Create if it doesn't exist
+            upsert=True,  # Create if it doesn't exist
         )
 
     def delete(self, blueprint):
@@ -38,5 +39,5 @@ class MongoDBStorage(BaseStorage):
         if not current_user.is_authenticated:
             session.pop(f"{blueprint.name}_oauth_token", None)
             return
-        
+
         self.collection.delete_one({"user_id": str(current_user.id), "provider": blueprint.name})

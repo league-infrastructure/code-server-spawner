@@ -137,9 +137,7 @@ def define_cs_container(
         "VNC_URL": "http://localhost:6080",
         "KST_REPORTING_URL": config.KST_REPORTING_URL,
         "KST_CONTAINER_ID": name,
-        "KST_REPORT_RATE": (
-            config.KST_REPORT_RATE if hasattr(config, "KST_REPORT_RATE") else 30
-        ),
+        "KST_REPORT_RATE": (config.KST_REPORT_RATE if hasattr(config, "KST_REPORT_RATE") else 30),
         "CS_DISABLE_GETTING_STARTED_OVERRIDE": "1",  # Disable the getting started page
         "INITIAL_GIT_REPO": repo,
         "JTL_SYLLABUS": syllabus,
@@ -152,9 +150,7 @@ def define_cs_container(
         "jtl.codeserver": "true",
         "jtl.codeserver.username": username,
         "jt.codeserver.password": password,
-        "jtl.codeserver.start_time": datetime.now(
-            pytz.timezone("America/Los_Angeles")
-        ).isoformat(),
+        "jtl.codeserver.start_time": datetime.now(pytz.timezone("America/Los_Angeles")).isoformat(),
         "caddy": hostname,
         "caddy.@ws.0_header": "Connection *Upgrade*",
         "caddy.@ws.1_header": "Upgrade websocket",
@@ -225,11 +221,7 @@ class KeyrateDBHandler:
             dict: Latest report for each service.
         """
         pipeline = [
-            (
-                {"$match": {"serviceID": {"$in": services}}}
-                if services
-                else {"$match": {}}
-            ),
+            ({"$match": {"serviceID": {"$in": services}}} if services else {"$match": {}}),
             {"$sort": {"timestamp": -1}},
             {"$group": {"_id": "$serviceID", "latestReport": {"$first": "$$ROOT"}}},
         ]
@@ -275,9 +267,7 @@ class CodeServerManager(DbServicesManager):
         def _hostname_f(node_name):
             return f"{node_name}.jointheleague.org"
 
-        super().__init__(
-            self.docker_client, hostname_f=_hostname_f, mongo_db=self.mongo_db
-        )
+        super().__init__(self.docker_client, hostname_f=_hostname_f, mongo_db=self.mongo_db)
 
     @property
     @lru_cache()
@@ -301,23 +291,17 @@ class CodeServerManager(DbServicesManager):
         parsed_uri = urlparse(self.config["DOCKER_URI"])
 
         if parsed_uri.scheme == "ssh":
-            logger.info(
-                "Creating directory %s on remote host %s", user_dir, parsed_uri.hostname
-            )
+            logger.info("Creating directory %s on remote host %s", user_dir, parsed_uri.hostname)
 
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(parsed_uri.hostname, username=parsed_uri.username)
 
-            _, stdout, stderr = ssh.exec_command(
-                f"mkdir -p {user_dir} && chown -R {user_id}:{user_id} {user_dir}"
-            )
+            _, stdout, stderr = ssh.exec_command(f"mkdir -p {user_dir} && chown -R {user_id}:{user_id} {user_dir}")
             exit_status = stdout.channel.recv_exit_status()
-            
+
             if exit_status != 0:
-                logger.error(
-                    "Failed to create directory %s on remote host: %s", user_dir, stderr.read().decode()
-                )
+                logger.error("Failed to create directory %s on remote host: %s", user_dir, stderr.read().decode())
             ssh.close()
         else:
             logger.info("Creating directory %s on local machine", user_dir)

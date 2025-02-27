@@ -30,9 +30,7 @@ def index() -> str:
 
     if host_rec:
         s = ca.csm.get_by_username(current_user.username)
-        return render_template(
-            "hosts/index_running.html", host=host_rec, service=s, iframe_url=iframe_url
-        )
+        return render_template("hosts/index_running.html", host=host_rec, service=s, iframe_url=iframe_url)
     else:
         host_images = HostImage.query.all()
         return render_template("hosts/index_stopped.html", host_images=host_images)

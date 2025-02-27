@@ -8,6 +8,7 @@ from flask_font_awesome import FontAwesome
 from flask_pymongo import PyMongo
 from flask_sqlalchemy import SQLAlchemy
 
+
 class App(Flask):
     app_config: dict
     mongodb: PyMongo

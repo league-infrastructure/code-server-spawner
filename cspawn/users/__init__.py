@@ -1,8 +1,8 @@
 from flask import Blueprint
 
-users_bp = Blueprint('users', __name__, template_folder='templates')
+users_bp = Blueprint("users", __name__, template_folder="templates")
 
-import logging  
+import logging
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.ERROR)

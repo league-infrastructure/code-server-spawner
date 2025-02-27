@@ -1,10 +1,11 @@
 from gevent import monkey
+
 monkey.patch_all()
 
 # Patch for psycopg2 while using gevent
 # Called just after a worker has been forked.
 # The callable needs to accept two instance variables for the Arbiter and new Worker.
-#def post_fork(server, worker):
+# def post_fork(server, worker):
 #    from psycogreen.gevent import patch_psycopg
 #    patch_psycopg()
 
@@ -16,7 +17,7 @@ bind = "0.0.0.0:8000"
 # Command line: -w INT or --workers INT
 # Default: 1
 # The number of worker processes for handling requests.
-# A positive integer generally in the 2-4 x $(NUM_CORES) range. 
+# A positive integer generally in the 2-4 x $(NUM_CORES) range.
 # You’ll want to vary this a bit to find the best for your particular application’s work load.
 # multiprocessing.cpu_count() * 2 + 1
 workers = 5
@@ -25,7 +26,7 @@ workers = 5
 # Default: 1
 # The number of worker threads for handling requests.
 # Run each worker with the specified number of threads.
-# If you try to use the sync worker type and set the threads setting to more than 1, 
+# If you try to use the sync worker type and set the threads setting to more than 1,
 # the gthread worker type will be used instead.
 # threads = 2
 
@@ -37,12 +38,12 @@ timeout = 120
 # Command line: --log-level LEVEL
 # Default: 'info'
 # The granularity of Error log outputs.
-loglevel = 'debug'
+loglevel = "debug"
 
 # Command line: -p FILE or --pid FILE
 # Default: None
 # A filename to use for the PID file.
-#pidfile = "/var/log/docker_flask_gunicorn.pid"
+# pidfile = "/var/log/docker_flask_gunicorn.pid"
 
 # Command line: --access-logfile FILE
 # Default: None
@@ -68,4 +69,3 @@ capture_output = True
 # Default: False
 # Load application code before the worker processes are forked.
 preload_app = True
-

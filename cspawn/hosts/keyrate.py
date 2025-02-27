@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from typing import List, Dict
 
 
-
 class FileStat(BaseModel):
     keystrokes: int
     lastModified: str
@@ -33,7 +32,4 @@ class KsSummary(BaseModel):
     average30m: float
     heartbeatAgo: int
 
-
     model_config = {"from_attributes": True}
-
-

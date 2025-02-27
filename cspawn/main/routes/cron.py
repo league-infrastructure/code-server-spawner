@@ -1,5 +1,4 @@
-"""These endpoints get called by the cron script. """
-
+"""These endpoints get called by the cron script."""
 
 from flask import current_app, jsonify
 
@@ -14,18 +13,16 @@ def minutely():
 
     return jsonify({"status": "OK"})
 
+
 @main_bp.route("/cron/hourly")
 def hourly():
     current_app.logger.info("Hourly cron job")
-    
+
     return jsonify({"status": "OK"})
+
 
 @main_bp.route("/cron/daily")
 def daily():
     current_app.logger.info("Daily cron job")
-    
+
     return jsonify({"status": "OK"})
-
-
-
-

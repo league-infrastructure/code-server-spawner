@@ -9,6 +9,7 @@ def config():
     """Configuration commands."""
     pass
 
+
 @config.command()
 @click.pass_context
 def show(ctx):
@@ -16,7 +17,7 @@ def show(ctx):
 
     config = get_config()
 
-    for e in config['__CONFIG_PATH']:
+    for e in config["__CONFIG_PATH"]:
         print(e)
     pass
 
