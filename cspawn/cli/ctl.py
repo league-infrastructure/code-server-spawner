@@ -1,22 +1,19 @@
 import logging
-
-from cspawn.cli.root import cli
-
-from cspawn.main.models import *
+from cspawn.cli.root import cli  # noqa: W0611
+from cspawn.main.models import *  # noqa: W0611
+from cspawn.cli.root import cli  # noqa: W0611
+from .config import config  # noqa: W0611
+from .db import db  # noqa: W0611
+from .fs import fs  # noqa: W0611
+from .host import host  # noqa: W0611
+from .sys import sys  # noqa: W0611
+from .node import node  # noqa: W0611
+from .probe import probe  # noqa: W0611
+from .telem import telem  # noqa: W0611
 
 logging.basicConfig(level=logging.ERROR)
 
 logger = logging.getLogger("cspawnctl")
 
-from .root import cli
-from .config import config
-from .db import db
-from .fs import fs
-from .host import host
-from .sys import sys
-from .node import node
-from .probe import probe
-from .telem import telem
-
-if __name__ == '__main__':
-    cli()
+if __name__ == "__main__":
+    cli(ctx=None, v=None, config_file=None)  # noqa: E1120

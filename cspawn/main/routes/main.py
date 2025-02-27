@@ -1,47 +1,41 @@
+"""
 
-import json
-import logging
-import time
+"""
 import uuid
-from datetime import datetime
 from functools import wraps
-from pathlib import Path
 
-import docker
-import requests
+from flask import (abort, current_app, jsonify, render_template, request,
+                   session)
+from flask_login import current_user
+
 from cspawn.__version__ import __version__ as version
-
-from cspawn.main import main_bp, logger
-
-from flask import (abort, current_app, g, jsonify, redirect, render_template,
-                   request, session, url_for, flash)
-from flask_login import current_user, login_required, logout_user
-
-from slugify import slugify
-from humanize import naturaltime, naturaldelta
+from cspawn.main import main_bp
 
 context = {
     "version": version,
     "current_user": current_user,
 }
 
+
 def ensure_session():
-    
+
     if "cron" in request.path or "telem" in request.path:
         return
-    
+
     if "session_id" not in session:
         session["session_id"] = str(uuid.uuid4())
-        current_app.logger.info(f"New session created with ID: {session['session_id']} for {request.path}")
+        current_app.logger.info(
+            f"New session created with ID: {session['session_id']} for {request.path}"
+        )
     else:
         pass
+
 
 @main_bp.before_request
 def before_request():
     ensure_session()
-    
-    #app.load_user(current_app)
 
+    # app.load_user(current_app)
 
 
 def staff_required(f):
@@ -73,47 +67,48 @@ def admin_required(f):
 
     return decorated_function
 
+
 empty_status = {
-    'containerName': '',
-    'containerId': '',
-    'state': '',
-    'memory_usage': 0,
-    'hostname': '',
-    'instanceId': '',
-    'lastHeartbeat': '',
-    'average30m': None,
-    'seconds_since_report': 0, 
-    'port': None
+    "containerName": "",
+    "containerId": "",
+    "state": "",
+    "memory_usage": 0,
+    "hostname": "",
+    "instanceId": "",
+    "lastHeartbeat": "",
+    "average30m": None,
+    "seconds_since_report": 0,
+    "port": None,
 }
 
+
 def unk_filter(v):
-    return v if  v  else "?"
+    return v if v else "?"
+
 
 @main_bp.before_app_request
 def add_template_filters():
-    current_app.jinja_env.filters['unk_filter'] = unk_filter
+    current_app.jinja_env.filters["unk_filter"] = unk_filter
 
 
 @main_bp.route("/")
 def index():
 
-    if  current_user.is_authenticated:
-        
+    if current_user.is_authenticated:
+
         if current_user.is_admin:
-            
-            return render_template("index_admin.html", host={},  **context)
-        
+
+            return render_template("index_admin.html", host={}, **context)
+
         elif current_user.is_instructor:
-            
+
             return render_template("index_instructor.html", **context)
-        
+
         elif current_user.is_student:
-            
+
             return render_template("index_student.html", **context)
-       
-    
+
     return render_template("index.html", **context)
-        
 
 
 @main_bp.route("/private/staff")
@@ -121,12 +116,11 @@ def index():
 def staff():
     return render_template("private-staff.html", **context)
 
+
 @main_bp.route("/telem", methods=["GET", "POST"])
 def telem():
     if request.method == "POST":
 
-        
         current_app.csm.keyrate.add_report(request.get_json())
-    
+
     return jsonify("OK")
-        
