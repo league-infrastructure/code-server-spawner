@@ -1,17 +1,13 @@
 import json
-from datetime import datetime 
+from datetime import datetime
 
-from flask import (Blueprint, current_app, flash, redirect, render_template,
-                   request, session, url_for)
-from flask_dance.contrib.google import google
-from flask_login import current_user, login_required, login_user, logout_user
-from oauthlib.oauth2.rfc6749.errors import (InvalidClientError,
-                                            TokenExpiredError)
+from flask import (current_app, flash, redirect, render_template,
+                   request, url_for)
+from flask_login import current_user, login_required
 
-from cspawn.main.models import User, HostImage, CodeHost, Class, db
-from cspawn.util import role_from_email
+from cspawn.main.models import Class, CodeHost, HostImage, User, db
 
-from . import admin_bp, logger
+from . import admin_bp
 
 
 def default_context():
