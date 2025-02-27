@@ -2,6 +2,7 @@
 Initialize the Application
 """
 
+from typing import cast
 from flask import Flask, g
 from flask_bootstrap import Bootstrap5
 from flask_dance.contrib.google import make_google_blueprint
@@ -17,8 +18,14 @@ from .hosts import hosts_bp
 from .hosts.control import CodeServerManager
 from .main import main_bp
 from .main.models import db
-from .util import (configure_app_dir, configure_config_tree, human_time_format,
-                   init_logger, setup_sessions)
+from .util import (
+    configure_app_dir,
+    configure_config_tree,
+    human_time_format,
+    init_logger,
+    setup_sessions,
+)
+from cspawn.apptypes import App
 
 default_context = {
     "version": version,
@@ -33,7 +40,7 @@ GOOGLE_LOGIN_SCOPES = [
 
 def init_app(config_dir=None, log_level=None, sqlfile=None) -> Flask:
     # Initialize Flask application
-    app = Flask(__name__)
+    app = cast(App, Flask(__name__))
 
     @app.teardown_appcontext
     def close_db(exception):
@@ -53,7 +60,9 @@ def init_app(config_dir=None, log_level=None, sqlfile=None) -> Flask:
 
     app_dir, db_dir = configure_app_dir(app)
 
-    app.logger.info(f"App dir: {app_dir} DB dir: {db_dir}. CONFIGS: {app.app_config['__CONFIG_PATH']}")
+    app.logger.info(
+        f"App dir: {app_dir} DB dir: {db_dir}. CONFIGS: {app.app_config['__CONFIG_PATH']}"
+    )
 
     app.config["MONGO_URI"] = app.app_config["MONGO_URL"]
     app.config["CSM_MONGO_DB_NAME"] = "code-spawner"

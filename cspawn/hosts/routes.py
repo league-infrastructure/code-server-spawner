@@ -2,8 +2,15 @@ import time
 from typing import cast
 
 import docker
-from flask import (current_app, flash, jsonify, redirect, render_template,
-                   request, url_for)
+from flask import (
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import current_user, login_required
 
 from cspawn.apptypes import App
@@ -22,7 +29,9 @@ def index() -> str:
 
     if host_rec:
         s = ca.csm.get_by_username(current_user.username)
-        return render_template("hosts/index_running.html", host=host_rec, service=s, iframe_url=iframe_url)
+        return render_template(
+            "hosts/index_running.html", host=host_rec, service=s, iframe_url=iframe_url
+        )
     else:
         host_images = HostImage.query.all()
         return render_template("hosts/index_stopped.html", host_images=host_images)
@@ -53,6 +62,7 @@ def start_host() -> str:
             user=current_user,
             image=image.image_uri,
             repo=image.repo_uri,
+            syllabus=image.syllabus_path,
         )
 
     host = CodeHost(
