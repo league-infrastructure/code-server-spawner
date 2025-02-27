@@ -1,8 +1,9 @@
 import click
 
+from cspawn.main.models import CodeHost, HostImage, User
+
 from .root import cli
-from .util import make_data, load_data, get_app, get_logger
-from cspawn.main.models import User, HostImage, CodeHost
+from .util import get_app, get_logger, load_data, make_data
 
 
 @cli.group()

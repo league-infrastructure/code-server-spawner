@@ -1,14 +1,14 @@
-import pytest
+import logging
 import unittest
 import warnings
-import logging
 from pathlib import Path
+
+import pytest
 from faker import Faker
 
-from cspawn.main.models import CodeHost, User, HostImage
-from cspawn.init import db
-
 from cspawn.cli.util import create_demo_users, make_data
+from cspawn.init import db
+from cspawn.main.models import CodeHost, HostImage, User
 
 
 class CSUnitTest(unittest.TestCase):

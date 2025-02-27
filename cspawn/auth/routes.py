@@ -2,7 +2,8 @@
 Routes for logging in, registering, and managing users.
 """
 
-from flask import current_app, flash, redirect, render_template, request, session, url_for
+from flask import (current_app, flash, redirect, render_template, request,
+                   session, url_for)
 from flask_dance.contrib.google import google
 from flask_login import current_user, login_required, login_user, logout_user
 from oauthlib.oauth2.rfc6749.errors import TokenExpiredError

@@ -2,7 +2,7 @@
 
 from flask import current_app, jsonify
 
-from cspawn.main import main_bp, logger
+from cspawn.main import logger, main_bp
 
 
 @main_bp.route("/cron/minutely")

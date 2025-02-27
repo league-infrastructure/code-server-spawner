@@ -1,9 +1,9 @@
+from datetime import datetime
+from typing import Optional, Union
+
 from pydantic import BaseModel
-from typing import Optional
 from pymongo.database import Database as MongoDatabase
 from pymongo.errors import DuplicateKeyError
-from typing import Union
-from datetime import datetime
 
 
 class ServiceTelemetry(BaseModel):

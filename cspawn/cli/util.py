@@ -1,12 +1,14 @@
+import logging
+from functools import lru_cache
+from pathlib import Path
+
+from faker import Faker
+
+from cspawn.config import find_parent_dir
 from cspawn.hosts.control import logger as ctrl_logger
 from cspawn.init import init_app
-from cspawn.config import find_parent_dir
-from functools import lru_cache
 from cspawn.main.models import *
 from cspawn.util import configure_config_tree
-from faker import Faker
-from pathlib import Path
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -137,8 +139,9 @@ def make_data(app):
 
 def load_data(app):
 
-    import cspawn
     import json
+
+    import cspawn
     from cspawn.util import set_role_from_email
 
     data_dir = Path(cspawn.__file__).parent.parent / "data"

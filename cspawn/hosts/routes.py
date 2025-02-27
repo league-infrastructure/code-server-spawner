@@ -1,22 +1,14 @@
 import time
-import docker
+from typing import cast
 
-from flask import (
-    current_app,
-    flash,
-    jsonify,
-    redirect,
-    render_template,
-    request,
-    url_for,
-)
+import docker
+from flask import (current_app, flash, jsonify, redirect, render_template,
+                   request, url_for)
 from flask_login import current_user, login_required
 
-from cspawn.hosts import hosts_bp
-from cspawn.main.models import db, HostImage, CodeHost
 from cspawn.apptypes import App
-
-from typing import cast
+from cspawn.hosts import hosts_bp
+from cspawn.main.models import CodeHost, HostImage, db
 
 ca = cast(App, current_app)
 

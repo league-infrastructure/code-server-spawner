@@ -1,9 +1,11 @@
-import docker
-import logging
 import datetime
-from typing import List, Dict, Any, Optional
-from .proc import Container, Service
+import logging
+from typing import Any, Dict, List, Optional
+
+import docker
 from pymongo.database import Database as MongoDatabase
+
+from .proc import Container, Service
 
 logger = logging.getLogger(__name__)
 

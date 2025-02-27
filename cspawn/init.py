@@ -3,31 +3,22 @@ Initialize the Application
 """
 
 from flask import Flask, g
+from flask_bootstrap import Bootstrap5
 from flask_dance.contrib.google import make_google_blueprint
+from flask_font_awesome import FontAwesome
 from flask_login import LoginManager
 from flask_pymongo import PyMongo
 
-
 from cspawn.__version__ import __version__ as version
 
+from .admin import admin_bp
 from .auth import auth_bp
 from .hosts import hosts_bp
-from .main import main_bp
-from .admin import admin_bp
-
 from .hosts.control import CodeServerManager
-from .util import (
-    configure_app_dir,
-    configure_config_tree,
-    human_time_format,
-    init_logger,
-    setup_sessions,
-)
-
+from .main import main_bp
 from .main.models import db
-
-from flask_font_awesome import FontAwesome
-from flask_bootstrap import Bootstrap5
+from .util import (configure_app_dir, configure_config_tree, human_time_format,
+                   init_logger, setup_sessions)
 
 default_context = {
     "version": version,

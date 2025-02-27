@@ -3,20 +3,20 @@ import os
 import secrets
 import sqlite3
 import uuid
-
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
+import sqlitedict
+from dotenv import dotenv_values
+from flask import Flask, current_app, g, session
+from flask_login import LoginManager, UserMixin
+from flask_session import Session
 from sqlalchemy import String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.types import TypeDecorator
-import sqlitedict
-from dotenv import dotenv_values
-from flask import Flask, current_app, session, g
-from flask_login import LoginManager, UserMixin
-from flask_session import Session
+
 from .config import get_config, get_config_tree
 
 
@@ -311,8 +311,9 @@ def set_role_from_email(app, user):
 
 
 def find_username(user):
-    from cspawn.main.models import User
     from slugify import slugify
+
+    from cspawn.main.models import User
 
     def split_email(email):
         return slugify(email.split("@")[0])

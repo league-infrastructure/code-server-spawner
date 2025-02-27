@@ -3,23 +3,13 @@ Database Models
 """
 
 from datetime import datetime, timezone
-from sqlalchemy.orm import relationship, DeclarativeBase
-from flask_sqlalchemy import SQLAlchemy
 
 from flask_login import UserMixin
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Integer,
+                        String, Table, Text, func)
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy import (
-    Boolean,
-    Column,
-    DateTime,
-    Float,
-    ForeignKey,
-    Integer,
-    String,
-    Table,
-    Text,
-    func,
-)
+from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy_utils import PasswordType
 
 
