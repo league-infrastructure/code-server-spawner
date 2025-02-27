@@ -1,8 +1,10 @@
 from flask import Blueprint
 
-main_bp = Blueprint('main', __name__, static_folder='static',static_url_path='/static/main/',  template_folder='templates')
+main_bp = Blueprint(
+    "main", __name__, static_folder="static", static_url_path="/static/main/", template_folder="templates"
+)
 
-import logging  
+import logging
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.ERROR)

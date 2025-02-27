@@ -1,11 +1,9 @@
-"""
+""" """
 
-"""
 import uuid
 from functools import wraps
 
-from flask import (abort, current_app, jsonify, render_template, request,
-                   session)
+from flask import abort, current_app, jsonify, render_template, request, session
 from flask_login import current_user
 
 from cspawn.__version__ import __version__ as version
@@ -24,9 +22,7 @@ def ensure_session():
 
     if "session_id" not in session:
         session["session_id"] = str(uuid.uuid4())
-        current_app.logger.info(
-            f"New session created with ID: {session['session_id']} for {request.path}"
-        )
+        current_app.logger.info(f"New session created with ID: {session['session_id']} for {request.path}")
     else:
         pass
 
@@ -41,9 +37,7 @@ def before_request():
 def staff_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated or not getattr(
-            current_user, "is_staff", False
-        ):
+        if not current_user.is_authenticated or not getattr(current_user, "is_staff", False):
             current_app.logger.warning(
                 f"Unauthorized access attempt by user {current_user.id if current_user.is_authenticated else 'Anonymous'}"
             )
@@ -56,9 +50,7 @@ def staff_required(f):
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated or not getattr(
-            current_user, "is_admin", False
-        ):
+        if not current_user.is_authenticated or not getattr(current_user, "is_admin", False):
             current_app.logger.warning(
                 f"Unauthorized access attempt by user {current_user.id if current_user.is_authenticated else 'Anonymous'}"
             )

@@ -1,9 +1,8 @@
-
-
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from dotenv import dotenv_values
-import os 
+import os
+
 
 class Config:
     def __init__(self, config_dict: Dict[str, Any]):
@@ -48,11 +47,12 @@ class Config:
     def to_dict(self) -> Dict[str, Any]:
         return self._config_dict.copy()
 
+
 def find_parent_dir():
     cwd = Path.cwd()
-    
+
     for i in range(3):
-        if (cwd / 'config').exists() or (cwd / 'secrets').exists():
+        if (cwd / "config").exists() or (cwd / "secrets").exists():
             return cwd
         try:
             cwd = cwd.parent
@@ -61,12 +61,13 @@ def find_parent_dir():
 
     raise FileNotFoundError("No directory with 'config' or 'secrets' found")
 
+
 def walk_up(d, f=None) -> List[Path]:
     d = Path(d).resolve()
     paths = []
     while True:
         d = d.parent
-        if d == Path('/'):
+        if d == Path("/"):
             break
 
         if f is not None:
@@ -76,8 +77,9 @@ def walk_up(d, f=None) -> List[Path]:
 
     return paths
 
-def get_config_dirs(cwd=None, root=Path('/'), home=Path().home()) -> List[Path]:
-    
+
+def get_config_dirs(cwd=None, root=Path("/"), home=Path().home()) -> List[Path]:
+
     if cwd is None:
         cwd = Path.cwd()
     else:
@@ -86,22 +88,21 @@ def get_config_dirs(cwd=None, root=Path('/'), home=Path().home()) -> List[Path]:
     root = Path(root)
     home = Path(home)
 
-    return  [
+    return [
         cwd,
-        home.joinpath('.jtl'),
-
-        root / 'app/config',
-        root / 'app/secrets',
-        root / 'config',
-        root / 'secrets',
-        cwd.joinpath('secrets'),
-        cwd.parent.joinpath('secrets'),
-    ] 
+        home.joinpath(".jtl"),
+        root / "app/config",
+        root / "app/secrets",
+        root / "config",
+        root / "secrets",
+        cwd.joinpath("secrets"),
+        cwd.parent.joinpath("secrets"),
+    ]
 
 
 def find_config_files(file: str | List[str], dirs: List[str] | List[Path] = None) -> Path:
-    """Find the first instance of a config file, from  a list of possible files, 
-    in a list of directories. Return the first file that exists. """
+    """Find the first instance of a config file, from  a list of possible files,
+    in a list of directories. Return the first file that exists."""
 
     if isinstance(file, str):
         file = [file]
@@ -112,15 +113,16 @@ def find_config_files(file: str | List[str], dirs: List[str] | List[Path] = None
     files = []
     for d in dirs:
         for f in file:
-            p = Path(d) / f 
-           
+            p = Path(d) / f
+
             if p.exists():
-                files.append(p)  
-    
+                files.append(p)
+
     if files:
         return files
     else:
         raise FileNotFoundError(f"Could not find any of {file} in {dirs}")
+
 
 def find_config_file(file: str | List[str], dirs: List[str] | List[Path] = None) -> Path:
     files = find_config_files(file, dirs)
@@ -128,83 +130,81 @@ def find_config_file(file: str | List[str], dirs: List[str] | List[Path] = None)
         raise FileNotFoundError(f"Found multiple files: {files}")
     return files[0]
 
-def get_config(file: str | Path | List[str] | List[Path] = None, 
-               dirs: List[str] | List[Path] = None) -> Config:
 
-    """ Get the first config file found. The is for when you 
-    just want one config file, but there may be multiple places for it. """
+def get_config(file: str | Path | List[str] | List[Path] = None, dirs: List[str] | List[Path] = None) -> Config:
+    """Get the first config file found. The is for when you
+    just want one config file, but there may be multiple places for it."""
 
     if file is None:
-        file = 'config.env'
+        file = "config.env"
 
-
-    if '/' in str(file):
+    if "/" in str(file):
         fp = Path(file)
     else:
         fp = find_config_file(file, dirs)
 
     config = {
-        '__CONFIG_PATH': str(fp.absolute()),
+        "__CONFIG_PATH": str(fp.absolute()),
         **os.environ,
         **dotenv_values(fp),
     }
 
     return Config(config)
 
-def get_config_tree(config_root: Path, deploy_name='devel', env_pos='last') -> Config:
+
+def get_config_tree(config_root: Path, deploy_name="devel", env_pos="last") -> Config:
     """Assemble a configuration from a tree of config files. In this case
-    (* different from get_config) the config is split into multiple 
+    (* different from get_config) the config is split into multiple
     parts, and the parts are assembled into a single config object, and all of the
     configurations are stored in a set of subdirs of a common root directory.
-    
+
     For each of the dirs 'config' and secret', the function will look for a file
-    names 'config.env' and then '{deploy_name}.env' ( either 'devel' or 'prod' ) 
+    names 'config.env' and then '{deploy_name}.env' ( either 'devel' or 'prod' )
     and combine them into a single config object.
-    
-    So, if they exist, these files will be read and combined: 
-    
+
+    So, if they exist, these files will be read and combined:
+
         'config/config.env',
         '{deploy_name}.env',
         'secrets/config.env',
         'secrets/{deploy_name}.env',
-    
+
     The env_pos parameter controls when the environment variables are loaded. If it is
     None, they are loaded last. If it is 'first', they are loaded first. If it is 'last',
     they are loaded last, overwriting any values that were loaded from the files. If None
      the env vars are not loaded. Defaults to 'last'
-    
+
     """
-    
+
     root = Path(config_root).resolve()
-    
+
     tree = [
-        'config/config.env',
-        'config/{deploy_name}.env',
-        'secrets/secret.env',
-        'secrets/{deploy_name}.env',
+        "config/config.env",
+        "config/{deploy_name}.env",
+        "secrets/secret.env",
+        "secrets/{deploy_name}.env",
     ]
-    
+
     d = {}
-    
-    if env_pos == 'first':
+
+    if env_pos == "first":
         d.update(os.environ)
-    
+
     configs = []
-    
+
     for e in tree:
-        f =  root / Path(e.format(deploy_name=deploy_name))
-             
+        f = root / Path(e.format(deploy_name=deploy_name))
+
         if f.exists():
             d.update(dotenv_values(f))
             configs.append(f)
-    if env_pos == 'last':
+    if env_pos == "last":
         d.update(os.environ)
-        
-    d['__CONFIG_PATH'] = configs
-    
+
+    d["__CONFIG_PATH"] = configs
+
     return Config(d)
-            
-    
+
 
 def path_interp(path: str, **kwargs) -> Tuple[str, Dict[str, Any]]:
     """
@@ -230,6 +230,6 @@ def path_interp(path: str, **kwargs) -> Tuple[str, Dict[str, Any]]:
         else:
             # Remove the trailing underscore from the key, so we can use params
             # like 'from' that are python keywords.
-            params[key.rstrip('_')] = value
+            params[key.rstrip("_")] = value
 
     return path, params

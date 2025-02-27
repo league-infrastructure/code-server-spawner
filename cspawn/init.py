@@ -1,6 +1,7 @@
 """
-Initialize the Application 
+Initialize the Application
 """
+
 from flask import Flask, g
 from flask_dance.contrib.google import make_google_blueprint
 from flask_login import LoginManager
@@ -61,9 +62,7 @@ def init_app(config_dir=None, log_level=None, sqlfile=None) -> Flask:
 
     app_dir, db_dir = configure_app_dir(app)
 
-    app.logger.info(
-        f"App dir: {app_dir} DB dir: {db_dir}. CONFIGS: {app.app_config['__CONFIG_PATH']}"
-    )
+    app.logger.info(f"App dir: {app_dir} DB dir: {db_dir}. CONFIGS: {app.app_config['__CONFIG_PATH']}")
 
     app.config["MONGO_URI"] = app.app_config["MONGO_URL"]
     app.config["CSM_MONGO_DB_NAME"] = "code-spawner"

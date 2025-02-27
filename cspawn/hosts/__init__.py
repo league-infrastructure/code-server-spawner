@@ -1,8 +1,8 @@
 from flask import Blueprint
 
-hosts_bp = Blueprint('hosts', __name__, template_folder='templates')
+hosts_bp = Blueprint("hosts", __name__, template_folder="templates")
 
-import logging  
+import logging
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.ERROR)

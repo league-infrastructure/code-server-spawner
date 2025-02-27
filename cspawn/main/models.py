@@ -68,18 +68,11 @@ class User(UserMixin, db.Model):
     created_at = Column(DateTime, default=func.now)
 
     # Add the relationships for classes_instructing and classes_taking
-    classes_instructing = relationship(
-        "Class", secondary="class_instructors", back_populates="instructors"
-    )
-    classes_taking = relationship(
-        "Class", secondary="class_students", back_populates="students"
-    )
+    classes_instructing = relationship("Class", secondary="class_instructors", back_populates="instructors")
+    classes_taking = relationship("Class", secondary="class_students", back_populates="students")
 
     def __repr__(self):
-        return (
-            f"<User(id={self.id}, username={self.username}, "
-            f"email={self.email}, provider={self.oauth_provider})>"
-        )
+        return f"<User(id={self.id}, username={self.username}, " f"email={self.email}, provider={self.oauth_provider})>"
 
 
 class Class(db.Model):
@@ -100,16 +93,10 @@ class Class(db.Model):
 
     class_code = Column(String(20), nullable=True)
 
-    instructors = relationship(
-        "User", secondary="class_instructors", back_populates="classes_instructing"
-    )
-    students = relationship(
-        "User", secondary="class_students", back_populates="classes_taking"
-    )
+    instructors = relationship("User", secondary="class_instructors", back_populates="classes_instructing")
+    students = relationship("User", secondary="class_students", back_populates="classes_taking")
 
-    host_images = relationship(
-        "HostImage", secondary="class_host_images", back_populates="classes"
-    )
+    host_images = relationship("HostImage", secondary="class_host_images", back_populates="classes")
 
     def __repr__(self):
         return f"<Class(id={self.id}, name={self.name})>"
@@ -207,6 +194,4 @@ class HostImage(db.Model):
         nullable=False,
     )
 
-    classes = relationship(
-        "Class", secondary="class_host_images", back_populates="host_images"
-    )
+    classes = relationship("Class", secondary="class_host_images", back_populates="host_images")
