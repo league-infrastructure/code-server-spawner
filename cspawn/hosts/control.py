@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from time import sleep
@@ -53,10 +53,14 @@ class CSMService(Service):
         """Check if the server is ready by making a request to it."""
         try:
             response = requests.get(self.hostname_url, timeout=10)
-            logger.debug("Response from %s: %s", self.hostname_url, response.status_code)
+            logger.debug(
+                "Response from %s: %s", self.hostname_url, response.status_code
+            )
             return response.status_code in [200, 302]
         except requests.exceptions.SSLError:
-            logger.debug("SSL error encountered when connecting to %s", self.hostname_url)
+            logger.debug(
+                "SSL error encountered when connecting to %s", self.hostname_url
+            )
             return False
         except requests.exceptions.RequestException as e:
             logger.debug("Error checking server status to %s: %s", self.hostname_url, e)
@@ -72,11 +76,15 @@ class CSMService(Service):
             self.update(state="starting")
             wait_time = time() - start_time
             if self.is_ready():
-                logger.info("Service %s is ready, time elapsed: %s", self.name, wait_time)
+                logger.info(
+                    "Service %s is ready, time elapsed: %s", self.name, wait_time
+                )
                 break
 
             sleep(0.5)
-            logger.info("Waiting for %s to start, time elapsed: %s", self.name, wait_time)
+            logger.info(
+                "Waiting for %s to start, time elapsed: %s", self.name, wait_time
+            )
 
             if wait_time > timeout:
                 logger.info("Service %s failed to start after 40 seconds", self.name)
@@ -134,10 +142,12 @@ def define_cs_container(
         "WORKSPACE_FOLDER": workspace_folder,
         "PASSWORD": password,
         "DISPLAY": ":0",
-        "VNC_URL": "http://localhost:6080",
+        "VNC_URL": f"https://{hostname}/vnc/",
         "KST_REPORTING_URL": config.KST_REPORTING_URL,
         "KST_CONTAINER_ID": name,
-        "KST_REPORT_RATE": (config.KST_REPORT_RATE if hasattr(config, "KST_REPORT_RATE") else 30),
+        "KST_REPORT_RATE": (
+            config.KST_REPORT_RATE if hasattr(config, "KST_REPORT_RATE") else 30
+        ),
         "CS_DISABLE_GETTING_STARTED_OVERRIDE": "1",  # Disable the getting started page
         "INITIAL_GIT_REPO": repo,
         "JTL_SYLLABUS": syllabus,
@@ -150,15 +160,26 @@ def define_cs_container(
         "jtl.codeserver": "true",
         "jtl.codeserver.username": username,
         "jt.codeserver.password": password,
-        "jtl.codeserver.start_time": datetime.now(pytz.timezone("America/Los_Angeles")).isoformat(),
+        "jtl.codeserver.start_time": datetime.now(
+            pytz.timezone("America/Los_Angeles")
+        ).isoformat(),
         "caddy": hostname,
+        # WebSocket Handling
         "caddy.@ws.0_header": "Connection *Upgrade*",
         "caddy.@ws.1_header": "Upgrade websocket",
+        "caddy.@ws.2_header": "Origin {http.request.header.Origin}",
+        # "caddy.@ws.3_header": "Sec-WebSocket-Protocol {http.request.header.Sec-WebSocket-Protocol}",
+        # "caddy.@ws.4_header": "Sec-WebSocket-Version {http.request.header.Sec-WebSocket-Version}",
+        # WebSocket Reverse Proxy with HTTP/1.1
         "caddy.0_route.handle": "/websockify*",
         "caddy.0_route.handle.reverse_proxy": "@ws {{upstreams 6080}}",
+        "caddy.0_route.handle.reverse_proxy.transport": "http",
+        "caddy.0_route.handle.reverse_proxy.transport.versions": "1.1",
+        # VNC Proxy
         "caddy.1_route.handle": "/vnc/*",
         "caddy.1_route.handle_path": "/vnc/*",
         "caddy.1_route.handle_path.reverse_proxy": "{{upstreams 6080}}",
+        # General Reverse Proxy
         "caddy.2_route.handle": "/*",
         "caddy.2_route.handle.reverse_proxy": "{{upstreams 8080}}",
     }
@@ -221,19 +242,19 @@ class KeyrateDBHandler:
             dict: Latest report for each service.
         """
         pipeline = [
-            ({"$match": {"serviceID": {"$in": services}}} if services else {"$match": {}}),
+            (
+                {"$match": {"serviceID": {"$in": services}}}
+                if services
+                else {"$match": {}}
+            ),
             {"$sort": {"timestamp": -1}},
             {"$group": {"_id": "$serviceID", "latestReport": {"$first": "$$ROOT"}}},
         ]
 
         results = self.collection.aggregate(pipeline)
 
-        now = datetime.now(timezone.utc)
-
         for result in results:
             report = result["latestReport"]
-            timestamp = datetime.fromisoformat(report["timestamp"])
-            heartbeat_ago = int((now - timestamp).total_seconds())
 
             yield report
 
@@ -267,7 +288,9 @@ class CodeServerManager(DbServicesManager):
         def _hostname_f(node_name):
             return f"{node_name}.jointheleague.org"
 
-        super().__init__(self.docker_client, hostname_f=_hostname_f, mongo_db=self.mongo_db)
+        super().__init__(
+            self.docker_client, hostname_f=_hostname_f, mongo_db=self.mongo_db
+        )
 
     @property
     @lru_cache()
@@ -291,17 +314,25 @@ class CodeServerManager(DbServicesManager):
         parsed_uri = urlparse(self.config["DOCKER_URI"])
 
         if parsed_uri.scheme == "ssh":
-            logger.info("Creating directory %s on remote host %s", user_dir, parsed_uri.hostname)
+            logger.info(
+                "Creating directory %s on remote host %s", user_dir, parsed_uri.hostname
+            )
 
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(parsed_uri.hostname, username=parsed_uri.username)
 
-            _, stdout, stderr = ssh.exec_command(f"mkdir -p {user_dir} && chown -R {user_id}:{user_id} {user_dir}")
+            _, stdout, stderr = ssh.exec_command(
+                f"mkdir -p {user_dir} && chown -R {user_id}:{user_id} {user_dir}"
+            )
             exit_status = stdout.channel.recv_exit_status()
 
             if exit_status != 0:
-                logger.error("Failed to create directory %s on remote host: %s", user_dir, stderr.read().decode())
+                logger.error(
+                    "Failed to create directory %s on remote host: %s",
+                    user_dir,
+                    stderr.read().decode(),
+                )
             ssh.close()
         else:
             logger.info("Creating directory %s on local machine", user_dir)
@@ -386,7 +417,6 @@ class CodeServerManager(DbServicesManager):
 
     def containers_list_cached(self):
         """Return the cached list of containers."""
-        from cspawn.docker.db import DockerContainerStats
 
         return self.repo.all
 

@@ -33,6 +33,9 @@ dependencies = [
     "faker>=36.1.0",
     "bootstrap-flask>=2.4.1",
     "font-awesome-flask>=0.1.4",
+    "docker>=7.1.0",
+    "paramiko>=3.5.1",
+    "python-slugify>=8.0.4",
 ]
 
 [tool.uv]
@@ -43,15 +46,9 @@ where = ["."]
 include = ["cspawn*"]  # Include all subpackages
 
 
-[tool.black]
-line-length = 120
-
-
-
 [dependency-groups]
 dev = [
     "ansible>=11.2.0",
-    "black>=25.1.0",
     "flake8>=7.1.2",
     "isort>=6.0.1",
     "mypy>=1.15.0",

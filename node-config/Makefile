@@ -1,24 +1,33 @@
-ANSIBLE_PLAYBOOK = setup_nfs_mount.yaml
 INVENTORY = inventory.ini
 ANSIBLE_CFG = ansible.cfg
 
-.PHONY: run
-nfs:
-	@echo "Running Ansible playbook as root..."
-	ANSIBLE_CONFIG=$(PWD)/$(ANSIBLE_CFG) ansible-playbook -i $(INVENTORY) setup_nfs_mount.yaml -u root
+#
+# Run commands on each node. Just uses ansible to ssh to each. 
 
-.PHONY: check
+.PHONY: check ping remount nfs names labels
+
 check:
 	@echo "Checking NFS mount on all nodes..."
-	ANSIBLE_CONFIG=$(PWD)/$(ANSIBLE_CFG) ansible -i $(INVENTORY) swarm_nodes -u root -m command -a "df -h "
+    ANSIBLE_CONFIG=$(PWD)/$(ANSIBLE_CFG) ansible -i $(INVENTORY) swarm_nodes -u root -m command -a "df -h "
 
-.PHONY: ping
 ping:
 	@echo "Pinging all Swarm nodes..."
-	ANSIBLE_CONFIG=$(PWD)/$(ANSIBLE_CFG) ansible -i $(INVENTORY) swarm_nodes -u root -m ping
+    ANSIBLE_CONFIG=$(PWD)/$(ANSIBLE_CFG) ansible -i $(INVENTORY) swarm_nodes -u root -m ping
 
-
-.PHONY: remount
 remount:
 	@echo "Re-mounting NFS on all nodes..."
-	ANSIBLE_CONFIG=$(PWD)/$(ANSIBLE_CFG) ansible -i $(INVENTORY) swarm_nodes -u root -m command -a "sudo mount -o remount /mnt/student_repos"
+    ANSIBLE_CONFIG=$(PWD)/$(ANSIBLE_CFG) ansible -i $(INVENTORY) swarm_nodes -u root -m command -a "sudo mount -o remount /mnt/student_repos"
+
+#
+# Run Playbooks
+
+nfs:
+    ANSIBLE_CONFIG=$(PWD)/$(ANSIBLE_CFG) ansible-playbook -i $(INVENTORY) setup_nfs_mount.yaml -u root
+
+names:
+    ANSIBLE_CONFIG=$(PWD)/$(ANSIBLE_CFG) ansible-playbook -i $(INVENTORY) swarm_nodes.yaml -u root
+
+labels:
+	@echo "Labels for all nodes..."
+	@bash -c 'docker node ls -q | xargs docker node inspect -f "{{ .ID }} [{{ .Description.Hostname }}]: {{ .Spec.Labels }}"'
+

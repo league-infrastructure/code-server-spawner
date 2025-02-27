@@ -10,7 +10,7 @@ from cspawn.main.models import Class, CodeHost, HostImage, User, db
 from . import admin_bp
 
 
-def default_context():
+def _context():
     from cspawn.init import default_context  # Breaks circular import
 
     return default_context
@@ -19,7 +19,7 @@ def default_context():
 @admin_bp.route("/")
 @login_required
 def index():
-    return render_template("admin/index.html", **default_context())
+    return render_template("admin/index.html", **_context())
 
 
 @admin_bp.route("/classes")

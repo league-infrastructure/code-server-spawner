@@ -1,0 +1,32 @@
+- name: Manage Docker Swarm Nodes
+  hosts: swarm_nodes
+  gather_facts: false
+  become: true # Ensure we have root privileges for hostname changes
+  tasks:
+    - name: Ensure pip3 is installed
+      apt:
+        name:
+          - python3
+          - python3-pip
+        state: present
+
+    - name: Install Docker SDK for Python
+      pip:
+        name: docker
+        state: present
+
+    - name: Set the hostname
+      hostname:
+        name: "{{ hostname }}"
+
+    - name: Ensure node is in the correct role
+      community.docker.docker_node:
+        hostname: "{{ hostname }}"
+        role: "{{ role }}"
+
+    - name: Set ingress label if ingress is true
+      community.docker.docker_node:
+        hostname: "{{ hostname }}"
+        labels:
+          ingress: "true"
+      when: ingress | bool
