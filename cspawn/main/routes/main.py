@@ -3,7 +3,8 @@
 import uuid
 from functools import wraps
 
-from flask import abort, current_app, jsonify, render_template, request, session
+from flask import (abort, current_app, jsonify, render_template, request,
+                   session)
 from flask_login import current_user
 
 from cspawn.__version__ import __version__ as version

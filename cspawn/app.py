@@ -1,5 +1,6 @@
-from .init import init_app, db
 from flask_migrate import Migrate
+
+from .init import db, init_app
 
 app = init_app()
 

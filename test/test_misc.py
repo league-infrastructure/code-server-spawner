@@ -1,14 +1,13 @@
+import re
 import unittest
+
 from faker import Faker
 
-from cspawn.main.models import CodeHost, User, HostImage
 from cspawn.init import db
-
-import unittest
-from .fixtures import *
-import re
-
+from cspawn.main.models import CodeHost, HostImage, User
 from cspawn.util import role_from_email
+
+from .fixtures import *
 
 
 class TestMisc(CSUnitTest):

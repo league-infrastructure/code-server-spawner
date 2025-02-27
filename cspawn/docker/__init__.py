@@ -1,2 +1,2 @@
-from .proc import *
 from .manager import *
+from .proc import *

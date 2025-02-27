@@ -1,7 +1,7 @@
 import click
 
 from .root import cli
-from .util import make_data, load_data, get_app
+from .util import get_app, load_data, make_data
 
 
 @cli.group()

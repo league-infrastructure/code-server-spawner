@@ -1,6 +1,7 @@
-import click
 import shutil
 from pathlib import Path
+
+import click
 
 from .root import cli
 from .util import get_config

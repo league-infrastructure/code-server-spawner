@@ -1,7 +1,8 @@
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+
 from dotenv import dotenv_values
-import os
 
 
 class Config:

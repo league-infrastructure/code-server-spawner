@@ -1,10 +1,12 @@
-import pytest
 from pathlib import Path
+
+import pytest
 from faker import Faker
-from cspawn.hosts.models import KeystrokeReport, FileStat
-from cspawn.users.models import Role
-from cspawn.main.models import CodeHost, User
+
+from cspawn.hosts.models import FileStat, KeystrokeReport
 from cspawn.init import db
+from cspawn.main.models import CodeHost, User
+from cspawn.users.models import Role
 
 from .fixtures import *
 

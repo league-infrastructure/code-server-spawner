@@ -1,20 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timezone
+
+from flask import (current_app, flash, redirect, render_template, request,
+                   url_for)
 
 from cspawn.app import app
-from flask import (
-    current_app,
-    redirect,
-    render_template,
-    request,
-    url_for,
-    flash,
-    redirect,
-    render_template,
-    request,
-    url_for,
-)
-
-from datetime import datetime, timezone
 from cspawn.init import default_context
 
 
@@ -93,8 +82,8 @@ def auth_register():
 @app.route("/x/auth/up_login", methods=["POST"])
 def auth_uplogin():
 
-    from jtlutil.flask.flaskapp import User
     from jtlutil.flask.auth import login_user
+    from jtlutil.flask.flaskapp import User
 
     username = request.form.get("username")
     password = request.form.get("password")
