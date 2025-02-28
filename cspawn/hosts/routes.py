@@ -14,8 +14,9 @@ from flask import (
 from flask_login import current_user, login_required
 
 from cspawn.apptypes import App
+from cspawn.docker.models import CodeHost, HostImage
 from cspawn.hosts import hosts_bp
-from cspawn.main.models import CodeHost, HostImage, db
+from cspawn.main.models import db
 
 ca = cast(App, current_app)
 
@@ -110,7 +111,7 @@ def stop_host() -> str:
 
     if not s:
         flash("No server found to stop", "error")
-        return redirect(url_for("home"))
+        return redirect(url_for("hosts.index"))
 
     s.stop()
 

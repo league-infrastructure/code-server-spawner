@@ -3,9 +3,11 @@ from pathlib import Path
 import pytest
 from faker import Faker
 
+from cspawn.docker.models import CodeHost
+from ..cspawn.docker.models import CodeHost
 from cspawn.hosts.models import FileStat, KeystrokeReport
 from cspawn.init import db
-from cspawn.main.models import CodeHost, User
+from cspawn.main.models import User
 from cspawn.users.models import Role
 
 from .fixtures import *
@@ -26,7 +28,12 @@ def test_create_code_host(app, fake):
         db.session.add(role)
         db.session.commit()
 
-        user = User(username=fake.user_name(), email=fake.email(), password=fake.password(), role_id=role.id)
+        user = User(
+            username=fake.user_name(),
+            email=fake.email(),
+            password=fake.password(),
+            role_id=role.id,
+        )
         db.session.add(user)
         db.session.commit()
 
@@ -58,15 +65,23 @@ def test_create_code_host(app, fake):
             "average30m": fake.random_float(min=0, max=100),
             "reporting_rate": fake.random_int(min=0, max=100),
             "file_stats": [
-                {"keystrokes": fake.random_int(min=0, max=100), "last_modified": fake.iso8601()},
-                {"keystrokes": fake.random_int(min=0, max=100), "last_modified": fake.iso8601()},
+                {
+                    "keystrokes": fake.random_int(min=0, max=100),
+                    "last_modified": fake.iso8601(),
+                },
+                {
+                    "keystrokes": fake.random_int(min=0, max=100),
+                    "last_modified": fake.iso8601(),
+                },
             ],
         }
 
         KeystrokeReport.add_ks_report(code_host.id, keystroke_report_data)
 
         # Verify that the KeystrokeReport object was created
-        keystroke_report = KeystrokeReport.query.filter_by(code_host_id=code_host.id).first()
+        keystroke_report = KeystrokeReport.query.filter_by(
+            code_host_id=code_host.id
+        ).first()
         assert keystroke_report is not None
         assert keystroke_report.timestamp is not None
         assert keystroke_report.instance_id is not None
@@ -75,7 +90,9 @@ def test_create_code_host(app, fake):
         assert keystroke_report.reporting_rate is not None
 
         # Verify that the FileStat objects were created
-        file_stats = FileStat.query.filter_by(keystroke_report_id=keystroke_report.id).all()
+        file_stats = FileStat.query.filter_by(
+            keystroke_report_id=keystroke_report.id
+        ).all()
         assert len(file_stats) == 2
         for file_stat in file_stats:
             assert file_stat.keystrokes is not None

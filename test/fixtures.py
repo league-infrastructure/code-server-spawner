@@ -7,8 +7,9 @@ import pytest
 from faker import Faker
 
 from cspawn.cli.util import create_demo_users, make_data
+from cspawn.docker.models import CodeHost, HostImage
 from cspawn.init import db
-from cspawn.main.models import CodeHost, HostImage, User
+from cspawn.main.models import User
 
 
 class CSUnitTest(unittest.TestCase):
@@ -22,7 +23,9 @@ class CSUnitTest(unittest.TestCase):
         config_dir = Path(cspawn.__file__).parent.parent
 
         warnings.filterwarnings("ignore")
-        self.app = init_app(config_dir=config_dir, log_level=logging.ERROR, sqlfile=this_dir / "test.db")
+        self.app = init_app(
+            config_dir=config_dir, log_level=logging.ERROR, sqlfile=this_dir / "test.db"
+        )
 
         self.fake = Faker()
 
