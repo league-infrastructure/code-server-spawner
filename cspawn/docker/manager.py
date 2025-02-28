@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional
 import docker
 from pymongo.database import Database as MongoDatabase
 
-from cspawn.docker.csmanager import DbServicesManager
 
 from .proc import Container, Service
 
@@ -32,45 +31,6 @@ class DockerManager:
         self.labels = labels or {}
 
         self.info = self.client.info()
-
-    @classmethod
-    def new(
-        self,
-        client: Any,
-        env: Optional[Dict[str, str]] = None,
-        network: Optional[List[str]] = None,
-        labels: Optional[Dict[str, str]] = None,
-        hostname_f=None,
-        mongo_client=None,
-    ) -> Any:
-
-        # Either of these should identify a swarm. A swarm will
-        # have a node_id in it's client info, and also should have
-        # swarm attrs.
-
-        if isinstance(client, str):
-            client = docker.DockerClient(base_url=client)
-
-        node_id = client.info()["Swarm"]["NodeID"]
-        attrs = client.swarm.attrs
-
-        if attrs:
-            if mongo_client is None:
-                return ServicesManager(
-                    client, env, network, labels, hostname_f=hostname_f
-                )
-            else:
-                return DbServicesManager(
-                    client,
-                    env,
-                    network,
-                    labels,
-                    hostname_f=hostname_f,
-                    mongo_client=mongo_client,
-                )
-        else:
-            assert mongo_client is None, "Mongo client only usable in swarm mode"
-            return ContainersManager(client, env, network, labels)
 
     @property
     def name(self):

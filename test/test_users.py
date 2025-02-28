@@ -1,104 +1,122 @@
 import logging
+import unittest
 import warnings
 from pathlib import Path
 
 import pytest
+from faker import Faker
+import json
 
+from cspawn.docker.models import CodeHost, HostImage
+from cspawn.init import db
+from cspawn.main.models import *
 from cspawn.main.models import User
+
+from cspawn.test_fixture import *
+
+from cspawn.cli.util import logger as cli_logger
 
 logger = logging.getLogger(__name__)
 
 logging.basicConfig(level=logging.ERROR)
 logger.setLevel(logging.INFO)
+cli_logger.setLevel(logging.INFO)
 
 warnings.filterwarnings("ignore")
-
 warnings.filterwarnings("ignore", module="passlib.handlers.bcrypt")
 
 
-@pytest.fixture
-def app():
-    """
-    Fixture to initialize the Flask application for testing.
+class TestHosts(CSUnitTest):
 
-    Returns:
-        Flask app instance.
-    """
-    from cspawn.init import init_app
+    def setUp(self):
 
-    # Set the environment variable for the config directory
-    config_dir = Path(__file__).parent.parent
+        super().setUp()
+        print("\n" + ("#" * 80))
 
-    logger.debug("XXX config_dir: %s", config_dir)
+    def test_secret_key(self):
+        """
+        Test to ensure the secret key is set correctly in the app configuration.
 
-    return init_app(config_dir=config_dir)
+        Args:
+            app: Flask app instance.
+        """
+        for e in self.app.app_config["__CONFIG_PATH"]:
+            logger.info("    config dir: %s", str(e))
 
+        assert self.app.app_config["SECRET_KEY"] == "gQU97yUgJ6rq@4!p7-ni"
 
-def test_secret_key(app):
-    """
-    Test to ensure the secret key is set correctly in the app configuration.
+    def test_user_db(self):
+        """
+        Test to ensure user database operations work correctly.
 
-    Args:
-        app: Flask app instance.
-    """
-    for e in app.app_config["__CONFIG_PATH"]:
-        logger.info("    config dir: %s", str(e))
+        Args:
+            app: Flask app instance.
+        """
 
-    assert app.app_config["SECRET_KEY"] == "gQU97yUgJ6rq@4!p7-ni"
+        app = self.app
 
+        with app.app_context():
+            db.create_all()
 
-def test_user_db(app):
-    """
-    Test to ensure user database operations work correctly.
+            # Delete all users with email addresses in the 'example.com' domain
+            users_to_delete = User.query.filter(User.email.like("%@example.com")).all()
+            for user in users_to_delete:
+                db.session.delete(user)
+            db.session.commit()
 
-    Args:
-        app: Flask app instance.
-    """
-    from cspawn.main.models import db
+            bob = User(
+                user_id=self.fake.uuid4(),
+                username="bob",
+                email="bob@example.com",
+                password="password",
+            )
+            larry = User(
+                user_id=self.fake.uuid4(),
+                username="larry",
+                email="larry@example.com",
+                password="password",
+            )
+            sally = User(
+                user_id=self.fake.uuid4(),
+                username="sally",
+                email="sally@example.com",
+                password="password",
+            )
 
-    with app.app_context():
-        db.create_all()
+            db.session.add(bob)
+            db.session.add(larry)
+            db.session.add(sally)
+            db.session.commit()
 
-        # Delete all users with email addresses in the 'example.com' domain
-        users_to_delete = User.query.filter(User.email.like("%@example.com")).all()
-        for user in users_to_delete:
-            db.session.delete(user)
-        db.session.commit()
+            # Ensure there are three users with example.com emails
+            example_users = User.query.filter(User.email.like("%@example.com")).all()
+            assert len(example_users) == 3
 
-        bob = User(username="bob", email="bob@example.com", password="password")
-        larry = User(username="larry", email="larry@example.com", password="password")
-        sally = User(username="sally", email="sally@example.com", password="password")
+            user = User.query.filter_by(username="admin").first()
+            logger.debug("XXX user: %s", user)
+            # assert user is not None
 
-        db.session.add(bob)
-        db.session.add(larry)
-        db.session.add(sally)
-        db.session.commit()
+    def test_create_demo_users(self):
 
-        # Ensure there are three users with example.com emails
-        example_users = User.query.filter(User.email.like("%@example.com")).all()
-        assert len(example_users) == 3
+        self.create_demo_users()
+        self.create_demo_images()
 
-        user = User.query.filter_by(username="admin").first()
-        logger.debug("XXX user: %s", user)
-        # assert user is not None
+    def test_delete_all_users(self):
+        """
+        Test to delete all users from the database.
 
+        Args:
+            app: Flask app instance.
+        """
+        app = self.app
 
-def test_delete_all_users(app):
-    """
-    Test to delete all users from the database.
+        with app.app_context():
+            db.create_all()
 
-    Args:
-        app: Flask app instance.
-    """
-    from cspawn.main.models import db
-
-    with app.app_context():
-        db.create_all()
-
-        # Delete all users
-        users_to_delete = User.query.all()
-        for user in users_to_delete:
-            db.session.delete(user)
+            # Delete all users
+            users_to_delete = User.query.all()
+            for user in users_to_delete:
+                db.session.delete(user)
 
 
 if __name__ == "__main__":

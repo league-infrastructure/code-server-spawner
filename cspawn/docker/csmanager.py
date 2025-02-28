@@ -4,7 +4,7 @@ from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from time import sleep
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 from urllib.parse import urlparse
 
 import docker
@@ -14,7 +14,7 @@ import requests
 
 from slugify import slugify
 
-from cspawn.apptypes import App
+
 from cspawn.docker.manager import ServicesManager, logger
 from cspawn.docker.proc import Service
 from cspawn.main.models import db, User
@@ -48,7 +48,6 @@ class CSMService(Service):
         self.reload()
         ci = list(self.containers_info())[0]
         ci.update(kwargs)
-        self.manager.repo.update(ci)
 
     def is_ready(self):
         """Check if the server is ready by making a request to it."""
@@ -214,7 +213,7 @@ class CodeServerManager(ServicesManager):
 
     def __init__(
         self,
-        app: App,
+        app: Any,
         network: List[str] = None,
         env: Dict[str, str] = None,
         labels: Dict[str, str] = None,
@@ -225,6 +224,10 @@ class CodeServerManager(ServicesManager):
         Args:
             app: Application instance.
         """
+        from cspawn.apptypes import App
+
+        app = cast(App, app)
+
         self.config = app.app_config
 
         def _hostname_f(node_name):

@@ -1,7 +1,7 @@
 [
     {
         "name": "Python Apprentice",
-        "image_uri": "ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:latest",
+        "image_uri": "ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:v0.5.4",
         "repo_uri": "https://github.com/league-curriculum/Python-Apprentice",
         "is_public": true,
         "creator_id": 1
