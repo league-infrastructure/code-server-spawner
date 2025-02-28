@@ -5,7 +5,8 @@ from pathlib import Path
 from faker import Faker
 
 from cspawn.config import find_parent_dir
-from cspawn.hosts.control import logger as ctrl_logger
+from cspawn.docker.csmanager import logger as ctrl_logger
+from cspawn.docker.models import CodeHost, HostImage
 from cspawn.init import init_app
 from cspawn.main.models import *
 from cspawn.util import configure_config_tree
@@ -103,13 +104,17 @@ def create_demo_code_hosts(app):
         users = db.session.query(User).all()
 
         if not host_images:
-            print("No HostImage records found. Please ensure they exist before creating CodeHost records.")
+            print(
+                "No HostImage records found. Please ensure they exist before creating CodeHost records."
+            )
             return
 
         code_hosts = []
 
         for i in range(5):
-            host_image = host_images[i % len(host_images)]  # Cycle through HostImage records
+            host_image = host_images[
+                i % len(host_images)
+            ]  # Cycle through HostImage records
             user = users[i % len(users)]
             code_host = CodeHost(
                 service_id=fake.uuid4(),
@@ -213,6 +218,8 @@ def get_config():
     c = configure_config_tree(find_parent_dir())
 
     if len(c["__CONFIG_PATH"]) == 0:
-        raise Exception("No configuration files found. Maybe you are in the wrong directory?")
+        raise Exception(
+            "No configuration files found. Maybe you are in the wrong directory?"
+        )
 
     return c

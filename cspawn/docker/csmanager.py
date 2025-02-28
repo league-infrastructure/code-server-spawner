@@ -11,13 +11,14 @@ import docker
 import paramiko
 import pytz
 import requests
-from pymongo.collection import Collection
-from pymongo.database import Database as MongoDatabase
+
 from slugify import slugify
 
-from cspawn.docker.manager import DbServicesManager
+from cspawn.apptypes import App
+from cspawn.docker.manager import ServicesManager, logger
 from cspawn.docker.proc import Service
-from cspawn.main.models import User
+from cspawn.main.models import db, User
+from .models import CodeHost
 
 logger = logging.getLogger("cspawnctl")
 
@@ -207,71 +208,17 @@ def define_cs_container(
     }
 
 
-class KeyrateDBHandler:
-    def __init__(self, mongo_db: MongoDatabase):
-        """
-        Initialize the KeyrateDBHandler.
-
-        Args:
-            mongo_db (MongoDatabase): MongoDB database instance.
-        """
-        assert isinstance(mongo_db, MongoDatabase)
-
-        self.db = mongo_db
-        self.collection: Collection = self.db["keyrate"]
-        self.collection.create_index("serviceID")
-        self.collection.create_index("timestamp")
-
-    def add_report(self, report: Dict):
-        """
-        Add a report to the database.
-
-        Args:
-            report (Dict): Report data.
-        """
-        self.collection.insert_one(report)
-
-    def summarize_latest(self, services: Optional[List[str]] = None):
-        """
-        Summarize the latest reports for the given services.
-
-        Args:
-            services (Optional[List[str]]): List of service IDs to summarize.
-
-        Yields:
-            dict: Latest report for each service.
-        """
-        pipeline = [
-            (
-                {"$match": {"serviceID": {"$in": services}}}
-                if services
-                else {"$match": {}}
-            ),
-            {"$sort": {"timestamp": -1}},
-            {"$group": {"_id": "$serviceID", "latestReport": {"$first": "$$ROOT"}}},
-        ]
-
-        results = self.collection.aggregate(pipeline)
-
-        for result in results:
-            report = result["latestReport"]
-
-            yield report
-
-    def delete_all(self):
-        """Delete all reports from the database."""
-        self.collection.delete_many({})
-
-    def __len__(self):
-        """Return the number of reports in the database."""
-        return self.collection.count_documents({})
-
-
-class CodeServerManager(DbServicesManager):
+class CodeServerManager(ServicesManager):
 
     service_class = CSMService
 
-    def __init__(self, app):
+    def __init__(
+        self,
+        app: App,
+        network: List[str] = None,
+        env: Dict[str, str] = None,
+        labels: Dict[str, str] = None,
+    ):
         """
         Initialize the CodeServerManager.
 
@@ -280,27 +227,24 @@ class CodeServerManager(DbServicesManager):
         """
         self.config = app.app_config
 
-        self.mongo_client = app.mongodb.cx
-
-        self.docker_client = docker.DockerClient(base_url=self.config.DOCKER_URI)
-        self.mongo_db = self.mongo_client[app.config["CSM_MONGO_DB_NAME"]]
-
         def _hostname_f(node_name):
-            return f"{node_name}.jointheleague.org"
+            return app.app_config["NODE_HOSTNAME_TEMPLATE"].format(nodename=node_name)
 
         super().__init__(
-            self.docker_client, hostname_f=_hostname_f, mongo_db=self.mongo_db
+            docker.DockerClient(base_url=self.config.DOCKER_URI),
+            env=env,
+            network=network,
+            labels=labels,
+            hostname_f=_hostname_f,
         )
-
-    @property
-    @lru_cache()
-    def keyrate(self):
-        """Return the KeyrateDBHandler instance."""
-        return KeyrateDBHandler(self.mongo_db)
 
     def make_user_dir(self, username):
         """
         Create a user directory.
+
+        This will ssh to the docker swarm manager with the same credentials as
+        the docker URI and create a directory for the user, which assumes that the
+        docker swarm manager has the user directories NFS mounted.
 
         Args:
             username (str): Username for the directory.
@@ -308,6 +252,7 @@ class CodeServerManager(DbServicesManager):
         Returns:
             Path: Path to the user directory.
         """
+
         user_dir = Path(self.config["USER_DIRS"]) / slugify(username)
         user_id = self.config["USERID"]
 
@@ -405,7 +350,7 @@ class CodeServerManager(DbServicesManager):
         self, filters: Optional[Dict[str, Any]] = {"label": "jtl.codeserver"}
     ) -> List[docker.models.containers.Container]:
         """
-        List all Code Server instances.
+        List all Code Server instances, from the Docker API.
 
         Args:
             filters (Optional[Dict[str, Any]]): Filters to apply.
@@ -415,10 +360,15 @@ class CodeServerManager(DbServicesManager):
         """
         return super().list(filters=filters)
 
-    def containers_list_cached(self):
-        """Return the cached list of containers."""
+    def list_db(self):
+        """Return the code_host records."""
 
-        return self.repo.all
+        return CodeHost.query.all()
+
+    def sync():
+        """Sync the database with the Docker API."""
+
+        pass
 
     def remove_all(self):
         """Remove all Code Server instances."""
@@ -437,12 +387,6 @@ class CodeServerManager(DbServicesManager):
         Returns:
             CSMService: Code Server instance.
         """
-        r = self.repo.find_by_hostname(username)
-
-        if r:
-            return self.get(r.service_id)
-        else:
-            return None
 
     def get_by_username(self, username):
         """
@@ -454,9 +398,3 @@ class CodeServerManager(DbServicesManager):
         Returns:
             CSMService: Code Server instance.
         """
-        r = self.repo.find_by_username_label(username)
-
-        if r:
-            return self.get(r.service_id)
-        else:
-            return None

@@ -15,7 +15,7 @@ from cspawn.__version__ import __version__ as version
 from .admin import admin_bp
 from .auth import auth_bp
 from .hosts import hosts_bp
-from .hosts.control import CodeServerManager
+from .docker.csmanager import CodeServerManager
 from .main import main_bp
 from .main.models import db
 from .util import (

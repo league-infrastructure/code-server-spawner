@@ -1,6 +1,7 @@
 import click
 
-from cspawn.main.models import CodeHost, HostImage, User
+from cspawn.docker.models import CodeHost, HostImage
+from cspawn.main.models import User
 
 from .root import cli
 from .util import get_app, get_logger, load_data, make_data
@@ -34,10 +35,16 @@ def run(ctx):
                 app.db.session.commit()
             else:
                 username = c["labels"].get("jtl.codeserver.username")
-                user = User.query.filter_by(username=username).first() if username else User.query.get(1)
+                user = (
+                    User.query.filter_by(username=username).first()
+                    if username
+                    else User.query.get(1)
+                )
 
                 image_uri = c["image_uri"]
-                host_image = HostImage.query.filter_by(image_uri=image_uri).first()  # Might not get the right repo_uri
+                host_image = HostImage.query.filter_by(
+                    image_uri=image_uri
+                ).first()  # Might not get the right repo_uri
 
                 user = User.query.get(1)
                 new_code_host = CodeHost(

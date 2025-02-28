@@ -9,6 +9,7 @@
     <table class="table table-striped">
         <thead>
             <tr>
+                <th>Id</th>
                 <th>User</th>
                 <th>Service ID</th>
                 <th>Service Name</th>
@@ -22,6 +23,7 @@
         <tbody>
             {% for code_host in code_hosts %}
             <tr>
+                <td>{{ code_host.id }}</td>
                 <td>{{ code_host.user.username }}</td>
                 <td>{{ code_host.service_id[:16] }}</td>
                 <td>{{ code_host.service_name }}</td>
@@ -29,7 +31,8 @@
                 <td>{{ code_host.host_image.name }}</td>
                 <td><a href="https://{{ code_host.public_url }}" target="_blank">{{ code_host.public_url }}</a></td>
                 <td>{{ code_host.user_activity_rate }}</td>
-                <td>{{ code_host.last_heartbeat_ago.strftime('%Y-%m-%d %H:%M:%S') if code_host.last_heartbeat_ago else 'N/A' }}</td>
+                <td>{{ code_host.last_heartbeat_ago.strftime('%Y-%m-%d %H:%M:%S') if code_host.last_heartbeat_ago else
+                    'N/A' }}</td>
                 <td>
                     <form action="{{ url_for('admin.delete_host') }}" method="post" style="display:inline;">
                         <input type="hidden" name="host_id" value="{{ code_host.id }}">

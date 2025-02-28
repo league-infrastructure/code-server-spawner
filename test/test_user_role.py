@@ -5,7 +5,8 @@ from pathlib import Path
 
 from faker import Faker
 
-from cspawn.main.models import CodeHost, HostImage, User
+from cspawn.docker.models import CodeHost, HostImage
+from cspawn.main.models import User
 
 from .fixtures import make_data
 
@@ -21,7 +22,9 @@ class TestUserRole(unittest.TestCase):
         config_dir = Path(cspawn.__file__).parent.parent
 
         warnings.filterwarnings("ignore")
-        self.app = init_app(config_dir=config_dir, log_level=logging.ERROR, sqlfile=this_dir / "test.db")
+        self.app = init_app(
+            config_dir=config_dir, log_level=logging.ERROR, sqlfile=this_dir / "test.db"
+        )
 
         self.fake = Faker()
 

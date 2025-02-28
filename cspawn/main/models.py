@@ -2,12 +2,21 @@
 Database Models
 """
 
-from datetime import datetime, timezone
+import json
 
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Integer,
-                        String, Table, Text, func)
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    Text,
+    func,
+)
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy_utils import PasswordType
@@ -58,11 +67,18 @@ class User(UserMixin, db.Model):
     created_at = Column(DateTime, default=func.now)
 
     # Add the relationships for classes_instructing and classes_taking
-    classes_instructing = relationship("Class", secondary="class_instructors", back_populates="instructors")
-    classes_taking = relationship("Class", secondary="class_students", back_populates="students")
+    classes_instructing = relationship(
+        "Class", secondary="class_instructors", back_populates="instructors"
+    )
+    classes_taking = relationship(
+        "Class", secondary="class_students", back_populates="students"
+    )
 
     def __repr__(self):
-        return f"<User(id={self.id}, username={self.username}, " f"email={self.email}, provider={self.oauth_provider})>"
+        return (
+            f"<User(id={self.id}, username={self.username}, "
+            f"email={self.email}, provider={self.oauth_provider})>"
+        )
 
 
 class Class(db.Model):
@@ -83,10 +99,16 @@ class Class(db.Model):
 
     class_code = Column(String(20), nullable=True)
 
-    instructors = relationship("User", secondary="class_instructors", back_populates="classes_instructing")
-    students = relationship("User", secondary="class_students", back_populates="classes_taking")
+    instructors = relationship(
+        "User", secondary="class_instructors", back_populates="classes_instructing"
+    )
+    students = relationship(
+        "User", secondary="class_students", back_populates="classes_taking"
+    )
 
-    host_images = relationship("HostImage", secondary="class_host_images", back_populates="classes")
+    host_images = relationship(
+        "HostImage", secondary="class_host_images", back_populates="classes"
+    )
 
     def __repr__(self):
         return f"<Class(id={self.id}, name={self.name})>"
@@ -112,76 +134,3 @@ class_host_images = Table(
     Column("class_id", Integer, ForeignKey("classes.id"), primary_key=True),
     Column("host_image_id", Integer, ForeignKey("host_images.id"), primary_key=True),
 )
-
-
-class CodeHost(db.Model):
-    __tablename__ = "code_host"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    user = relationship("User", backref="code_hosts")
-
-    service_id = Column(String, nullable=False)
-    service_name = Column(String, nullable=False)
-    container_id = Column(String, nullable=True)
-    container_name = Column(String, nullable=True)
-
-    state = Column(String, default="unknown", nullable=False)
-
-    host_image_id = Column(Integer, ForeignKey("host_images.id"), nullable=True)
-    host_image = relationship("HostImage", backref="code_hosts")
-
-    node_id = Column(String, nullable=True)
-    public_url = Column(String, nullable=True)
-    password = Column(String, nullable=True)
-
-    user_activity_rate = Column(Float, default=0.0, nullable=True)
-    last_heartbeat_ago = Column(DateTime, nullable=True)
-
-    created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(
-        DateTime,
-        default=datetime.now(timezone.utc),
-        onupdate=datetime.now(timezone.utc),
-        nullable=False,
-    )
-
-    def update_from_ci(self, ci):
-        self.service_name = ci["service_name"]
-        self.container_id = ci["container_id"]
-        self.node_id = ci["node_id"]
-        self.state = ci["state"]
-        self.public_url = ci["hostname"]
-
-    def __repr__(self):
-        return f"<CodeHost(id={self.id}, user_id={self.user_id}, service_id={self.service_id})>"
-
-
-class HostImage(db.Model):
-    __tablename__ = "host_images"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String, nullable=False)
-    image_uri = Column(String, nullable=False)
-    repo_uri = Column(String, nullable=True)
-    repo_branch = Column(String, nullable=True)
-    repo_dir = Column(String, nullable=True)
-
-    syllabus_path = Column(String, nullable=True)
-
-    startup_script = Column(String, nullable=True)
-
-    is_public = Column(Boolean, default=False, nullable=False)
-
-    creator_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    creator = relationship("User", backref="host_images")
-
-    created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(
-        DateTime,
-        default=datetime.now(timezone.utc),
-        onupdate=datetime.now(timezone.utc),
-        nullable=False,
-    )
-
-    classes = relationship("Class", secondary="class_host_images", back_populates="host_images")

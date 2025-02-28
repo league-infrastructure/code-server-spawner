@@ -1,11 +1,11 @@
 import json
 from datetime import datetime
 
-from flask import (current_app, flash, redirect, render_template, request,
-                   url_for)
+from flask import current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from cspawn.main.models import Class, CodeHost, HostImage, User, db
+from cspawn.docker.models import CodeHost, HostImage
+from cspawn.main.models import Class, User, db
 
 from . import admin_bp
 
@@ -77,7 +77,9 @@ def edit_image(image_id):
         db.session.commit()
         flash("Image updated successfully", "success")
         return redirect(url_for("admin.list_images"))
-    return render_template("admin/edit_image.html", image=image, has_code_hosts=has_code_hosts)
+    return render_template(
+        "admin/edit_image.html", image=image, has_code_hosts=has_code_hosts
+    )
 
 
 @admin_bp.route("/image/new", methods=["GET", "POST"])
@@ -148,7 +150,9 @@ def import_images():
                 image_data = json.load(file)
                 for image in image_data:
                     if not HostImage.query.filter_by(
-                        image_uri=image["image_uri"], repo_uri=image["repo_uri"], creator_id=image["creator_id"]
+                        image_uri=image["image_uri"],
+                        repo_uri=image["repo_uri"],
+                        creator_id=image["creator_id"],
                     ).first():
                         new_image = HostImage(
                             name=image["name"],

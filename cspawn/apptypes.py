@@ -4,7 +4,7 @@ from flask_font_awesome import FontAwesome
 from flask_pymongo import PyMongo
 from flask_sqlalchemy import SQLAlchemy
 
-from cspawn.hosts.control import CodeServerManager
+from cspawn.docker.csmanager import CodeServerManager
 from cspawn.main.models import db
 
 
