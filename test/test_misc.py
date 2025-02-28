@@ -8,7 +8,7 @@ from cspawn.init import db
 from cspawn.main.models import User
 from cspawn.util import role_from_email
 
-from .fixtures import *
+from cspawn.test_fixture import *
 
 
 class TestMisc(CSUnitTest):

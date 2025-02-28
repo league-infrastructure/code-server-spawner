@@ -64,7 +64,7 @@ class User(UserMixin, db.Model):
     display_name = Column(String(255), nullable=True)
     birth_year = Column(Integer, nullable=True)
 
-    created_at = Column(DateTime, default=func.now)
+    created_at = Column(DateTime, default=func.now())
 
     # Add the relationships for classes_instructing and classes_taking
     classes_instructing = relationship(

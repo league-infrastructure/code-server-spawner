@@ -11,10 +11,15 @@ from sqlalchemy import (
     String,
     Text,
 )
+
+from typing import Union
+
 from sqlalchemy.orm import relationship
 
 
 from datetime import datetime, timezone
+from hashlib import md5
+from sqlalchemy import event
 
 
 class CodeHost(db.Model):
@@ -81,12 +86,7 @@ class CodeHost(db.Model):
         self.state = ci["state"]
         self.public_url = ci["hostname"]
 
-    def update_stats(self, record: Union[dict, DockerContainerStats]):
-
-        if not isinstance(record, dict):
-            record = record.model_dump(exclude_none=False)
-        else:
-            record = DockerContainerStats(**record).model_dump(exclude_none=False)
+    def update_stats(self, record: dict):
 
         record["last_heartbeat"] = (
             datetime.now().astimezone().isoformat()
@@ -104,22 +104,6 @@ class CodeHost(db.Model):
         if record["username"] is None:
             record["username"] = record["labels"].get("jtl.codeserver.username")
 
-        try:
-            if "container_id" not in record:
-                raise ValueError("Record must have an 'container_id' value")
-
-            self.collection.insert_one(record)
-        except (DuplicateKeyError, ValueError) as e:
-
-            record.pop("_id", None)
-
-            # Never update field values to None
-            update_fields = {k: v for k, v in record.items() if v is not None}
-
-            self.collection.update_one(
-                {"container_id": record["container_id"]}, {"$set": update_fields}
-            )
-
     def __repr__(self):
         return f"<CodeHost(id={self.id}, user_id={self.user_id}, service_id={self.service_id})>"
 
@@ -129,6 +113,7 @@ class HostImage(db.Model):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
+    hash = Column(String, nullable=False)
     image_uri = Column(String, nullable=False)
     repo_uri = Column(String, nullable=True)
     repo_branch = Column(String, nullable=True)
@@ -151,6 +136,28 @@ class HostImage(db.Model):
         nullable=False,
     )
 
+    @staticmethod
+    def set_hash(mapper, connection, target):
+
+        def generate_hash(*args):
+            hash_input = "".join([str(arg) for arg in args if arg is not None])
+            return md5(hash_input.encode("utf-8")).hexdigest()
+
+        target.hash = generate_hash(
+            target.image_uri,
+            target.repo_uri,
+            target.repo_branch,
+            target.repo_dir,
+            target.syllabus_path,
+            target.startup_script,
+            target.is_public,
+            target.creator_id,
+        )
+
     classes = relationship(
         "Class", secondary="class_host_images", back_populates="host_images"
     )
+
+
+event.listen(HostImage, "before_insert", HostImage.set_hash)
+event.listen(HostImage, "before_update", HostImage.set_hash)

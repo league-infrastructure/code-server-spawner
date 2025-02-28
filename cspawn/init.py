@@ -38,7 +38,7 @@ GOOGLE_LOGIN_SCOPES = [
 ]
 
 
-def init_app(config_dir=None, log_level=None, sqlfile=None) -> Flask:
+def init_app(config_dir=None, log_level=None, sqlfile=None) -> App:
     # Initialize Flask application
     app = cast(App, Flask(__name__))
 

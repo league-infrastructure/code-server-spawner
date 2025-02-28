@@ -37,7 +37,7 @@ def create_demo_users(app):
         },
         {
             "user_id": faker.bothify(text="?????"),
-            "username": "sally",
+            "username": "sally_f",
             "email": "sally.forth@students.jointheleague.org",
             "password": "password",
         },
@@ -45,7 +45,13 @@ def create_demo_users(app):
 
     for user in users:
         user = User(**user)
+        existing_user = User.query.filter_by(email=user.email).first()
+        if existing_user:
+            logger.info(f"User {user.email} already exists. Skipping.")
+            continue
+
         set_role_from_email(app, user)
+        print("!!!!", user)
         db.session.add(user)
 
     db.session.commit()
@@ -57,35 +63,38 @@ def create_demo_images(app):
 
     host_images = [
         {
-            "name": "Ubuntu 20.04 LTS",
-            "image_uri": "https://example.com/images/ubuntu-20.04.img",
-            "repo_uri": "https://example.com/repos/ubuntu-20.04",
-            "startup_script": "#!/bin/bash\napt-get update -y",
+            "name": "Python Apprentice",
+            "image_uri": "ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:v0.5.4",
+            "repo_uri": "https://github.com/league-curriculum/Python-Apprentice",
             "is_public": True,
+            "creator_id": 1,
         },
         {
-            "name": "CentOS 8",
-            "image_uri": "https://example.com/images/centos-8.img",
-            "repo_uri": "https://example.com/repos/centos-8",
-            "startup_script": "#!/bin/bash\nyum update -y",
-            "is_public": False,
-        },
-        {
-            "name": "Debian 10",
-            "image_uri": "https://example.com/images/debian-10.img",
-            "repo_uri": None,
-            "startup_script": None,
+            "name": "Python Games",
+            "image_uri": "ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:latest",
+            "repo_uri": "https://github.com/league-curriculum/Python-Games",
             "is_public": True,
+            "creator_id": 1,
         },
     ]
 
     for image in host_images:
         host_image = HostImage(**image)
+
+        HostImage.set_hash(None, None, host_image)
+
+        existing_image = HostImage.query.filter_by(hash=host_image.hash).first()
+        if existing_image:
+            logger.info(
+                f"HostImage with hash {host_image.hash} already exists. Skipping."
+            )
+            continue
+
         db.session.add(host_image)
 
     db.session.commit()
 
-    assert len(HostImage.query.all()) >= 3
+    assert len(HostImage.query.all()) >= 2
 
 
 def create_demo_code_hosts(app):

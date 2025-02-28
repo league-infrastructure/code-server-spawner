@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from .fixtures import *
+from cspawn.test_fixture import *
 
 
 def test_auth_basic(app):
