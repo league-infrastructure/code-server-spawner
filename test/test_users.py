@@ -12,7 +12,7 @@ from cspawn.init import db
 from cspawn.main.models import *
 from cspawn.main.models import User
 
-from cspawn.test_fixture import *
+from cspawn.util.test_fixture import *
 
 from cspawn.cli.util import logger as cli_logger
 

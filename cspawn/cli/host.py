@@ -121,3 +121,12 @@ def purge(ctx, purge):
     app.csm.collect_containers()
 
     print("Cleaned database.")
+
+
+@host.command()
+@click.pass_context
+def sync(ctx):
+    """Sync the database with the docker Code Hosts. Same as `cspawn db sync`."""
+    app = get_app(ctx)
+    with app.app_context():
+        app.csm.sync(check_ready=True)

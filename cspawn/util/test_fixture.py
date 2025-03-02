@@ -11,7 +11,7 @@ from cspawn.cli.util import create_demo_users, create_demo_images, make_data
 from cspawn.docker.models import CodeHost, HostImage
 from cspawn.init import db
 from cspawn.main.models import User
-from cspawn.apptypes import App
+from cspawn.util.apptypes import App
 
 
 class CSUnitTest(unittest.TestCase):

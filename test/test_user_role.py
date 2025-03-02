@@ -8,7 +8,7 @@ from faker import Faker
 from cspawn.docker.models import CodeHost, HostImage
 from cspawn.main.models import User
 
-from cspawn.test_fixture import *
+from cspawn.util.test_fixture import *
 
 
 class TestUserRole(unittest.TestCase):

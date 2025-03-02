@@ -13,10 +13,11 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
-from cspawn.apptypes import App
+from cspawn.util.apptypes import App
 from cspawn.docker.models import CodeHost, HostImage
 from cspawn.hosts import hosts_bp
 from cspawn.main.models import db
+import json
 
 ca = cast(App, current_app)
 
@@ -29,7 +30,8 @@ def index() -> str:
     host_rec = CodeHost.query.filter_by(user_id=current_user.id).first()
 
     if host_rec:
-        s = ca.csm.get_by_username(current_user.username)
+        s = ca.csm.get(host_rec.service_id)
+
         return render_template(
             "hosts/index_running.html", host=host_rec, service=s, iframe_url=iframe_url
         )
@@ -43,6 +45,10 @@ def index() -> str:
 def start_host() -> str:
     image_id = request.args.get("image_id")
     image = HostImage.query.get(image_id)
+
+    import logging
+    logger = logging.getLogger("cspawn.docker")
+    logger.setLevel(logging.DEBUG)
 
     if not image:
         flash("Image not found", "error")
@@ -66,22 +72,10 @@ def start_host() -> str:
             syllabus=image.syllabus_path,
         )
 
-    host = CodeHost(
-        user_id=current_user.id,
-        host_image_id=image.id,
-        service_id=s.id,
-        service_name=s.name,
-        container_id=None,
-        container_name=None,
-    )
+        flash(f"Host {s.name} started successfully", "success")
+    else:
+        flash("Host already running", "info")
 
-    host.update_from_ci(list(s.containers_info())[0])
-
-    # Commit the new host to the database
-    db.session.add(host)
-    db.session.commit()
-
-    flash(f"Host {s.name} started successfully", "success")
     return redirect(url_for("hosts.index"))
 
 
@@ -94,20 +88,20 @@ def stop_host() -> str:
         flash("No host found to stop (no host_id)", "error")
         return redirect(url_for("hosts.index"))
 
-    extant_host = CodeHost.query.filter_by(user_id=current_user.id).first()
+    ch = CodeHost.query.filter_by(user_id=current_user.id).first()
 
-    if not extant_host:
+    if not ch:
         flash("No host found to stop (no host record)", "error")
         return redirect(url_for("hosts.index"))
 
-    if host_id and str(extant_host.id) != str(host_id):
+    if host_id and str(ch.id) != str(host_id):
         flash(
-            f"Host stop disallowed (host id mismatch {host_id} != {extant_host.id})",
+            f"Host stop disallowed (host id mismatch {host_id} != {ch.id})",
             "error",
         )
         return redirect(url_for("hosts.index"))
 
-    s = ca.csm.get_by_username(current_user.username)
+    s = ca.csm.get(ch.service_id)
 
     if not s:
         flash("No server found to stop", "error")
@@ -115,7 +109,7 @@ def stop_host() -> str:
 
     s.stop()
 
-    db.session.delete(extant_host)
+    db.session.delete(ch)
     db.session.commit()
 
     flash("Server stopped successfully", "success")
@@ -135,9 +129,7 @@ def is_ready(service_id: str) -> jsonify:
         if host and host.service_id != service_id:
             return jsonify({"status": "error", "message": "Service ID mismatch"})
 
-        host.update_from_ci(list(s.containers_info())[0])
-
-        if s.is_ready():
+        if s.check_ready():
             return jsonify({"status": "ready", "hostname_url": s.hostname_url})
         else:
             return jsonify({"status": "not_ready"})

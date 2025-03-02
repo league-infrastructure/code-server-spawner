@@ -18,7 +18,7 @@ from .hosts import hosts_bp
 from .docker.csmanager import CodeServerManager
 from .main import main_bp
 from .main.models import db, User
-from .util import (
+from .util.util import (
     configure_app_dir,
     configure_config_tree,
     human_time_format,
@@ -26,7 +26,7 @@ from .util import (
     setup_sessions,
     setup_database,
 )
-from cspawn.apptypes import App
+from cspawn.util.apptypes import App
 
 default_context = {
     "version": version,
