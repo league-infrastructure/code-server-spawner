@@ -17,13 +17,14 @@ from .auth import auth_bp
 from .hosts import hosts_bp
 from .docker.csmanager import CodeServerManager
 from .main import main_bp
-from .main.models import db
+from .main.models import db, User
 from .util import (
     configure_app_dir,
     configure_config_tree,
     human_time_format,
     init_logger,
     setup_sessions,
+    setup_database,
 )
 from cspawn.apptypes import App
 
@@ -77,6 +78,8 @@ def init_app(config_dir=None, log_level=None, sqlfile=None) -> App:
 
     app.db = db
     app.db.init_app(app)
+
+    setup_database(app)
 
     setup_sessions(app)
 

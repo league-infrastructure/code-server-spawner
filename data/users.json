@@ -1,6 +1,6 @@
 [
     {
-        "user_id": "user_zero",
+        "user_id": "__admin__",
         "username": "admin",
         "email": null,
         "password": null,

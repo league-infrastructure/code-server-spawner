@@ -13,6 +13,18 @@ def db():
 
 @db.command()
 @click.pass_context
+def info(ctx):
+    """Info about the database"""
+    app = get_app(ctx)
+
+    with app.app_context():
+
+        connection_string = str(app.db.engine.url)
+        print(connection_string)
+
+
+@db.command()
+@click.pass_context
 def create(ctx):
     """Create all database tables."""
 
@@ -40,7 +52,19 @@ def destroy(ctx):
 
 
 @db.command()
-@click.option("-d", "--demo", is_flag=True, help="Load demo data after recreating the database.")
+@click.pass_context
+def sync(ctx):
+    """Sync docker with the database."""
+    app = get_app(ctx)
+
+    with app.app_context():
+        app.csm.sync()
+
+
+@db.command()
+@click.option(
+    "-d", "--demo", is_flag=True, help="Load demo data after recreating the database."
+)
 @click.pass_context
 def recreate(ctx, demo):
     """Destroy and recreate all database tables."""

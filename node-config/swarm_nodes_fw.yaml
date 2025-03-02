@@ -1,0 +1,30 @@
+- name: Setup Firewall Rules for Swarm Nodes
+  hosts: swarm_nodes
+  gather_facts: false
+  become: true # Ensure we have root privileges for hostname changes
+  tasks:
+    - name: Allow SSH (22/tcp) unrestricted from internal network 10.0.0.0/8
+      ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+        from_ip: "10.0.0.0/8"
+        comment: "Allow unrestricted SSH from internal network"
+
+    - name: Allow SSH (22/tcp) unrestricted from specific trusted IP
+      ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+        from_ip: "76.218.254.19" # Replace with your specific trusted IP
+        comment: "Allow unrestricted SSH from trusted external IP"
+
+    - name: Turn off rate limit for SSH (22/tcp) from all other sources
+      ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+        comment: "Allow SSH from all other sources"
+    - name: Reload UFW
+      ufw:
+        state: reloaded

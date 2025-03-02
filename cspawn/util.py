@@ -90,7 +90,9 @@ def is_running_under_gunicorn():
     """Return true if the app is running under Gunicorn,
     which implies it is in production"""
 
-    return "gunicorn" in os.environ.get("SERVER_SOFTWARE", "") or "gunicorn" in os.environ.get("GUNICORN_CMD_ARGS", "")
+    return "gunicorn" in os.environ.get(
+        "SERVER_SOFTWARE", ""
+    ) or "gunicorn" in os.environ.get("GUNICORN_CMD_ARGS", "")
 
 
 def get_payload(request) -> dict:
@@ -145,7 +147,9 @@ def configure_config(app):
 
     # Resolve the path to the secrets file
     if "SECRETS_FILE_NAME" in config:
-        config["SECRETS_FILE"] = (Path(config["__CONFIG_PATH"]).parent / config["SECRETS_FILE_NAME"]).resolve()
+        config["SECRETS_FILE"] = (
+            Path(config["__CONFIG_PATH"]).parent / config["SECRETS_FILE_NAME"]
+        ).resolve()
 
     # Store
 
@@ -172,7 +176,9 @@ def configure_config_tree(start_dir=None):
 
     # Resolve the path to the secrets file
     if "SECRETS_FILE_NAME" in config:
-        config["SECRETS_FILE"] = (Path(config["__CONFIG_PATH"]).parent / config["SECRETS_FILE_NAME"]).resolve()
+        config["SECRETS_FILE"] = (
+            Path(config["__CONFIG_PATH"]).parent / config["SECRETS_FILE_NAME"]
+        ).resolve()
 
     return config
 
@@ -225,7 +231,18 @@ def setup_sessions(app, devel=False, session_expire_time=60 * 60 * 24 * 1):
     else:
         # Production settings
         app.config["SESSION_COOKIE_SECURE"] = True  # Require HTTPS for cookies
-        app.config["SESSION_COOKIE_SAMESITE"] = "None"  # Allow cross-site cookies if needed
+        app.config["SESSION_COOKIE_SAMESITE"] = (
+            "None"  # Allow cross-site cookies if needed
+        )
+
+
+def setup_database(app):
+
+    from cspawn.main.models import db
+    from cspawn.main.models import User
+
+    with app.app_context():
+        app.root_user = User.create_root_user(app)
 
 
 def insert_query_arg(url, key, value):

@@ -4,6 +4,7 @@ import warnings
 from pathlib import Path
 
 import pytest
+import random
 from faker import Faker
 
 from cspawn.cli.util import create_demo_users, create_demo_images, make_data
@@ -67,3 +68,22 @@ def app():
 @pytest.fixture
 def fake():
     return Faker()
+
+
+def make_fake_user(fake: Faker) -> User:
+
+    is_admin = random.random() < 0.02
+    is_instructor = not is_admin and random.random() < 0.05
+    is_student = not is_admin and not is_instructor
+
+    return User(
+        user_id=fake.uuid4(),
+        username=fake.user_name(),
+        email=fake.email(),
+        password=fake.password(),
+        is_active=True,
+        is_admin=is_admin,
+        is_instructor=is_instructor,
+        is_student=is_student,
+        display_name=fake.name(),
+    )

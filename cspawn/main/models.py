@@ -2,8 +2,7 @@
 Database Models
 """
 
-import json
-
+from flask import Flask
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import (
@@ -79,6 +78,31 @@ class User(UserMixin, db.Model):
             f"<User(id={self.id}, username={self.username}, "
             f"email={self.email}, provider={self.oauth_provider})>"
         )
+
+    @classmethod
+    def create_root_user(cls, ap: Flask | str):
+        from cspawn.docker.models import HostImage
+
+        if isinstance(ap, str):
+            password = ap
+        elif isinstance(ap, Flask):
+            password = ap.app_config["ADMIN_PASSWORD"]
+
+        existing_user = cls.query.filter_by(id=0).first()
+        if existing_user:
+            return existing_user
+
+        root_user = cls(
+            id=0,
+            user_id="__root__",
+            username="root",
+            password=password,
+            is_admin=True,
+            is_active=True,
+        )
+        db.session.add(root_user)
+        db.session.commit()
+        return root_user
 
 
 class Class(db.Model):

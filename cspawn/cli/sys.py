@@ -26,3 +26,13 @@ def restart(ctx):
     app = get_app(ctx)
 
     print("System restart initiated. haha jk")
+
+
+@sys.command()
+@click.pass_context
+def events(ctx):
+    """display docker events"""
+    app = get_app(ctx)
+
+    for e in app.csm.events:
+        print(e)

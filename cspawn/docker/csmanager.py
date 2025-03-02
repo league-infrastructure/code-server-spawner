@@ -11,6 +11,8 @@ import docker
 import paramiko
 import pytz
 import requests
+import json
+from time import time
 
 from slugify import slugify
 
@@ -18,9 +20,9 @@ from slugify import slugify
 from cspawn.docker.manager import ServicesManager, logger
 from cspawn.docker.proc import Service
 from cspawn.main.models import db, User
-from .models import CodeHost
+from .models import CodeHost, HostImage
 
-logger = logging.getLogger("cspawnctl")
+logger = logging.getLogger("cspawn.docker")
 
 
 class CSMService(Service):
@@ -30,7 +32,7 @@ class CSMService(Service):
 
     def stop(self):
         """Remove the process."""
-        self.manager.repo.remove_by_id(self.id)
+
         self.remove()
 
     @property
@@ -43,12 +45,23 @@ class CSMService(Service):
         """Return the URL of the hostname."""
         return f"https://{self.hostname}"
 
+    @property
+    def repo(self):
+        """Return the repository for the service."""
+        return self.labels.get("INITIAL_GIT_REPO")
+
     def update(self, **kwargs):
         """Update the service with the given keyword arguments."""
-        self.reload()
-        ci = list(self.containers_info())[0]
-        ci.update(kwargs)
 
+        code_host = CodeHost.query.filter_by(service_id=self.id).first()
+        if code_host:
+            for key, value in kwargs.items():
+                setattr(code_host, key, value)
+                db.session.commit()
+
+            db.session.commit()
+
+    @property
     def is_ready(self):
         """Check if the server is ready by making a request to it."""
         try:
@@ -66,32 +79,93 @@ class CSMService(Service):
             logger.debug("Error checking server status to %s: %s", self.hostname_url, e)
             return False
 
-    def wait_until_ready(self, timeout=60):
-        """Wait until the server is ready or the timeout is reached."""
-        from time import time
+    @property
+    def is_running(self):
+        """Check if the service is running, although it may not be ready to service web requests"""
+        return self.status == "running"
 
-        start_time = time()
+    @property
+    def rec(self):
+        """Return the database record for this service."""
 
-        while True:
-            self.update(state="starting")
-            wait_time = time() - start_time
-            if self.is_ready():
-                logger.info(
-                    "Service %s is ready, time elapsed: %s", self.name, wait_time
-                )
-                break
+        return CodeHost.query.filter_by(service_id=self.id).first()
 
-            sleep(0.5)
-            logger.info(
-                "Waiting for %s to start, time elapsed: %s", self.name, wait_time
-            )
+    def check_ready(self):
 
-            if wait_time > timeout:
-                logger.info("Service %s failed to start after 40 seconds", self.name)
-                break
+        is_ready = self.is_ready  # Container is running
+        is_running = self.is_running  # web-app is running
+        rec = self.rec
 
-        self.update()
-        return wait_time
+        if is_running and rec.state != "running":
+            self.sync_to_db()  # Sets state=running and also container_id
+        elif is_ready and rec.app_state != "ready":
+            self.sync_to_db(check_ready=True)
+
+        return is_ready
+
+    def sync_to_db(self, check_ready=False):
+        """Sync the service to the database."""
+
+        ch = CodeHost.query.filter_by(service_id=self.id).first()
+
+        m = self.to_model()
+
+        if check_ready:
+            if self.is_ready:
+                m.app_state = "ready"
+
+        if ch:
+            for key, value in m.__dict__.items():
+                if key != "_sa_instance_state":
+                    setattr(ch, key, value)
+            db.session.commit()
+        else:
+            db.session.add(m)
+            db.session.commit()
+
+    def to_model(self, no_container=False) -> CodeHost:
+        """Return a CodeHost model instance.
+
+        Args:
+            no_container (bool): If True, do not include the container. Use this
+            when creating new services and container isn't set initially. 
+
+        """
+
+        username = self.labels.get("jtl.codeserver.username")
+        user: User = User.query.filter_by(username=username).first()
+
+        if not user:
+            user = User.query.get(0)
+
+        image: HostImage = HostImage.query.filter_by(image_uri=self.image).first()
+
+        if no_container:
+            c = None
+        else:
+            try:
+                c = next(self.containers)
+            except (KeyError, StopIteration):
+                logger.error("CodeHost.to_model(): No container found for service %s", self.name)
+                c = None
+
+        return CodeHost(
+            user_id=user.id,
+            service_id=self.id,
+            service_name=self.name,
+            container_id=c.id if c else None,
+            container_name=c.name if c else None,
+            state=self.status,
+            host_image_id=image.id if image else None,
+            node_id=c.node.id if c else None,
+            node_name=c.node.attrs["Description"]["Hostname"] if c else None,
+            public_url=self.hostname_url,
+            password=self.labels.get("jtl.codeserver.password"),
+            labels=json.dumps(self.labels),
+            created_at=datetime.fromisoformat(
+                self.labels.get("jtl.codeserver.start_time")
+            ),
+        )
 
 
 def define_cs_container(
@@ -159,7 +233,7 @@ def define_cs_container(
         "jtl": "true",
         "jtl.codeserver": "true",
         "jtl.codeserver.username": username,
-        "jt.codeserver.password": password,
+        "jtl.codeserver.password": password,
         "jtl.codeserver.start_time": datetime.now(
             pytz.timezone("America/Los_Angeles")
         ).isoformat(),
@@ -313,6 +387,11 @@ class CodeServerManager(ServicesManager):
             syllabus=syllabus,
         )
 
+        existing_ch = CodeHost.query.filter_by(service_name=username).first()
+        if existing_ch:
+            logger.info("CodeHost record for %s already exists", username)
+            return self.get(existing_ch.service_id)
+
         # import yaml
         # logger.debug(f"Container Definition\n {yaml.dump(container_def)}")
 
@@ -323,7 +402,7 @@ class CodeServerManager(ServicesManager):
         #    host_dir, container_dir = m.split(':')
 
         try:
-            s = self.run(**container_def)
+            s: CSMService = self.run(**container_def)
         except docker.errors.APIError as e:
             if e.response.status_code == 409:
                 logger.error("Container for %s already exists: %s", username, e)
@@ -332,34 +411,22 @@ class CodeServerManager(ServicesManager):
                 logger.error("Error creating container: %s", e)
                 return None
 
-        # Wait for there to be a container ID
-        while True:
-            s.reload()
-            try:
-                ci = list(s.containers_info())[0]
-            except IndexError:
-                sleep(1)
-                continue
-
-            if ci["container_id"] is not None:
-                break
-            sleep(0.5)
-
-        s.update()
+        ch: CodeHost = s.to_model(no_container=True)
+        db.session.add(ch)
+        db.session.commit()
 
         return s
 
     def list(
         self, filters: Optional[Dict[str, Any]] = {"label": "jtl.codeserver"}
-    ) -> List[docker.models.containers.Container]:
+    ) -> List[CSMService]:
         """
         List all Code Server instances, from the Docker API.
 
         Args:
             filters (Optional[Dict[str, Any]]): Filters to apply.
 
-        Returns:
-            List[docker.models.containers.Container]: List of containers.
+
         """
         return super().list(filters=filters)
 
@@ -368,10 +435,35 @@ class CodeServerManager(ServicesManager):
 
         return CodeHost.query.all()
 
-    def sync():
+    def sync(self, check_ready=False):
         """Sync the database with the Docker API."""
 
-        pass
+        service_ids = {ch.service_id for ch in CodeHost.query.all()}
+
+        in_db = {ch.service_id for ch in CodeHost.query.all()}
+        in_swarm = {s.id for s in self.list()}
+
+        not_in_db = in_swarm - in_db
+        not_in_swarm = in_db - in_swarm
+
+        # Mark the missing services as missing in action
+        for service_id in not_in_db:
+            ch = CodeHost.query.filter_by(service_id=service_id).first()
+            if ch:
+                ch.state = "mia"  # "Missing in Action"
+                ch.app_state = "mia"
+            db.session.commit()
+
+        # Get the CodeHosts records that have state != 'running' or 'app_state' != 'ready'
+        not_ready_hosts = CodeHost.query.filter(
+            (CodeHost.state != 'running') | (CodeHost.app_state != 'ready')
+        ).all()
+
+        # Update remaining services.
+        for ch in not_ready_hosts:
+            s: CSMService = self.get(ch.service_id)
+            logger.info("Syncing service %s", s.name)
+            s.sync_to_db(check_ready=check_ready)
 
     def remove_all(self):
         """Remove all Code Server instances."""
