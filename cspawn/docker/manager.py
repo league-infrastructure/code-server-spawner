@@ -5,10 +5,9 @@ from typing import Any, Dict, List, Optional
 import docker
 from pymongo.database import Database as MongoDatabase
 
-
 from .proc import Container, Service
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("cspawn.docker")
 
 
 class DockerManager:
@@ -35,6 +34,14 @@ class DockerManager:
     @property
     def name(self):
         return self.info["Name"]
+
+    @property
+    def hostname(self):
+        return self.client.api._custom_adapter.ssh_params["hostname"]
+
+    @property
+    def username(self):
+        return self.client.api._custom_adapter.ssh_params["username"]
 
     def run(self, name: str, image: str, **kwargs: Any) -> Any:
         """Create and run a new process (container or service)."""
@@ -83,6 +90,10 @@ class DockerManager:
             self.client.networks.create(
                 name, driver=driver, internal=internal, ingress=ingress
             )
+
+    @property
+    def events(self):
+        yield from self.client.events(decode=True)
 
 
 class ContainersManager(DockerManager):
@@ -204,11 +215,12 @@ class ServicesManager(DockerManager):
 
         self.hostname_f = hostname_f or (lambda x: x)
 
-    def _node_client(self, node_name):
-        """Return a Docker client for a specific node."""
+    def _node_manager(self, node_name):
+        """Return a ContainersManager for a specific node."""
         import docker
 
         node_host = self.hostname_f(node_name)
+
         return ContainersManager(
             docker.DockerClient(base_url=f"ssh://root@{node_host}")
         )
@@ -218,7 +230,7 @@ class ServicesManager(DockerManager):
         for n in self.client.nodes.list():
             node_name = n.attrs["Description"]["Hostname"]
 
-            yield self._node_client(node_name)
+            yield self._node_manager(node_name)
 
     def run(
         self,
@@ -231,7 +243,7 @@ class ServicesManager(DockerManager):
         network: List[str] = [],
         restart_policy: Optional[str] = None,
         **kwargs: Any,
-    ) -> Any:
+    ) -> Service:
         """
         Create a new service.
         :param name: Name of the service.

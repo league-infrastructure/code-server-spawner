@@ -1,3 +1,10 @@
+
+from paramiko.ssh_exception import NoValidConnectionsError
+import logging
+
+logger = logging.getLogger("cspawn.docker")
+
+
 class ProcessBase:
     """Base class for both Container and Service objects."""
 
@@ -52,6 +59,12 @@ class ProcessBase:
 class Container(ProcessBase):
     """Represents a single Docker container."""
 
+    node = None
+
+    def __init__(self, manager, obj, node=None):
+        self.node = node
+        super().__init__(manager, obj)
+
     def start(self):
         """Start the container."""
         self._object.start()
@@ -91,6 +104,12 @@ class Container(ProcessBase):
         """Remove the process."""
         self._object.stop()
 
+    def node_id(self):
+        return self.node.attrs.get("NodeID")
+
+    def node_name(self):
+        return self.node.attrs.get("Description", {}).get("Hostname")
+
 
 class Service(ProcessBase):
     """Represents a single Docker service (for Swarm mode)."""
@@ -114,6 +133,40 @@ class Service(ProcessBase):
             if container_id:
                 container = self.client.containers.get(container_id)
                 return container.stats(stream=False)
+
+    @property
+    def container_states(self):
+        """Return the container states associated with the service."""
+        try:
+            return {
+                t["Status"]["ContainerStatus"]["ContainerID"]: t["Status"]["State"]
+                for t in self.tasks
+            }
+        except KeyError:
+            return {}
+
+    @property
+    def containers(self):
+        """Return the containers associated with the service."""
+
+        for c in self.tasks:
+            node_id = c["NodeID"]
+            node = self.manager.client.nodes.get(node_id)
+
+            node_name = node.attrs.get("Description", {}).get("Hostname")
+
+            container_id = c["Status"]["ContainerStatus"]["ContainerID"]
+
+            try:
+                n_manager = self.manager._node_manager(node_name)
+            except NoValidConnectionsError as e:
+                logger.error(f"Error connecting to node {node_name}: {e}")
+                continue
+
+            c = n_manager.get(container_id)
+            c.node = node
+
+            yield c
 
     def containers_info(self):
 
@@ -141,9 +194,19 @@ class Service(ProcessBase):
         return self._object.tasks()
 
     @property
-    def labels(self):
+    def labels(self) -> dict:
         """Return the labels associated with the container."""
         return self._object.attrs["Spec"]["Labels"]
+
+    @property
+    def env(self) -> dict:
+        """Return the labels associated with the container."""
+        env_lines = self._object.attrs["Spec"]["TaskTemplate"]["ContainerSpec"]["Env"]
+        return dict([tuple(e.split("=", 1)) for e in env_lines])
+
+    @property
+    def image(self) -> str:
+        return self.attrs["Spec"]["TaskTemplate"]["ContainerSpec"]["Image"]
 
     @property
     def status(self):

@@ -29,12 +29,13 @@ class CodeHost(db.Model):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     user = relationship("User", backref="code_hosts")
 
-    service_id = Column(String, nullable=False)
+    service_id = Column(String, nullable=False, unique=True)
     service_name = Column(String, nullable=False)
     container_id = Column(String, nullable=True)
     container_name = Column(String, nullable=True)
 
-    state = Column(String, default="unknown", nullable=False)
+    state = Column(String, default="unknown", nullable=False)  # Docker state
+    app_state = Column(String, default="unknown", nullable=True)  # Application state
 
     host_image_id = Column(Integer, ForeignKey("host_images.id"), nullable=True)
     host_image = relationship("HostImage", backref="code_hosts")

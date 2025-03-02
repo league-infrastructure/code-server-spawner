@@ -8,4 +8,4 @@ disable=C0116,C0114,C0115
 output-format=colorized
 
 [FORMAT]
-max-line-length=100
+max-line-length=120

@@ -21,6 +21,8 @@ def create_demo_users(app):
 
     from cspawn.util import set_role_from_email
 
+    User.create_root_user(app)
+
     faker = Faker()
     users = [
         {
@@ -51,7 +53,7 @@ def create_demo_users(app):
             continue
 
         set_role_from_email(app, user)
-        print("!!!!", user)
+
         db.session.add(user)
 
     db.session.commit()
@@ -159,6 +161,8 @@ def load_data(app):
     from cspawn.util import set_role_from_email
 
     data_dir = Path(cspawn.__file__).parent.parent / "data"
+
+    User.create_root_user(app)
 
     users_file = data_dir / "users.json"
 
