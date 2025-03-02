@@ -29,15 +29,22 @@
                 <td>{{ code_host.service_name }}</td>
                 <td>{{ code_host.state }}</td>
                 <td>{{ code_host.host_image.name }}</td>
-                <td><a href="https://{{ code_host.public_url }}" target="_blank">{{ code_host.public_url }}</a></td>
+                <td><a href="{{ code_host.public_url }}" target="_blank">{{ code_host.public_url }}</a></td>
                 <td>{{ code_host.user_activity_rate }}</td>
                 <td>{{ code_host.last_heartbeat_ago.strftime('%Y-%m-%d %H:%M:%S') if code_host.last_heartbeat_ago else
                     'N/A' }}</td>
                 <td>
-                    <form action="{{ url_for('admin.delete_host') }}" method="post" style="display:inline;">
-                        <input type="hidden" name="host_id" value="{{ code_host.id }}">
-                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                    {% if code_host.state == 'running' %}
+                    <form action="{{ url_for('admin.stop_host', host_id=code_host.id)  }}" method="post"
+                        style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-danger">Stop</button>
                     </form>
+                    {% else %}
+                    <form action="{{ url_for('admin.delete_host', host_id=code_host.id) }}" method="post"
+                        style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-warning">Delete</button>
+                    </form>
+                    {% endif %}
                 </td>
             </tr>
             {% endfor %}

@@ -4,12 +4,12 @@ from pathlib import Path
 
 from faker import Faker
 
-from cspawn.config import find_parent_dir
+from cspawn.util.config import find_parent_dir
 from cspawn.docker.csmanager import logger as ctrl_logger
 from cspawn.docker.models import CodeHost, HostImage
 from cspawn.init import init_app
 from cspawn.main.models import *
-from cspawn.util import configure_config_tree
+from cspawn.util.util import configure_config_tree
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ def create_demo_users(app):
     # Implement your demo data loading logic here
     # Delete all users with email addresses in the 'example.com' domain
 
-    from cspawn.util import set_role_from_email
+    from cspawn.util.util import set_role_from_email
 
     User.create_root_user(app)
 
@@ -158,7 +158,7 @@ def load_data(app):
     import json
 
     import cspawn
-    from cspawn.util import set_role_from_email
+    from cspawn.util.util import set_role_from_email
 
     data_dir = Path(cspawn.__file__).parent.parent / "data"
 

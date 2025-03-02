@@ -6,9 +6,9 @@ from faker import Faker
 from cspawn.docker.models import CodeHost, HostImage
 from cspawn.init import db
 from cspawn.main.models import User
-from cspawn.util import role_from_email
+from cspawn.util.util import role_from_email
 
-from cspawn.test_fixture import *
+from cspawn.util.test_fixture import *
 
 
 class TestMisc(CSUnitTest):

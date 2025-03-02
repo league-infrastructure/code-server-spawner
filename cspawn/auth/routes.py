@@ -9,7 +9,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from oauthlib.oauth2.rfc6749.errors import TokenExpiredError
 
 from cspawn.main.models import User, db
-from cspawn.util import find_username, set_role_from_email
+from cspawn.util.util import find_username, set_role_from_email
 
 from . import auth_bp, logger
 

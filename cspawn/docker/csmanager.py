@@ -298,7 +298,7 @@ class CodeServerManager(ServicesManager):
         Args:
             app: Application instance.
         """
-        from cspawn.apptypes import App
+        from cspawn.util.apptypes import App
 
         app = cast(App, app)
 
@@ -447,7 +447,8 @@ class CodeServerManager(ServicesManager):
         not_in_swarm = in_db - in_swarm
 
         # Mark the missing services as missing in action
-        for service_id in not_in_db:
+        logger.info(f'Services in db but not in swarm: {len(not_in_swarm)}')
+        for service_id in not_in_swarm:
             ch = CodeHost.query.filter_by(service_id=service_id).first()
             if ch:
                 ch.state = "mia"  # "Missing in Action"
@@ -460,9 +461,19 @@ class CodeServerManager(ServicesManager):
         ).all()
 
         # Update remaining services.
+        logger.info(f'Syncing not-ready hosts: {len(not_ready_hosts)}')
         for ch in not_ready_hosts:
+            if ch.state == 'mia':
+                continue
             s: CSMService = self.get(ch.service_id)
             logger.info("Syncing service %s", s.name)
+            s.sync_to_db(check_ready=check_ready)
+
+        logger.info(f'Syncing not-in-db hosts: {len(not_in_db)}')
+        # Create the missing services
+        for service_id in not_in_db:
+            s: CSMService = self.get(service_id)
+
             s.sync_to_db(check_ready=check_ready)
 
     def remove_all(self):

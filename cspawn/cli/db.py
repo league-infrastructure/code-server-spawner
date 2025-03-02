@@ -54,11 +54,11 @@ def destroy(ctx):
 @db.command()
 @click.pass_context
 def sync(ctx):
-    """Sync docker with the database."""
+    """Sync docker with the database. same as `cspawn host sync`"""
     app = get_app(ctx)
 
     with app.app_context():
-        app.csm.sync()
+        app.csm.sync(check_ready=True)
 
 
 @db.command()

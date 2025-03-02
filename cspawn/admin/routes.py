@@ -1,13 +1,16 @@
 import json
 from datetime import datetime
-
+from typing import cast
 from flask import current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from cspawn.docker.models import CodeHost, HostImage
 from cspawn.main.models import Class, User, db
+from cspawn.util.apptypes import App
 
 from . import admin_bp
+
+ca = cast(App, current_app)
 
 
 def _context():
@@ -29,22 +32,38 @@ def list_classes():
     return render_template("admin/classes.html", classes=classes)
 
 
-@admin_bp.route("/code_hosts")
+@admin_bp.route("/hosts")
 @login_required
 def list_code_hosts():
     code_hosts = CodeHost.query.all()
     return render_template("admin/code_hosts.html", code_hosts=code_hosts)
 
 
-@admin_bp.route("/delete_host", methods=["POST"])
+@admin_bp.route("/host/<int:host_id>/delete", methods=["POST"])
 @login_required
-def delete_host():
-    host_id = request.form.get("host_id")
+def delete_host(host_id):
+    code_host = CodeHost.query.get_or_404(host_id)
+    db.session.delete(code_host)
+    db.session.commit()
+    flash("Host deleted successfully", "success")
+    return redirect(url_for("admin.list_code_hosts"))
+
+
+@admin_bp.route("/host/<int:host_id>/stop", methods=["POST"])
+@login_required
+def stop_host(host_id):
+    code_host = CodeHost.query.get(host_id)
+
     if not host_id:
         flash("No host ID provided", "danger")
         return redirect(url_for("admin.list_code_hosts"))
 
     code_host = CodeHost.query.get_or_404(host_id)
+    s = ca.csm.get(code_host.service_id)
+    if not s:
+        flash("Host not found", "danger")
+        return redirect(url_for("admin.list_code_hosts"))
+    s.stop()
     db.session.delete(code_host)
     db.session.commit()
     flash("Host deleted successfully", "success")
