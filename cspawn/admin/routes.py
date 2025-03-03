@@ -70,6 +70,17 @@ def stop_host(host_id):
     return redirect(url_for("admin.list_code_hosts"))
 
 
+@admin_bp.route("/host/<int:host_id>/details", methods=["GET"])
+@login_required
+def view_host(host_id):
+    code_host = CodeHost.query.get_or_404(host_id)
+    service = ca.csm.get(code_host.service_id)
+    if not service:
+        flash("Service not found", "danger")
+        return redirect(url_for("admin.list_code_hosts"))
+    return render_template("admin/view_host.html", code_host=code_host, service=service)
+
+
 @admin_bp.route("/images")
 @login_required
 def list_images():

@@ -1,0 +1,38 @@
+{% extends "admin/base.html" %}
+
+{% block header %}
+<div class="text-center">
+    <h1 class="mb-4">Host Details</h1>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Basic Docker Information</h2>
+    <p><strong>Service Name:</strong> {{ service.name }}</p>
+    <p><strong>Service ID:</strong> {{ service.id }}</p>
+    <p><strong>First Container Name:</strong> {{ service.attrs['Spec']['TaskTemplate']['ContainerSpec']['Image'] }}</p>
+    <p><strong>First Container ID:</strong> {{ service.attrs['ID'] }}</p>
+    <p><strong>Public URL:</strong> <a href="{{ code_host.public_url }}" target="_blank">{{ code_host.public_url }}</a>
+    </p>
+    <p><strong>Repo:</strong> <a href="{{ code_host.host_image.repo_uri }}" target="_blank">{{
+            code_host.host_image.repo_uri }}</a></p>
+    <p><strong>Image:</strong> <a href="{{ code_host.host_image.image_uri }}" target="_blank">{{
+            code_host.host_image.image_uri }}</a></p>
+    <p><strong>Syllabus:</strong> {{ code_host.syllabus }}</p>
+    <h3>Labels</h3>
+    <ul>
+        {% for key, value in service.attrs['Spec']['Labels'].items() %}
+        <li><strong>{{ key }}:</strong> {{ value }}</li>
+        {% endfor %}
+    </ul>
+    <h3>Environment Variables</h3>
+    <ul>
+        {% for env_var in service.attrs['Spec']['TaskTemplate']['ContainerSpec']['Env'] %}
+        <li>{{ env_var }}</li>
+        {% endfor %}
+    </ul>
+    <h3>Service Attributes (JSON)</h3>
+    <pre>{{ service.attrs | tojson(indent=4) }}</pre>
+</div>
+{% endblock %}

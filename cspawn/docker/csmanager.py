@@ -21,6 +21,7 @@ from cspawn.docker.manager import ServicesManager, logger
 from cspawn.docker.proc import Service
 from cspawn.main.models import db, User
 from .models import CodeHost, HostImage
+from cspawn.util.auth import basic_auth_hash, docker_label_escape, random_string
 
 logger = logging.getLogger("cspawn.docker")
 
@@ -41,9 +42,19 @@ class CSMService(Service):
         return self.labels.get("caddy")
 
     @property
-    def hostname_url(self):
+    def username(self):
+        """Return the username of the service."""
+        return self.labels.get("jtl.codeserver.username")
+
+    @property
+    def password(self):
+        """Return the password of the service."""
+        return self.labels.get("jtl.codeserver.password")
+
+    @property
+    def public_url(self):
         """Return the URL of the hostname."""
-        return f"https://{self.hostname}"
+        return self.labels.get("jtl.codeserver.public_url")
 
     @property
     def repo(self):
@@ -64,19 +75,20 @@ class CSMService(Service):
     @property
     def is_ready(self):
         """Check if the server is ready by making a request to it."""
+        logger.setLevel(logging.DEBUG)
         try:
-            response = requests.get(self.hostname_url, timeout=10)
+            response = requests.get(self.public_url, timeout=10)
             logger.debug(
-                "Response from %s: %s", self.hostname_url, response.status_code
+                "Response from %s: %s", self.public_url, response.status_code
             )
             return response.status_code in [200, 302]
         except requests.exceptions.SSLError:
             logger.debug(
-                "SSL error encountered when connecting to %s", self.hostname_url
+                "SSL error encountered when connecting to %s", self.public_url
             )
             return False
         except requests.exceptions.RequestException as e:
-            logger.debug("Error checking server status to %s: %s", self.hostname_url, e)
+            logger.debug("Error checking server status to %s: %s", self.public_url, e)
             return False
 
     @property
@@ -159,7 +171,7 @@ class CSMService(Service):
             host_image_id=image.id if image else None,
             node_id=c.node.id if c else None,
             node_name=c.node.attrs["Description"]["Hostname"] if c else None,
-            public_url=self.hostname_url,
+            public_url=self.public_url,
             password=self.labels.get("jtl.codeserver.password"),
             labels=json.dumps(self.labels),
             created_at=datetime.fromisoformat(
@@ -177,6 +189,7 @@ def define_cs_container(
     syllabus=None,
     env_vars=None,
     port=None,
+    password=None,
 ):
     """
     Define the container configuration for a Code Server instance.
@@ -196,11 +209,15 @@ def define_cs_container(
     """
     # Create the container
 
+    if password is None:
+        password = random_string(16)
+
     env_vars = env_vars or {}
 
     container_name = name = slugify(username)
 
-    password = "code4life"
+    hashed_pw = basic_auth_hash(password)
+    quoted_pw = docker_label_escape(hashed_pw)
 
     hostname = hostname_template.format(username=container_name)
 
@@ -212,11 +229,14 @@ def define_cs_container(
     else:
         workspace_folder = "/workspace"
 
+    public_url = f"https://{username}:{password}@{hostname}/"
+
     _env_vars = {
         "WORKSPACE_FOLDER": workspace_folder,
         "PASSWORD": password,
         "DISPLAY": ":0",
-        "VNC_URL": f"https://{hostname}/vnc/",
+        "VNC_URL": public_url + "vnc/",
+        "PUBLIC_URL": public_url,
         "KST_REPORTING_URL": config.KST_REPORTING_URL,
         "KST_CONTAINER_ID": name,
         "KST_REPORT_RATE": (
@@ -234,6 +254,7 @@ def define_cs_container(
         "jtl.codeserver": "true",
         "jtl.codeserver.username": username,
         "jtl.codeserver.password": password,
+        "jtl.codeserver.public_url": public_url,
         "jtl.codeserver.start_time": datetime.now(
             pytz.timezone("America/Los_Angeles")
         ).isoformat(),
@@ -256,6 +277,7 @@ def define_cs_container(
         # General Reverse Proxy
         "caddy.2_route.handle": "/*",
         "caddy.2_route.handle.reverse_proxy": "{{upstreams 8080}}",
+        f"caddy.basic_auth.{username}": hashed_pw
     }
 
     # This part sets up a port redirection for development, where we don't have
@@ -496,7 +518,7 @@ class CodeServerManager(ServicesManager):
 
     def get_by_username(self, username):
         """
-        Get a Code Server instance by username.
+        Get a Code Server docker instance by username.
 
         Args:
             username (str): Username for the instance.
@@ -504,3 +526,8 @@ class CodeServerManager(ServicesManager):
         Returns:
             CSMService: Code Server instance.
         """
+
+        for service in self.list():
+            if service.username == username:
+                return service
+        return None

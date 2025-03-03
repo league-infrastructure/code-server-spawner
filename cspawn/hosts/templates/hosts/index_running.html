@@ -41,32 +41,59 @@
 
 
 {% block container %}
-<div id="host_view" class="w-100 p-0"></div>
-<iframe id="host_view_iframe" src="{{ url_for('hosts.loading') }}"
-    style="width: 100%; height: calc(100vh - 40px); border: none;"></iframe>
+<div id="host_view" class="w-100 p-0">
+    <div class="spinner"></div>
 </div>
 {%endblock%}
 
 {% block footer %} {% endblock %}
 
-{% block scripts %}
+{% block styles %}
+<style>
+    .spinner {
+        width: 100px;
+        height: 100px;
+        background: url('{{ url_for("main.static", filename="bolt.png") }}') no-repeat center center;
+        background-size: contain;
+        animation: spin 2s linear infinite;
+        margin: 100px auto;
+    }
 
+    @keyframes spin {
+        0% {
+            transform: rotate(0deg);
+        }
+
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
+    body {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        margin: 0;
+        background-color: #f0f0f0;
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
 <script>
     <!-- Polling script to check if the server is ready -->
     (function poll() {
-
         const url = `{{ url_for('hosts.is_ready', service_id=host.service_id) }}`;
         let startTime = Date.now();
 
-
         function pollServer() {
-
             fetch(url)
                 .then(response => response.json())
                 .then(data => {
                     console.log("Code host status " + data.status);
                     if (data.status === 'ready') {
-                        // Enable the buttons and reload the iframe.
+                        // Enable the buttons and reload the page.
                         const onwb = document.getElementById('open-new-window-btn');
                         onwb.classList.remove('disabled');
                         onwb.removeAttribute('aria-disabled');
@@ -79,8 +106,8 @@
                         ssb.style.pointerEvents = 'auto';
                         ssb.style.opacity = '1';
                         document.getElementById('stop-server-icon').style.color = 'red';
-                        document.getElementById('host_view_iframe').src = `{{host.public_url}}`;
 
+                        window.location.href = `{{host.public_url}}`;
                     } else {
                         setTimeout(pollServer, 2000);
                     }
