@@ -18,7 +18,7 @@ from .hosts import hosts_bp
 from .docker.csmanager import CodeServerManager
 from .main import main_bp
 from .main.models import db, User
-from .util.util import (
+from .util.app_support import (
     configure_app_dir,
     configure_config_tree,
     human_time_format,

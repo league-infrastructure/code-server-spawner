@@ -53,7 +53,6 @@ def start_host() -> str:
     if not image:
         flash("Image not found", "error")
         return redirect(url_for("hosts.index"))
-
     # Look for an existing CodeHost for the current user
     extant_host = CodeHost.query.filter_by(user_id=current_user.id).first()
 
@@ -74,6 +73,7 @@ def start_host() -> str:
 
         flash(f"Host {s.name} started successfully", "success")
     else:
+        s.sync_to_db()
         flash("Host already running", "info")
 
     return redirect(url_for("hosts.index"))
@@ -130,11 +130,28 @@ def is_ready(service_id: str) -> jsonify:
             return jsonify({"status": "error", "message": "Service ID mismatch"})
 
         if s.check_ready():
-            return jsonify({"status": "ready", "hostname_url": s.hostname_url})
+            return jsonify({"status": "ready", "hostname_url": s.public_url})
         else:
             return jsonify({"status": "not_ready"})
     except NotFound as e:
         return jsonify({"status": "error", "message": str(e)})
+
+
+@hosts_bp.route("/service/<chost_id>/open", methods=["GET"])
+@login_required
+def open_codehost(chost_id: str) -> str:
+
+    ch = CodeHost.query.filter_by(id=chost_id).first()
+
+    if not ch:
+        flash("Service not found (a)", "error")
+        return redirect(url_for("hosts.index"))
+
+    if current_user.id != ch.user_id:
+        flash("Service not found (b)", "error")
+        return redirect(url_for("hosts.index"))
+
+    return render_template("hosts/open_codehost.html", public_url=ch.public_url)
 
 
 @hosts_bp.route("/loading")

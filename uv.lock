@@ -328,6 +328,7 @@ version = "0.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "authlib" },
+    { name = "bcrypt" },
     { name = "bootstrap-flask" },
     { name = "click" },
     { name = "docker" },
@@ -373,6 +374,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "authlib", specifier = ">=1.4.1" },
+    { name = "bcrypt", specifier = ">=4.2.1" },
     { name = "bootstrap-flask", specifier = ">=2.4.1" },
     { name = "click", specifier = ">=8.1.8" },
     { name = "cspawn" },

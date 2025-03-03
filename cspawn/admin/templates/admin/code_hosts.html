@@ -18,6 +18,7 @@
                 <th>Url</th>
                 <th>User Activity Rate</th>
                 <th>Last Heartbeat</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -34,6 +35,8 @@
                 <td>{{ code_host.last_heartbeat_ago.strftime('%Y-%m-%d %H:%M:%S') if code_host.last_heartbeat_ago else
                     'N/A' }}</td>
                 <td>
+                    <a href="{{ url_for('admin.view_host', host_id=code_host.id) }}"
+                        class="btn btn-sm btn-primary">View</a>
                     {% if code_host.state == 'running' %}
                     <form action="{{ url_for('admin.stop_host', host_id=code_host.id)  }}" method="post"
                         style="display:inline;">
