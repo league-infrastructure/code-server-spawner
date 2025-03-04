@@ -1,18 +1,19 @@
 services:
-  cs-spawner:
-    image: codeserv
+  codeserv:
+    image: codeserv # CHANGE to an image name specific to this project
     container_name: codeserv
     build:
       context: .
       dockerfile: Dockerfile
 
-    # These labels set up the domain name in the Caddy proxy
-    labels:
-      caddy: code.doswarm.jointheleague.org
-      caddy.reverse_proxy: "{{upstreams 8000}}"
-
-    environment:
-      key: value
+    deploy:
+      replicas: 1
+      labels:
+        caddy: code.jtlapp.net
+        caddy.reverse_proxy: "{{upstreams 8000}}"
+      placement:
+        constraints:
+          - node.role == manager
 
     volumes:
       - app-data:/app/data
@@ -20,8 +21,8 @@ services:
       - /mnt/student_repos:/mnt/student_repos
 
     # Expose Flask app on host port 8090
-    ports:
-      - "8090:8000"
+    # ports:
+    #  - "8090:8000"
 
     networks: # Must exist to recieve traffic from Caddy
       - caddy
@@ -34,4 +35,3 @@ networks:
 
 volumes:
   app-data:
-

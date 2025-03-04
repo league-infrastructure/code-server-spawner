@@ -50,6 +50,11 @@ class Config:
 
 
 def find_parent_dir():
+
+    jtp_app_dir = os.getenv("JTP_APP_DIR")
+    if jtp_app_dir and Path(jtp_app_dir).is_dir():
+        return Path(jtp_app_dir)
+
     cwd = Path.cwd()
 
     for i in range(3):

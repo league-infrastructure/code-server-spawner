@@ -2,8 +2,6 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from pydantic import BaseModel
-from pymongo import MongoClient
-from pymongo.collection import Collection
 
 
 class FileStat(BaseModel):
