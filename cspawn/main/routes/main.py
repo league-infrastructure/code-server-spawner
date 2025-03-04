@@ -331,7 +331,11 @@ def stop_host(host_id):
 
     code_host = CodeHost.query.get(host_id)
 
-    s = current_app.csm.get(code_host.service_id)
+    try:
+        s = current_app.csm.get(code_host.service_id)
+    except KeyError:
+        s = None
+
     if not s:
         flash("Host not found", "danger")
         return redirect(url_for("admin.list_code_hosts"))
