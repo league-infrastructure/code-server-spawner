@@ -8,7 +8,7 @@ from flask_bootstrap import Bootstrap5
 from flask_dance.contrib.google import make_google_blueprint
 from flask_font_awesome import FontAwesome
 from flask_login import LoginManager
-from flask_pymongo import PyMongo
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from cspawn.__version__ import __version__ as version
 
@@ -60,16 +60,16 @@ def init_app(config_dir=None, log_level=None, sqlfile=None) -> App:
     init_logger(app, log_level=log_level)
 
     app_dir, db_dir = configure_app_dir(app)
-
     app.logger.info(
         f"App dir: {app_dir} DB dir: {db_dir}. CONFIGS: {app.app_config['__CONFIG_PATH']}"
     )
 
-    app.config["MONGO_URI"] = app.app_config["MONGO_URL"]
-    app.config["CSM_MONGO_DB_NAME"] = "code-spawner"
-    app.mongodb = PyMongo(app)
+    # app.config["MONGO_URI"] = app.app_config["MONGO_URL"]
+    # app.config["CSM_MONGO_DB_NAME"] = "code-spawner"
+    # app.mongodb = PyMongo(app)
 
     # Configure PostgreSQL database
+
     if sqlfile is not None:
         app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{sqlfile}"
     else:
@@ -88,6 +88,8 @@ def init_app(config_dir=None, log_level=None, sqlfile=None) -> App:
     # Configure Google OAuth
 
     from flask_dance.consumer.storage.sqla import SQLAlchemyStorage
+
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1)  # So goggle oauth will use https behind proxy
 
     google_bp = make_google_blueprint(
         scope=GOOGLE_LOGIN_SCOPES,

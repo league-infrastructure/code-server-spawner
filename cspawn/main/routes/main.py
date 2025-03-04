@@ -132,8 +132,8 @@ def staff():
 @main_bp.route("/telem", methods=["GET", "POST"])
 def telem():
     if request.method == "POST":
-
-        current_app.csm.keyrate.add_report(request.get_json())
+        pass
+        # current_app.csm.keyrate.add_report(request.get_json())
 
     return jsonify("OK")
 

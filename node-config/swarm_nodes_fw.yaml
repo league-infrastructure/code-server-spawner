@@ -25,6 +25,7 @@
         port: "22"
         proto: tcp
         comment: "Allow SSH from all other sources"
+
     - name: Reload UFW
       ufw:
         state: reloaded

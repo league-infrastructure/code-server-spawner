@@ -7,6 +7,9 @@
 ARG PYTHON_VERSION=3.11
 FROM python:${PYTHON_VERSION}-slim AS base
 
+ENV JTL_APP_DIR=/app
+ENV JTL_DEPLOYMENT='prod'
+
 # Prevents Python from writing pyc files.
 ENV PYTHONDONTWRITEBYTECODE=1
 
@@ -17,7 +20,7 @@ ENV PYTHONUNBUFFERED=1
 # Install git with proper preparation and cleanup
 RUN apt-get update && \
     apt-get install -y \
-    build-essential git cron curl tzdata procps \
+    build-essential git cron curl tzdata procps vim nano \
     git supervisor net-tools tini && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*

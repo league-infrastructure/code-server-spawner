@@ -32,8 +32,6 @@ cryptography==44.0.0
     # via
     #   authlib
     #   paramiko
-dnspython==2.7.0
-    # via pymongo
 docker==7.1.0
     # via cspawn (pyproject.toml)
 faker==36.1.0
@@ -46,7 +44,6 @@ flask==3.1.0
     #   flask-httpauth
     #   flask-login
     #   flask-migrate
-    #   flask-pymongo
     #   flask-session
     #   flask-sqlalchemy
     #   flask-wtf
@@ -58,8 +55,6 @@ flask-httpauth==4.8.0
 flask-login==0.6.3
     # via cspawn (pyproject.toml)
 flask-migrate==4.1.0
-    # via cspawn (pyproject.toml)
-flask-pymongo==2.3.0
     # via cspawn (pyproject.toml)
 flask-session==0.8.0
     # via cspawn (pyproject.toml)
@@ -124,8 +119,6 @@ pydantic==2.10.6
     # via cspawn (pyproject.toml)
 pydantic-core==2.27.2
     # via pydantic
-pymongo==4.10.1
-    # via flask-pymongo
 pynacl==1.5.0
     # via paramiko
 python-dateutil==2.9.0.post0

@@ -22,7 +22,15 @@ test/
 
 Dockerfile
 docker-compose.yaml
+docker-stack.yaml
 node-config/
+node_modules/
+build/
+.flake8
+mypy.ini
+.isort
+.pylintrc
+test/
 
 # Include everything else explicitly required
 

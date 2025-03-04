@@ -22,13 +22,28 @@ push: compile
 setup:
 	uv venv --link-mode symlink
 
+
+# Docker 
+
 build:
-	docker compose build 
+	docker compose -f docker-stack.yaml build 
+
+up:
+	docker stack deploy --detach=false -c docker-stack.yaml codeserv
+
+down:
+	docker stack rm codeserv
+
+shell:
+	docker compose -f docker-stack.yaml   run --rm codeserv /bin/bash
+
+dbinfo:
+	 docker compose -f docker-stack.yaml   run --rm codeserv cspawnctl db info
 
 
 # for development database
 dbshell:
-	PGPASSWORD=password psql -h localhost -p 5432 -U pguser -d pguser_db 
+	PGPASSWORD=password psql -h localhost -p 5432 -U codeserv -d codeserv 
 
 routes:
 	@flask --app $(FAPP) routes

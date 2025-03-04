@@ -108,16 +108,25 @@ def configure_config(app):
 
 def configure_config_tree(start_dir=None):
     # Determine if we're running in production or development
-    if is_running_under_gunicorn() and Path("/app").is_dir():
-        deploy = "prod"
-        config_dir = "/app"
+    jtl_app_dir = os.getenv("JTL_APP_DIR")
+
+    if jtl_app_dir and Path(jtl_app_dir).is_dir():
+        config_dir = Path(jtl_app_dir)
+    elif is_running_under_gunicorn() and Path("/app").is_dir():
+        config_dir = Path("/app")
     else:
-        deploy = "devel"
         config_dir = Path(start_dir) if start_dir else Path().cwd()
 
-        # Bypass the HTTPS requirement, because we are either running in development,
-        # or behind a proxy than handles https. May be better to set the X-Forwarded-Proto,
-        # but that looks really complicated.
+    jtl_deploy = os.getenv("JTL_DEPLOYMENT")
+
+    if jtl_deploy:
+        deploy = jtl_deploy
+    elif is_running_under_gunicorn():
+        deploy = "prod"
+    else:
+        deploy = "devel"
+
+    if deploy == 'devel':
         os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
     config = get_config_tree(config_dir, deploy_name=deploy)
@@ -160,9 +169,8 @@ def setup_sessions(app, devel=False, session_expire_time=60 * 60 * 24 * 1):
         session_expire_time (int): Session expiration time in seconds (default is 1 day).
     """
     # Setup sessions
-
-    app.config["SESSION_TYPE"] = "mongodb"
-    app.config["SESSION_MONGODB"] = app.mongodb.cx
+    app.config["SESSION_TYPE"] = "sqlalchemy"
+    app.config["SESSION_SQLALCHEMY"] = app.db
 
     Session(app)  # Initialize the session
 
@@ -185,12 +193,17 @@ def setup_sessions(app, devel=False, session_expire_time=60 * 60 * 24 * 1):
 
 
 def setup_database(app):
+    from sqlalchemy.exc import ProgrammingError
 
     from cspawn.main.models import db
     from cspawn.main.models import User
 
-    with app.app_context():
-        app.root_user = User.create_root_user(app)
+    try:
+        with app.app_context():
+            app.root_user = User.create_root_user(app)
+    except ProgrammingError:
+        # Maybe haven't set up the database yet.
+        pass
 
 
 def insert_query_arg(url, key, value):

@@ -9,8 +9,6 @@ from cspawn.main import logger, main_bp
 def minutely():
     current_app.logger.info("Minutely cron job")
 
-    current_app.csm.collect_containers()
-
     return jsonify({"status": "OK"})
 
 
