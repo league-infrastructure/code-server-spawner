@@ -4,7 +4,6 @@
 
 VERSION := $(shell grep '^version =' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
 
-
 FAPP := cspawn.app:app 
 
 ver:

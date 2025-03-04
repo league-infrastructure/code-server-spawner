@@ -149,6 +149,13 @@ def register():
     if request.method == "POST":
         form = request.form
 
+        class_reg = bool(form.get("classreg"))
+
+        if class_reg:
+            # Just want to get the class code into the form
+
+            return render_template("register.html", form=form, **_context())
+
         username = form.get("username")
         password = form.get("password")
         class_code = form.get("class_code").strip()

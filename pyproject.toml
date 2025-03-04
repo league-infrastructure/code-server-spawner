@@ -1,6 +1,6 @@
 [project]
 name = "cspawn"
-version = "0.4.1"
+version = "0.5.12"
 description = "Manages code server containers"
 readme = "README.md"
 requires-python = ">=3.11"
