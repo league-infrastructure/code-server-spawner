@@ -1,0 +1,106 @@
+{% extends "page.html" %}
+
+{% block styles %}
+<style>
+    .spinner {
+        width: 40px;
+        height: 40px;
+        background: url('{{ url_for("main.static", filename="bolt.png") }}') no-repeat center center;
+        background-size: contain;
+        animation: spin 2s linear infinite;
+    }
+
+    @keyframes spin {
+        0% {
+            transform: rotate(0deg);
+        }
+
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="control" class="container my-4">
+    {% for image in host_images %}
+    <div class="card mb-3">
+        <div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+                <h6 class="card-title mb-1" style="font-size: 1.25rem;">{{ image.name }}</h6>
+                <div class="d-flex">
+                    <div class="text-muted" style="width: 150px; font-weight: bold;">Image URI:</div>
+                    <div class="text-muted">{{ image.image_uri }}</div>
+                </div>
+                <div class="d-flex">
+                    <div class="text-muted" style="width: 150px; font-weight: bold;">Repo URI:</div>
+                    <div class="text-muted"><a href="{{ image.repo_uri }}" target="_blank" class="text-muted">{{
+                            image.repo_uri
+                            }}</a>
+                    </div>
+                </div>
+                <div class="d-flex">
+                    <div class="text-muted" style="width: 150px; font-weight: bold;">Syllabus Path:</div>
+                    <div class="text-muted">{{ image.syllabus_path }}</div>
+                </div>
+            </div>
+            <div>
+
+                {% if host.host_image_id == image.id %}
+                {% if host.app_state == 'ready' %}
+
+                <a href="{{ host.public_url }}" target="code_host"
+                    class="btn {% if host.app_state == 'ready' %}btn-primary{% else %}btn-secondary disabled{% endif %}">
+                    Open
+                </a>
+                <a href="{{ url_for('hosts.stop_host', host_id=host.id) }}" class="btn btn-warning">Stop</a>
+                {% else %}
+                <div id="host_view" class="w-100 p-0">
+                    <div class="spinner"></div>
+                </div>
+                {% endif %}
+                {% else %}
+                <a href="{{ url_for('hosts.start_host', image_id=image.id) }}" class="btn btn-success">Start</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+</div>
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+    <!-- Polling script to check if the server is ready -->
+    (function poll() {
+        const url = `{{ url_for('hosts.is_ready') }}`;
+
+        function pollServer() {
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Code host status " + data.status);
+                    if (data.status === 'ready') {
+                        window.location.href = `{{url_for('hosts.index')}}`;
+                    } else {
+                        setTimeout(pollServer, 2000);
+                    }
+                })
+                .catch(error => {
+                    console.log("Polling Error: " + error);
+                    setTimeout(pollServer, 2000);
+                });
+        }
+
+        if (`{{host.app_state}}` && `{{host.app_state}}` != 'ready') {
+            pollServer();
+        }
+
+
+
+    })();
+</script>
+{% endblock %}

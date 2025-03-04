@@ -40,6 +40,9 @@ class CodeHost(db.Model):
     host_image_id = Column(Integer, ForeignKey("host_images.id"), nullable=True)
     host_image = relationship("HostImage", backref="code_hosts")
 
+    class_id = Column(Integer, ForeignKey("classes.id"), nullable=True)
+    class_ = relationship("Class", backref="code_hosts")
+
     node_id = Column(String, nullable=True)
     node_name = Column(String, nullable=True)
     public_url = Column(String, nullable=True)
@@ -114,6 +117,7 @@ class HostImage(db.Model):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
+    desc = Column(String, nullable=True)
     hash = Column(String, nullable=False)
     image_uri = Column(String, nullable=False)
     repo_uri = Column(String, nullable=True)
@@ -155,9 +159,7 @@ class HostImage(db.Model):
             target.creator_id,
         )
 
-    classes = relationship(
-        "Class", secondary="class_host_images", back_populates="host_images"
-    )
+    classes = relationship("Class", back_populates="image")
 
 
 event.listen(HostImage, "before_insert", HostImage.set_hash)
