@@ -261,6 +261,9 @@ def promote():
 
     if class_:
         current_user.is_student = True
+
+        current_user.classes_taking.append(class_)
+
         db.session.commit()
         flash("You have been promoted to a student.", "success")
     else:
@@ -312,4 +315,28 @@ def start_class(class_id) -> str:
         s.sync_to_db()
         flash("Host already running", "info")
 
+    return redirect(url_for("main.index"))
+
+
+@main_bp.route("/host/<int:host_id>/stop", methods=["GET"])
+@login_required
+def stop_host(host_id):
+    from cspawn.docker.models import CodeHost
+
+    code_host = CodeHost.query.get(host_id)
+
+    if not host_id:
+        flash("No host ID provided", "danger")
+        return redirect(url_for("admin.list_code_hosts"))
+
+    code_host = CodeHost.query.get(host_id)
+
+    s = current_app.csm.get(code_host.service_id)
+    if not s:
+        flash("Host not found", "danger")
+        return redirect(url_for("admin.list_code_hosts"))
+    s.stop()
+    db.session.delete(code_host)
+    db.session.commit()
+    flash("Host deleted successfully", "success")
     return redirect(url_for("main.index"))

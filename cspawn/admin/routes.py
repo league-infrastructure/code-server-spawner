@@ -121,7 +121,7 @@ def edit_image(image_id):
     has_code_hosts = CodeHost.query.filter_by(host_image_id=image_id).count() > 0
     if request.method == "POST":
         image.name = request.form["name"]
-        image.desc = request.form["desc"]
+        image.desc = request.form["description"]
         image.image_uri = request.form["image_uri"]
         image.repo_uri = request.form["repo_uri"]
         image.syllabus_path = request.form["syllabus_path"]

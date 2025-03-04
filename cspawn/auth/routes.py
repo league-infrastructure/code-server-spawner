@@ -2,6 +2,7 @@
 Routes for logging in, registering, and managing users.
 """
 
+import uuid
 from flask import (current_app, flash, redirect, render_template, request,
                    session, url_for)
 from flask_dance.contrib.google import google
@@ -116,12 +117,6 @@ def logout():
 @auth_bp.route("/uplogin", methods=["POST", "GET"])
 def uplogin():
     """Render the login page for username/password login."""
-    return render_template("login.html", **_context())
-
-
-@auth_bp.route("/register", methods=["POST", "GET"])
-def register():
-    """Handle user registration."""
     if request.method == "POST":
         form = request.form
 
@@ -129,24 +124,66 @@ def register():
         password = form.get("password")
 
         user = User.query.filter_by(username=username).first()
+
+        if user is None:
+            flash("Invalid username or password", "error")
+            return render_template("login.html", form=form, **_context())
+
+        if user.password != password:
+            flash("Invalid username or password", "error")
+            return render_template("login.html", form=form, **_context())
+
+        login_user(user)
+        return redirect(url_for("main.index"))
+    else:
+        form = {}
+    return render_template("login.html", **_context())
+
+
+@auth_bp.route("/register", methods=["POST", "GET"])
+def register():
+    """Handle user registration."""
+
+    from cspawn.main.models import db, Class
+
+    if request.method == "POST":
+        form = request.form
+
+        username = form.get("username")
+        password = form.get("password")
+        class_code = form.get("class_code").strip()
+
+        user = User.query.filter_by(username=username).first()
+
+        if user:
+            flash("Username is taken", "error")
+            return render_template("register.html", form=form, **_context())
+
+        class_ = Class.query.filter_by(class_code=class_code).first()
+
+        if not class_:
+            flash("Invalid class code", "error")
+            return render_template("register.html", form=form, **_context())
+
         if user is None:
             user = User(
+                user_id=str(uuid.uuid4()),
                 username=username,
                 email=None,
                 oauth_provider=None,
                 oauth_id=None,
                 avatar_url=None,
+                is_student=True,
                 password=password,
             )
 
+            user.classes_taking.append(class_)
+
             db.session.add(user)
             db.session.commit()
-        else:
-            flash("Username is taken", "error")
-            return render_template("register.html", form=form, **_context())
 
         flash("User created. You can login", "success")
-        return redirect(url_for("auth.login"))
+        return redirect(url_for("main.index"))
     else:
         form = {}
 

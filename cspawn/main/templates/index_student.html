@@ -26,19 +26,38 @@
             transform: rotate(360deg);
         }
     }
+
+    .card {
+        height: 180px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+
+    .card-text {
+        height: 70px;
+        /* Set fixed height */
+        overflow: hidden;
+        /* Hide overflowing text */
+        text-overflow: ellipsis;
+
+    }
+
+    .card-body {
+        padding-bottom: 50px;
+    }
+
+    .card-body .btn {
+
+        bottom: 10px;
+        margin-right: 10px;
+
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container">
-    <form method="POST" action="{{ url_for('main.add_class') }}">
-        <div class="form-group">
-            <label for="class_code">Enter Class Code:</label>
-            <input type="text" class="form-control" id="class_code" name="class_code" required>
-        </div>
-        <button type="submit" class="btn btn-primary">Add Class</button>
-    </form>
-    <hr>
     <div class="row">
         {% for class in current_user.classes_taking %}
         <div class="col-md-4 mb-4">
@@ -46,8 +65,7 @@
                 <div class="card-body">
                     <h5 class="card-title">{{ class.name }}</h5>
                     <p class="card-text">{{ class.description }}</p>
-                    <p> class: id={{class.id}} image={{class.image_id}}</p>
-                    <p> host: image={{host.host_image_id}}</p>
+
 
                     {% if host %}
 
@@ -56,7 +74,7 @@
                     {% if host.app_state == 'ready' %}
 
                     <a href="{{ host.public_url }}" target="code_host" class="btn btn-primary"> Open</a>
-                    <a href="{{ url_for('hosts.stop_host', host_id=host.id) }}" class="btn btn-warning">Stop</a>
+                    <a href="{{ url_for('main.stop_host', host_id=host.id) }}" class="btn btn-warning">Stop</a>
 
                     {% else %} {# if host.app_state == 'ready' #}
                     <div id="host_view" class="w-100 p-0">
@@ -75,6 +93,19 @@
         </div>
         {% endfor %}
     </div>
+    <hr>
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <form method="POST" action="{{ url_for('main.add_class') }}">
+                <div class="form-group">
+                    <label for="class_code">Enter Class Code:</label>
+                    <input type="text" class="form-control" id="class_code" name="class_code" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="margin-top: 10px;">Add Class</button>
+            </form>
+        </div>
+    </div>
+</div>
 </div>
 {% endblock %}
 
@@ -89,7 +120,7 @@
             fetch(url)
                 .then(response => response.json())
                 .then(data => {
-                    console.log("Code host status " + data.status);
+                    console.log(" Code host status " + data.status);
                     if (data.status === 'ready') {
                         window.location.href = `{{url_for('main.index')}}`;
                     } else {
@@ -97,7 +128,7 @@
                     }
                 })
                 .catch(error => {
-                    console.log("Polling Error: " + error);
+                    console.log(" Polling Error: " + error);
                     setTimeout(pollServer, 2000);
                 });
         }

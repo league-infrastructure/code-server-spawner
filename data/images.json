@@ -4,6 +4,7 @@
         "desc": "An introduction to Python programming, aligned with the PCEP Python Exam.",
         "image_uri": "ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:v0.5.9",
         "repo_uri": "https://github.com/league-curriculum/Python-Apprentice",
+        "syllabus_path": "/workspace/Python-Apprentice/lessons/.jtl/syllabus.yaml",
         "is_public": true,
         "creator_id": 1
     },
