@@ -17,6 +17,8 @@ from cspawn.util.apptypes import App
 from cspawn.docker.models import CodeHost, HostImage
 from cspawn.hosts import hosts_bp
 from cspawn.main.models import db
+from cspawn.docker.csmanager import CSMService
+
 import json
 
 ca = cast(App, current_app)
@@ -25,19 +27,24 @@ ca = cast(App, current_app)
 @hosts_bp.route("/")
 @login_required
 def index() -> str:
-    iframe_url = "http://jointheleague.org"  # Replace with the actual URL you want to load in the iframe
 
-    host_rec = CodeHost.query.filter_by(user_id=current_user.id).first()
+    ch = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
 
-    if host_rec:
-        s = ca.csm.get(host_rec.service_id)
+    s: CSMService = ca.csm.get(ch.service_id) if ch else None
 
-        return render_template(
-            "hosts/index_running.html", host=host_rec, service=s, iframe_url=iframe_url
-        )
-    else:
-        host_images = HostImage.query.all()
-        return render_template("hosts/index_stopped.html", host_images=host_images)
+    if s:
+        ch: CodeHost = s.sync_to_db(check_ready=True)  # update the host record
+
+    host_images = HostImage.query.all()
+
+    # If we have a code host, it is the only one shown on the list.
+    if ch:
+        for i, host_image in enumerate(host_images):
+            if host_image.id == ch.host_image_id:
+                host_images = [host_image]
+                break
+
+    return render_template("hosts/image_host_list.html", host=ch, host_images=host_images)
 
 
 @hosts_bp.route("/start")
@@ -116,18 +123,20 @@ def stop_host() -> str:
     return redirect(url_for("hosts.index"))
 
 
-@hosts_bp.route("/service/<service_id>/is_ready", methods=["GET"])
+@hosts_bp.route("is_ready", methods=["GET"])
 @login_required
-def is_ready(service_id: str) -> jsonify:
+def is_ready() -> jsonify:
     from docker.errors import NotFound
 
     try:
         host = CodeHost.query.filter_by(user_id=current_user.id).first()
 
-        s = ca.csm.get(service_id)
+        if not host:
+            return jsonify({"status": "error", "message": "No host found"})
 
-        if host and host.service_id != service_id:
-            return jsonify({"status": "error", "message": "Service ID mismatch"})
+        s = ca.csm.get(host.service_id)
+
+        s.sync_to_db()
 
         if s.check_ready():
             return jsonify({"status": "ready", "hostname_url": s.public_url})

@@ -7,46 +7,107 @@
     <h1 class="mb-4">League Code Server</h1>
 </div>
 {% endblock %}
+{% block styles %}
+<style>
+    .spinner {
+        width: 40px;
+        height: 40px;
+        background: url('{{ url_for("main.static", filename="bolt.png") }}') no-repeat center center;
+        background-size: contain;
+        animation: spin 2s linear infinite;
+    }
+
+    @keyframes spin {
+        0% {
+            transform: rotate(0deg);
+        }
+
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="container">
-    <h1>The Benefits of Being a Teenage Hacker</h1>
-    <p>In an era where technology shapes the world, teenage hackers stand at the
-    forefront of innovation and discovery. While society may often misunderstand
-    them, those who develop their hacking skills at a young age unlock a myriad
-    of benefits that extend far beyond coding.</p>
-    
-    <p>First and foremost, teenage hackers develop unparalleled problem-solving
-    skills. Whether breaking into a test system or finding security loopholes,
-    they learn to think critically and approach challenges from multiple angles.
-    This mindset is invaluable in any technical field.</p>
-    
-    <p>Moreover, these young tech enthusiasts gain a deep understanding of
-    cybersecurity, a skill set in high demand. By learning how to identify
-    vulnerabilities, they position themselves for lucrative careers in ethical
-    hacking, penetration testing, and information security. Many renowned
-    security professionals began as teenage hackers, turning their curiosity
-    into lifelong expertise.</p>
-    
-    <p>Beyond technical acumen, hacking fosters creativity. Hackers see systems
-    not as fixed entities but as puzzles waiting to be solved. This perspective
-    often leads to groundbreaking innovations, as they learn to bend technology
-    to their will.</p>
-    
-    <p>Additionally, being a teenage hacker cultivates resourcefulness and
-    resilience. Since information is often restricted, young hackers become
-    adept at learning independently, scouring documentation, and collaborating
-    in underground communities to exchange knowledge.</p>
-    
-    <p>Most importantly, hacking instills a sense of responsibility. The ethical
-    hacker understands the power of their skills and learns to use them for
-    good—securing systems, protecting users, and exposing weaknesses before
-    malicious actors exploit them.</p>
-    
-    <p>In essence, the teenage hacker is not just a coder but a visionary, an
-    innovator, and a future leader in the digital age.</p>
+    <form method="POST" action="{{ url_for('main.add_class') }}">
+        <div class="form-group">
+            <label for="class_code">Enter Class Code:</label>
+            <input type="text" class="form-control" id="class_code" name="class_code" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Add Class</button>
+    </form>
+    <hr>
+    <div class="row">
+        {% for class in current_user.classes_taking %}
+        <div class="col-md-4 mb-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">{{ class.name }}</h5>
+                    <p class="card-text">{{ class.description }}</p>
+                    <p> class: id={{class.id}} image={{class.image_id}}</p>
+                    <p> host: image={{host.host_image_id}}</p>
+
+                    {% if host %}
+
+                    {% if host.host_image_id == class.image_id %} {# If this is the host for this class. #}
+
+                    {% if host.app_state == 'ready' %}
+
+                    <a href="{{ host.public_url }}" target="code_host" class="btn btn-primary"> Open</a>
+                    <a href="{{ url_for('hosts.stop_host', host_id=host.id) }}" class="btn btn-warning">Stop</a>
+
+                    {% else %} {# if host.app_state == 'ready' #}
+                    <div id="host_view" class="w-100 p-0">
+                        <div class="spinner"></div>
+                    </div>
+                    {% endif %} {# if host.app_state == 'ready' #}
+
+                    {% endif %} {# if host.host_image_id == class.image_id #}
+
+                    {% else %} {# not if host #}
+                    <a href="{{ url_for('main.start_class', class_id=class.id) }}" class="btn btn-success">Start</a>
+                    {% endif %} {# if host #}
+
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
 </div>
 {% endblock %}
 
+
 {% block scripts %}
+<script>
+    <!-- Polling script to check if the server is ready -->
+    (function poll() {
+        const url = `{{ url_for('hosts.is_ready') }}`;
+
+        function pollServer() {
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Code host status " + data.status);
+                    if (data.status === 'ready') {
+                        window.location.href = `{{url_for('main.index')}}`;
+                    } else {
+                        setTimeout(pollServer, 2000);
+                    }
+                })
+                .catch(error => {
+                    console.log("Polling Error: " + error);
+                    setTimeout(pollServer, 2000);
+                });
+        }
+
+        if (`{{host.app_state}}` && `{{host.app_state}}` != 'ready') {
+            pollServer();
+        }
+
+
+
+    })();
+</script>
 {% endblock %}

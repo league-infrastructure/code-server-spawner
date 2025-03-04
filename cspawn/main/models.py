@@ -118,20 +118,17 @@ class Class(db.Model):
     start_date = Column(DateTime, nullable=False)
     end_date = Column(DateTime, nullable=True)
     recurrence_rule = Column(String(255), nullable=True)
+    image_id = Column(Integer, ForeignKey("host_images.id"), nullable=False)
+    image = relationship("HostImage", back_populates="classes")
+    start_script = Column(Text, nullable=True)
 
-    start_script = Column(Text, nullable=False)
-
-    class_code = Column(String(20), nullable=True)
+    class_code = Column(String(40), nullable=True)
 
     instructors = relationship(
         "User", secondary="class_instructors", back_populates="classes_instructing"
     )
     students = relationship(
         "User", secondary="class_students", back_populates="classes_taking"
-    )
-
-    host_images = relationship(
-        "HostImage", secondary="class_host_images", back_populates="classes"
     )
 
     def __repr__(self):
@@ -150,11 +147,4 @@ class_students = Table(
     db.Model.metadata,
     Column("class_id", Integer, ForeignKey("classes.id"), primary_key=True),
     Column("user_id", Integer, ForeignKey("users.id"), primary_key=True),
-)
-
-class_host_images = Table(
-    "class_host_images",
-    db.Model.metadata,
-    Column("class_id", Integer, ForeignKey("classes.id"), primary_key=True),
-    Column("host_image_id", Integer, ForeignKey("host_images.id"), primary_key=True),
 )

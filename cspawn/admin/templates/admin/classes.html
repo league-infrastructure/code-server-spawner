@@ -1,11 +1,29 @@
-{% extends "admin/admin_base.html" %}
+{% extends "admin/base.html" %}
 
 {% block title %}Classes{% endblock %}
 
+
+{% block header %}
+<div class="text-center">
+    <h1 class="mb-4">Classess</h1>
+</div>
+{% endblock %}
+
 {% block content %}
 <div class="container mt-4">
-    <h1>Classes</h1>
-    <a href="{{ url_for('admin.new_class') }}" class="btn btn-primary mb-3">Create New Class</a>
+
+    <ul class="nav nav-pills mb-3">
+        <li class="nav-item">
+            <a class="nav-link active" href="#">Create</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('admin.export_classes') }}">Export</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="#">Import</a>
+        </li>
+    </ul>
+
     <table class="table table-striped">
         <thead>
             <tr>
@@ -26,12 +44,12 @@
                 <td>{{ class.class_code }}</td>
                 <td>
                     {% for host_image in class.host_images %}
-                        {{ host_image.name }}{% if not loop.last %}, {% endif %}
+                    {{ host_image.name }}{% if not loop.last %}, {% endif %}
                     {% endfor %}
                 </td>
                 <td>
-                    <a href="{{ url_for('admin.edit_class', class_id=class.id) }}" class="btn btn-sm btn-warning">Edit</a>
-                    <form action="{{ url_for('admin.delete_class', class_id=class.id) }}" method="post" style="display:inline;">
+                    <a href="#" class="btn btn-sm btn-warning">Edit</a>
+                    <form action="#" method="post" style="display:inline;">
                         <button type="submit" class="btn btn-sm btn-danger">Delete</button>
                     </form>
                 </td>

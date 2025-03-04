@@ -9,7 +9,7 @@
 {% block content %}
 <div class="container mt-4">
     <h2>Basic Docker Information</h2>
-    <p><strong>Service Name:</strong> {{ service.name }}</p>
+    <p><strong>Service Name:</strong> {{ service.name }} {{code_host.state}}/{{code_host.app_state}}</p>
     <p><strong>Service ID:</strong> {{ service.id }}</p>
     <p><strong>First Container Name:</strong> {{ service.attrs['Spec']['TaskTemplate']['ContainerSpec']['Image'] }}</p>
     <p><strong>First Container ID:</strong> {{ service.attrs['ID'] }}</p>

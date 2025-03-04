@@ -1,4 +1,4 @@
-
+import secrets
 import bcrypt
 import base64
 import os
@@ -25,3 +25,32 @@ def docker_label_escape(value):
 def random_string(size: int = 32):
     characters = string.ascii_letters + string.digits + '-_'
     return ''.join(random.choice(characters) for _ in range(size))
+
+
+def find_username(user):
+    """Look for a unique username"""
+    from slugify import slugify
+
+    from cspawn.main.models import User
+
+    def split_email(email):
+        return slugify(email.split("@")[0])
+
+    def username_exists(username):
+        return User.query.filter_by(username=username).first() is not None
+
+    email = user.email
+    username = split_email(email)
+
+    if not username_exists(username):
+        return username
+
+    if not username_exists(email):
+        return email
+
+    for i in range(1, 100):
+        new_username = f"{username}_{i}"
+        if not username_exists(new_username):
+            return new_username
+
+    return username + "_" + secrets.token_urlsafe(8)

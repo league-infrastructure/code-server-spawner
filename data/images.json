@@ -1,13 +1,15 @@
 [
     {
         "name": "Python Apprentice",
-        "image_uri": "ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:v0.5.4",
+        "desc": "An introduction to Python programming, aligned with the PCEP Python Exam.",
+        "image_uri": "ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:v0.5.9",
         "repo_uri": "https://github.com/league-curriculum/Python-Apprentice",
         "is_public": true,
         "creator_id": 1
     },
     {
         "name": "Python Games",
+        "desc": "Build classic video games while learning Object Oriented Programming in Python. ",
         "image_uri": "ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:latest",
         "repo_uri": "https://github.com/league-curriculum/Python-Games",
         "is_public": true,

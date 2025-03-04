@@ -13,11 +13,13 @@ import pytz
 import requests
 import json
 from time import time
+from flask import url_for
 
 from slugify import slugify
 
 
 from cspawn.docker.manager import ServicesManager, logger
+
 from cspawn.docker.proc import Service
 from cspawn.main.models import db, User
 from .models import CodeHost, HostImage
@@ -115,7 +117,7 @@ class CSMService(Service):
 
         return is_ready
 
-    def sync_to_db(self, check_ready=False):
+    def sync_to_db(self, check_ready=False) -> CodeHost:
         """Sync the service to the database."""
 
         ch = CodeHost.query.filter_by(service_id=self.id).first()
@@ -134,6 +136,8 @@ class CSMService(Service):
         else:
             db.session.add(m)
             db.session.commit()
+
+        return ch
 
     def to_model(self, no_container=False) -> CodeHost:
         """Return a CodeHost model instance.
@@ -230,12 +234,19 @@ def define_cs_container(
         workspace_folder = "/workspace"
 
     public_url = f"https://{username}:{password}@{hostname}/"
+    public_url_no_auth = f"https://{hostname}/"
+
+    try:
+        stop_url = url_for("hosts.stop_host")
+    except:
+        # Can fail in testing when there is no home server URL
+        stop_url = None
 
     _env_vars = {
         "WORKSPACE_FOLDER": workspace_folder,
         "PASSWORD": password,
         "DISPLAY": ":0",
-        "VNC_URL": public_url + "vnc/",
+        "VNC_URL": public_url_no_auth + "vnc/",
         "PUBLIC_URL": public_url,
         "KST_REPORTING_URL": config.KST_REPORTING_URL,
         "KST_CONTAINER_ID": name,
@@ -245,6 +256,8 @@ def define_cs_container(
         "CS_DISABLE_GETTING_STARTED_OVERRIDE": "1",  # Disable the getting started page
         "INITIAL_GIT_REPO": repo,
         "JTL_SYLLABUS": syllabus,
+        "CODESERVER_URL": public_url,
+        "CODESERVER_STOP_URL": stop_url,
     }
 
     env_vars = {**_env_vars, **env_vars}
@@ -366,9 +379,10 @@ class CodeServerManager(ServicesManager):
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(parsed_uri.hostname, username=parsed_uri.username)
 
-            _, stdout, stderr = ssh.exec_command(
-                f"mkdir -p {user_dir} && chown -R {user_id}:{user_id} {user_dir}"
-            )
+            _, stdout, stderr = ssh.exec_command(f"mkdir -p {user_dir}")
+
+            _, stdout, stderr = ssh.exec_command(f"chown  {user_id}:{user_id} {user_dir}")
+
             exit_status = stdout.channel.recv_exit_status()
 
             if exit_status != 0:
@@ -377,7 +391,9 @@ class CodeServerManager(ServicesManager):
                     user_dir,
                     stderr.read().decode(),
                 )
+
             ssh.close()
+
         else:
             logger.info("Creating directory %s on local machine", user_dir)
             os.makedirs(user_dir, exist_ok=True)
@@ -424,6 +440,7 @@ class CodeServerManager(ServicesManager):
         #    host_dir, container_dir = m.split(':')
 
         try:
+            logger.debug("Running container")
             s: CSMService = self.run(**container_def)
         except docker.errors.APIError as e:
             if e.response.status_code == 409:
@@ -433,10 +450,12 @@ class CodeServerManager(ServicesManager):
                 logger.error("Error creating container: %s", e)
                 return None
 
+        logger.debug("Committing model")
         ch: CodeHost = s.to_model(no_container=True)
         db.session.add(ch)
         db.session.commit()
 
+        logger.info("Created new Code Server instance for %s", username)
         return s
 
     def list(

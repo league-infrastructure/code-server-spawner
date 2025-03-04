@@ -1,0 +1,25 @@
+{% extends "page.html" %}
+
+{% block title %}League Code Server{% endblock %}
+
+{% block header %}
+<div class="text-center">
+    <h1 class="mb-4">League Code Server</h1>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-center align-items-center" style="height: 80vh;">
+    <form action="{{ url_for('main.promote') }}" method="post" class="text-center">
+        <div class="form-group">
+            <label for="class_code" class="h3">Class Code</label>
+            <input type="text" id="class_code" name="class_code" class="form-control form-control-lg"
+                style="width: 30ch;" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg mt-3">Join Class</button>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% endblock %}

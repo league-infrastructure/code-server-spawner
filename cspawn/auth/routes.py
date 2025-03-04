@@ -10,6 +10,7 @@ from oauthlib.oauth2.rfc6749.errors import TokenExpiredError
 
 from cspawn.main.models import User, db
 from cspawn.util.app_support import set_role_from_email
+from cspawn.util.auth import find_username
 
 from . import auth_bp, logger
 

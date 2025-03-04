@@ -13,25 +13,35 @@
 
 <div class="container mt-4">
     <h1>{{ 'Edit' if image else 'New' }} Host Image</h1>
-    <form action="{{ url_for('admin.edit_image', image_id=image.id) if image else url_for('admin.new_image') }}" method="post">
+    <form action="{{ url_for('admin.edit_image', image_id=image.id) if image else url_for('admin.new_image') }}"
+        method="post">
         <div class="mb-3">
             <label for="name" class="form-label">Name</label>
-            <input type="text" class="form-control" id="name" name="name" value="{{ image.name if image else '' }}" required>
+            <input type="text" class="form-control" id="name" name="name" value="{{ image.name if image else '' }}"
+                required>
         </div>
         <div class="mb-3">
-            <label for="image_uri" class="form-label">Image URI</label>
-            <input type="text" class="form-control" id="image_uri" name="image_uri" value="{{ image.image_uri if image else '' }}" required>
-        </div>
-        <div class="mb-3">
-            <label for="repo_uri" class="form-label">Repo URI</label>
-            <input type="text" class="form-control" id="repo_uri" name="repo_uri" value="{{ image.repo_uri if image else '' }}">
-        </div>
-        <div class="mb-3"></div>
+            <label for="description" class="form-label">Description</label>
+            <textarea class="form-control" id="description" name="description"
+                required>{{ image.desc if image else '' }}</textarea>
+            <div class="mb-3">
+                <label for="image_uri" class="form-label">Image URI</label>
+                <input type="text" class="form-control" id="image_uri" name="image_uri"
+                    value="{{ image.image_uri if image else '' }}" required>
+            </div>
+            <div class="mb-3">
+                <label for="repo_uri" class="form-label">Repo URI</label>
+                <input type="text" class="form-control" id="repo_uri" name="repo_uri"
+                    value="{{ image.repo_uri if image else '' }}">
+            </div>
+            <div class="mb-3"></div>
             <label for="syllabus_path" class="form-label">Syllabus Path</label>
-            <input type="text" class="form-control" id="syllabus_path" name="syllabus_path" value="{{ image.syllabus_path if image and image.syllabus_path else '' }}">
+            <input type="text" class="form-control" id="syllabus_path" name="syllabus_path"
+                value="{{ image.syllabus_path if image and image.syllabus_path else '' }}">
         </div>
         <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" id="is_public" name="is_public" {% if image and image.is_public %}checked{% endif %}>
+            <input class="form-check-input" type="checkbox" id="is_public" name="is_public" {% if image and
+                image.is_public %}checked{% endif %}>
             <label class="form-check-label" for="is_public">
                 Is Public
             </label>
@@ -45,6 +55,3 @@
     </form>
 </div>
 {% endblock %}
-
-
-
