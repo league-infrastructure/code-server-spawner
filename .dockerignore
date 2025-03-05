@@ -23,7 +23,7 @@ test/
 Dockerfile
 docker-compose.yaml
 docker-stack.yaml
-node-config/
+
 node_modules/
 build/
 .flake8

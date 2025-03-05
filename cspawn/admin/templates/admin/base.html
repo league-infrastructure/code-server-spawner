@@ -4,7 +4,7 @@
 {% endblock %}
 
 {% block subnavbar %}
-   
+
 <nav class="navbar navbar-expand-lg navbar-light bg-light">
     <div class="container-fluid">
         <div class="collapse navbar-collapse" id="navbarNav">
@@ -22,7 +22,7 @@
                     <a class="nav-link" href="#">Students</a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.list_classes') }}">Classes</a>
+                    <a class="nav-link" href="{{ url_for('admin.classes') }}">Classes</a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link" href="{{ url_for('admin.list_images') }}">Images</a>
@@ -35,5 +35,4 @@
     </div>
 </nav>
 
- {% endblock %}
-
+{% endblock %}

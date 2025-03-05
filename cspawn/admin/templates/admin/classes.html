@@ -32,6 +32,7 @@
                 <th>Start Date</th>
                 <th>Class Code</th>
                 <th>Host Images</th>
+                <th>Instructors</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -48,10 +49,15 @@
                     {% endfor %}
                 </td>
                 <td>
-                    <a href="#" class="btn btn-sm btn-warning">Edit</a>
-                    <form action="#" method="post" style="display:inline;">
-                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-                    </form>
+                    {% for instructor in class.instructors %}
+                    {{ instructor.name }}{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                </td>
+                <td>
+                    <a href="{{url_for('admin.edit_class', class_id=class.id)}}" class="btn btn-sm btn-primary">Edit</a>
+                    <a href="{{url_for('admin.delete_class', class_id=class.id)}}"
+                        class="btn btn-sm btn-danger">Delete</a>
+
                 </td>
             </tr>
             {% endfor %}

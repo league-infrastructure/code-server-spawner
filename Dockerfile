@@ -42,16 +42,12 @@ WORKDIR /app
 ARG UID=10001
 RUN adduser \
     --disabled-password \
-    --gecos "" \
     --home "/nonexistent" \
     --shell "/sbin/nologin" \
     --no-create-home \
     --uid "${UID}" \
     appuser
 
-
-# Copy the source code into the container.
-COPY . /app
 
 # Download dependencies as a separate step to take advantage of Docker's caching.
 # Leverage a cache mount to /root/.cache/pip to speed up subsequent builds.
@@ -62,7 +58,21 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=requirements.txt,target=requirements.txt \
     python -m pip install -r requirements.txt
 
+# Copy the source code into the container.
+COPY . /app
+
 RUN python -m pip install /app
+
+RUN mkdir /root/.ssh
+RUN chmod 700 /root/.ssh
+
+RUN cp  /app/node-config/id_rsa /root/.ssh/id_rsa
+RUN cp  /app/node-config/id_rsa.pub /root/.ssh/id_rsa.pub
+RUN cp /app/config/known_hosts /root/.ssh/known_hosts
+
+RUN chmod 600 ~/.ssh/id_rsa                                                                       
+RUN chmod 644 ~/.ssh/id_rsa.pub                                                                                                                              
+RUN chmod 644 ~/.ssh/known_hosts
 
 # Expose the port that the application listens on.
 EXPOSE 8000
