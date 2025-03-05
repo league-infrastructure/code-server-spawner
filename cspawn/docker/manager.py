@@ -220,9 +220,7 @@ class ServicesManager(DockerManager):
 
         node_host = self.hostname_f(node_name)
 
-        return ContainersManager(
-            docker.DockerClient(base_url=f"ssh://root@{node_host}")
-        )
+        return ContainersManager(docker.DockerClient(base_url=f"ssh://root@{node_host}"))
 
     @property
     def nodes(self):

@@ -10,42 +10,44 @@
 
 {% block content %}
 <div class="container">
-    <h1>Instructional Guide to the Turbo Encabulator</h1>
-    <p>Greetings, esteemed students of mechanical and electrical ingenuity!
-    Today, we embark upon an enlightening journey into the inner workings of the
-    most revolutionary advancement in synchronous phase modulation: the Turbo
-    Encabulator.</p>
-    
-    <p>Now, you may ask, "What is the Turbo Encabulator?" Well, dear learners,
-    it is nothing short of a marvel of modern engineering! Utilizing a system of
-    hydrocoptic marzel vanes in direct conjunction with an inverse reactive
-    current, the Turbo Encabulator eliminates side-fumbling and provides
-    unparalleled operational efficiency.</p>
-    
-    <p>In order to fully grasp its magnificent applications, one must first
-    comprehend the function of the prefamulated amulite casing, which ensures
-    absolute interaction between the lunar wane shaft and the panametric fan.
-    But fear not! With careful study and precise application of theory, any
-    diligent student can master these fundamentals.</p>
-    
-    <p>Our lesson will begin with a demonstration of how the nofer trunnions
-    maintain logarithmic synchronization within the differential girdle spring.
-    This aspect, while seemingly intricate, becomes crystal clear when viewed
-    through the lens of polyrametric analysis.</p>
-    
-    <p>Now, dear students, as we proceed through these explanations, let us
-    maintain our focus on the cardinal rule of all scientific study:
-    thoroughness! A single lapse in harmonic alignment, and one may find
-    themselves faced with catastrophic grammeters, or worse—the dreaded
-    unilateral phase detractors.</p>
-    
-    <p>So, adjust your thinking caps, sharpen your pencils, and prepare for an
-    instructional journey unlike any other! With due diligence and attentive
-    observation, you too shall grasp the supreme wonders of the Turbo
-    Encabulator. And remember, efficiency is paramount, for as the great
-    engineers say, "A well-encabulated turbo is a happy turbo!"</p>
+    <div class="accordion" id="classesAccordion">
+        {% for class in classes %}
+        <div class="card">
+            <div class="card-header" id="heading{{ class.id }}">
+                <h2 class="mb-0">
+                    <button class="btn btn-link" type="button" data-toggle="collapse"
+                        data-target="#collapse{{ class.id }}" aria-expanded="true"
+                        aria-controls="collapse{{ class.id }}">
+                        {{ class.name }} ({{ class.students | length }} students)
+                    </button>
+                </h2>
+            </div>
+
+            <div id="collapse{{ class.id }}" class="collapse" aria-labelledby="heading{{ class.id }}"
+                data-parent="#classesAccordion">
+                <div class="card-body">
+                    <ul class="list-group">
+                        {% for student in class.students %}
+                        <li class="list-group-item">
+                            {{ student.username }} - {{ student.display_name }}
+                            {% if student.code_host %}
+                            <a href="{{ url_for('hosts.index', host_id=student.code_host.id) }}">View Code Host</a>
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<script>
+    $(document).ready(function () {
+        $('.collapse').collapse('hide');
+    });
+</script>
 {% endblock %}

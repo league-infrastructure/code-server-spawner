@@ -7,6 +7,7 @@ from flask_login import current_user, login_required
 from cspawn.docker.models import CodeHost, HostImage
 from cspawn.main.models import Class, User, db
 from cspawn.util.apptypes import App
+from cspawn.util.names import class_code
 
 from . import admin_bp
 
@@ -23,35 +24,6 @@ def _context():
 @login_required
 def index():
     return render_template("admin/index.html", **_context())
-
-
-@admin_bp.route("/classes")
-@login_required
-def list_classes():
-    classes = Class.query.all()
-    return render_template("admin/classes.html", classes=classes)
-
-
-@admin_bp.route("/classes/export", methods=["GET"])
-@login_required
-def export_classes():
-    classes = Class.query.all()
-    class_data = [
-        {
-            "name": class_.name,
-            "description": class_.description,
-            "class_code": class_.class_code,
-            "image_id": class_.image_id,
-            "start_date": class_.start_date.isoformat(),
-        }
-        for class_ in classes
-    ]
-    response = current_app.response_class(
-        response=json.dumps(class_data),
-        mimetype="application/json",
-        headers={"Content-Disposition": "attachment;filename=classes.json"},
-    )
-    return response
 
 
 @admin_bp.route("/hosts")
@@ -233,3 +205,115 @@ def list_users():
     users = User.query.all()
     current_year = datetime.now().year
     return render_template("admin/users.html", users=users, current_year=current_year)
+
+
+@admin_bp.route("/classes")
+@login_required
+def classes():
+    classes = Class.query.all()
+    return render_template("admin/classes.html", classes=classes)
+
+
+@admin_bp.route("/classes/export", methods=["GET"])
+@login_required
+def export_classes():
+    classes = Class.query.all()
+    class_data = [
+        {
+            "name": class_.name,
+            "description": class_.description,
+            "class_code": class_.class_code,
+            "image_id": class_.image_id,
+            "start_date": class_.start_date.isoformat(),
+        }
+        for class_ in classes
+    ]
+    response = current_app.response_class(
+        response=json.dumps(class_data),
+        mimetype="application/json",
+        headers={"Content-Disposition": "attachment;filename=classes.json"},
+    )
+    return response
+
+
+@admin_bp.route('/classes/<class_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_class(class_id):
+    from cspawn.docker.models import HostImage
+
+    if not current_user.is_instructor:
+        return redirect(url_for('admin.classes'))
+
+    form_data = request.form
+
+    if class_id == 'new':
+        if request.method == 'POST':
+            # New class, and we are posting a form with the values.
+
+            image = HostImage.query.get(form_data.get('image_id'))
+            if not image:
+                flash('Invalid image selected.', 'error')
+                return redirect(url_for('main.edit_class', class_id=class_id))
+
+            class_ = Class(
+                name=form_data.get('name'),
+                description=form_data.get('description'),
+                class_code=class_code(),
+                image_id=image.id,
+                start_date=form_data.get('start_date') or datetime.now().astimezone()
+            )
+
+            instructor = User.query.get(current_user.id)
+
+            class_.instructors.append(instructor)
+            db.session.add(class_)
+        else:
+            # New class, first time viewing the form, so it is empty.
+            class_ = None
+
+    else:
+        # Existing class
+        class_ = Class.query.get(class_id)
+
+    if request.method == 'POST':
+        # Existing class, posting changes.
+
+        image = HostImage.query.get(form_data.get('image_id'))
+        if not image:
+            flash('Invalid image selected.', 'error')
+            return redirect(url_for('admin.edit_class', class_id=class_id))
+
+        class_.name = form_data.get('name') or image.name
+        class_.description = form_data.get('description') or image.desc
+        class_.start_date = form_data.get('start_date') or class_.start_date
+        class_.end_date = form_data.get('end_date') or class_.end_date
+        class_.image_id = image.id
+
+        db.session.commit()
+        return redirect(url_for('admin.classes'))
+
+    all_images = HostImage.query.filter(
+        (HostImage.is_public == True) | (HostImage.creator_id == current_user.id)
+    ).all()
+
+    return render_template('class_form.html', clazz=class_, all_images=all_images, **context)
+
+
+@admin_bp.route('/classes/<int:class_id>/delete')
+@login_required
+def delete_class(class_id):
+    if not current_user.is_instructor:
+        return redirect(url_for('admin.classes'))
+
+    class_ = Class.query.get(class_id)
+    if class_:
+        # Remove all students and instructors from the class
+        class_.students.clear()
+        class_.instructors.clear()
+        db.session.commit()  # Commit the changes to update the relationships
+
+        db.session.delete(class_)
+        db.session.commit()
+        flash('Class deleted.')
+
+    return redirect(url_for('admin.classes'))

@@ -60,6 +60,10 @@ class User(UserMixin, db.Model):
         else:
             return "public"
 
+    @hybrid_property
+    def code_host(self):
+        return self.code_hosts.first()
+
     display_name = Column(String(255), nullable=True)
     birth_year = Column(Integer, nullable=True)
 
