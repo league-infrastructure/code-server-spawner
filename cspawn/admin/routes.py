@@ -4,8 +4,8 @@ from typing import cast
 from flask import current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from cspawn.docker.models import CodeHost, HostImage
-from cspawn.main.models import Class, User, db
+from cspawn.main.models import HostImage
+from cspawn.main.models import Class, CodeHost, User, db
 from cspawn.util.apptypes import App
 from cspawn.util.names import class_code
 
@@ -239,7 +239,7 @@ def export_classes():
 @admin_bp.route('/classes/<class_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_class(class_id):
-    from cspawn.docker.models import HostImage
+    from cspawn.main.models import HostImage
 
     if not current_user.is_instructor:
         return redirect(url_for('admin.classes'))

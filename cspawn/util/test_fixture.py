@@ -6,11 +6,10 @@ from pathlib import Path
 import pytest
 import random
 from faker import Faker
+from sqlalchemy import MetaData
 
 from cspawn.cli.util import create_demo_users, create_demo_images, make_data
-from cspawn.docker.models import CodeHost, HostImage
-from cspawn.init import db
-from cspawn.main.models import User
+from cspawn.main.models import *
 from cspawn.util.apptypes import App
 
 
@@ -24,9 +23,9 @@ class CSUnitTest(unittest.TestCase):
         self.this_dir = Path(__file__).parent
         self.config_dir = Path(cspawn.__file__).parent.parent
 
-        self.dev_root = self.this_dir.parent
-
-        self.data_dir = self.dev_root / "data"
+        self.test_dir = self.config_dir / "test_data"
+        self.data_dir = self.config_dir / "data"
+        self.dev_root = self.config_dir.parent
 
         warnings.filterwarnings("ignore")
 
@@ -37,6 +36,16 @@ class CSUnitTest(unittest.TestCase):
         )
 
         self.fake = Faker()
+
+    def drop_db(self):
+        with self.app.app_context():
+
+            e = self.app.db.engine
+
+            m = MetaData()
+            m.reflect(e)
+
+            m.drop_all(e)
 
     def create_demo_users(self):
 

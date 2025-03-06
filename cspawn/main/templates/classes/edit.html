@@ -1,0 +1,45 @@
+{% extends "base/page.html" %}
+
+{% block content %}
+<div class="container mt-4" style="max-width: 750px; margin: auto;">
+    <h1>{{ 'Edit Class' if clazz else 'New Class' }}</h1>
+    <form method="post" action="{{ url_for('main.edit_class', class_id = ( clazz.id if clazz.id else 'new')) }}">
+        {{ form.hidden_tag() }}
+        <div class="form-group">
+            {{ form.name.label(class="form-label") }}
+            {{ form.name(class="form-control") }}
+        </div>
+        <div class="form-group">
+            {{ form.description.label(class="form-label") }}
+            {{ form.description(class="form-control") }}
+        </div>
+        <div class="form-group">
+            {{ form.location.label(class="form-label") }}
+            {{ form.location(class="form-control") }}
+        </div>
+        <div class="form-group">
+            {{ form.term.label(class="form-label") }}
+            {{ form.term(class="form-control") }}
+        </div>
+        <div class="form-group">
+            {{ form.image_id.label(class="form-label") }}
+            {{ form.image_id(class="form-control") }}
+        </div>
+        <div class="form-group">
+            {{ form.start_date.label(class="form-label") }}
+            {{ form.start_date(class="form-control", type="datetime-local") }}
+        </div>
+        <div class="form-group">
+            {{ form.end_date.label(class="form-label") }}
+            {{ form.end_date(class="form-control", type="datetime-local") }}
+        </div>
+        <div class="form-group">
+            <button type="submit" class="btn btn-success">Save</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+
+{% endblock %}

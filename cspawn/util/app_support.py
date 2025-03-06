@@ -106,9 +106,9 @@ def configure_config(app):
     return config
 
 
-def configure_config_tree(start_dir=None):
+def configure_config_tree(start_dir=None, jtl_app_dir=None, jtl_deployment=None) -> Dict[str, Any]:
     # Determine if we're running in production or development
-    jtl_app_dir = os.getenv("JTL_APP_DIR")
+    jtl_app_dir = os.getenv("JTL_APP_DIR", jtl_app_dir)
 
     if jtl_app_dir and Path(jtl_app_dir).is_dir():
         config_dir = Path(jtl_app_dir)
@@ -117,7 +117,7 @@ def configure_config_tree(start_dir=None):
     else:
         config_dir = Path(start_dir) if start_dir else Path().cwd()
 
-    jtl_deploy = os.getenv("JTL_DEPLOYMENT")
+    jtl_deploy = os.getenv("JTL_DEPLOYMENT", jtl_deployment)
 
     if jtl_deploy:
         deploy = jtl_deploy
@@ -193,7 +193,7 @@ def setup_sessions(app, devel=False, session_expire_time=60 * 60 * 24 * 1):
 
 
 def setup_database(app):
-    from sqlalchemy.exc import ProgrammingError
+    from sqlalchemy.exc import ProgrammingError, OperationalError
 
     from cspawn.main.models import db
     from cspawn.main.models import User
@@ -201,7 +201,7 @@ def setup_database(app):
     try:
         with app.app_context():
             app.root_user = User.create_root_user(app)
-    except ProgrammingError:
+    except (ProgrammingError, OperationalError):
         # Maybe haven't set up the database yet.
         pass
 

@@ -14,9 +14,9 @@ from flask import (
 from flask_login import current_user, login_required
 
 from cspawn.util.apptypes import App
-from cspawn.docker.models import CodeHost, HostImage
+from cspawn.main.models import HostImage
 from cspawn.hosts import hosts_bp
-from cspawn.main.models import db
+from cspawn.main.models import CodeHost, db
 from cspawn.docker.csmanager import CSMService
 
 import json
@@ -161,8 +161,3 @@ def open_codehost(chost_id: str) -> str:
         return redirect(url_for("hosts.index"))
 
     return render_template("hosts/open_codehost.html", public_url=ch.public_url)
-
-
-@hosts_bp.route("/loading")
-def loading() -> str:
-    return render_template("hosts/loading.html")

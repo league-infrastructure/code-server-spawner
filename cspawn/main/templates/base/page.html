@@ -1,4 +1,4 @@
-{% extends "base_app.html" %}
+{% extends "base/base_app.html" %}
 {% from 'bootstrap5/utils.html' import render_messages %}
 
 {% block navbar %}
@@ -19,7 +19,7 @@
 
         {% if current_user.is_instructor or current_user.is_admin %}
         <li class="nav-item">
-          <a class="nav-link" href="{{ url_for('hosts.index') }}">Code Host</a>
+          <a class="nav-link" href="{{ url_for('main.index') }}">Code Host</a>
         </li>
         {% if current_user.is_instructor or current_user.is_student %}
         <li class="nav-item">

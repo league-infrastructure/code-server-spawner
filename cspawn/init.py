@@ -2,6 +2,7 @@
 Initialize the Application
 """
 
+from flask_migrate import Migrate
 from typing import cast
 from flask import Flask, g
 from flask_bootstrap import Bootstrap5
@@ -14,10 +15,10 @@ from cspawn.__version__ import __version__ as version
 
 from .admin import admin_bp
 from .auth import auth_bp
-from .hosts import hosts_bp
+
 from .docker.csmanager import CodeServerManager
 from .main import main_bp
-from .main.models import db, User
+
 from .util.app_support import (
     configure_app_dir,
     configure_config_tree,
@@ -39,8 +40,11 @@ GOOGLE_LOGIN_SCOPES = [
 ]
 
 
-def init_app(config_dir=None, log_level=None, sqlfile=None) -> App:
-    # Initialize Flask application
+def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> App:
+    """ Initialize Flask application """
+
+    from .main.models import db
+
     app = cast(App, Flask(__name__))
 
     @app.teardown_appcontext
@@ -52,7 +56,7 @@ def init_app(config_dir=None, log_level=None, sqlfile=None) -> App:
     # Register the filter with Flask or Jinja2
     app.jinja_env.filters["human_time"] = human_time_format
 
-    config = configure_config_tree(config_dir)
+    config = configure_config_tree(config_dir, jtl_deployment=deployment)
     app.secret_key = config["SECRET_KEY"]
     app.app_config = config
 
@@ -104,7 +108,6 @@ def init_app(config_dir=None, log_level=None, sqlfile=None) -> App:
     app.register_blueprint(main_bp, url_prefix="/")
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
-    app.register_blueprint(hosts_bp, url_prefix="/host")
 
     app.bootstrap = Bootstrap5(app)
     app.font_awesome = FontAwesome(app)
@@ -119,5 +122,7 @@ def init_app(config_dir=None, log_level=None, sqlfile=None) -> App:
         from cspawn.main.models import User
 
         return User.query.get(user_id)
+
+    migrate = Migrate(app, db)
 
     return app
