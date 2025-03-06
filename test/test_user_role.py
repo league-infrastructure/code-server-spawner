@@ -5,8 +5,8 @@ from pathlib import Path
 
 from faker import Faker
 
-from cspawn.main.models import HostImage
-from cspawn.main.models import CodeHost, HostImage, User
+from cspawn.models import HostImage
+from cspawn.models import CodeHost, HostImage, User
 
 from cspawn.util.test_fixture import *
 

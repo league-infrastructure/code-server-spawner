@@ -31,7 +31,7 @@ def find_username(user):
     """Look for a unique username"""
     from slugify import slugify
 
-    from cspawn.main.models import User
+    from cspawn.models import User
 
     def split_email(email):
         return slugify(email.split("@")[0])

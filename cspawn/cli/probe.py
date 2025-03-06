@@ -1,7 +1,7 @@
 import click
 
-from cspawn.main.models import HostImage
-from cspawn.main.models import CodeHost, User
+from cspawn.models import HostImage
+from cspawn.models import CodeHost, User
 
 from .root import cli
 from .util import get_app, get_logger, load_data, make_data

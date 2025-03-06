@@ -1,9 +1,8 @@
+import json
 import logging
 import os
 from datetime import datetime
-from functools import lru_cache
 from pathlib import Path
-from time import sleep
 from typing import Any, Dict, List, Optional, cast
 from urllib.parse import urlparse
 
@@ -11,19 +10,16 @@ import docker
 import paramiko
 import pytz
 import requests
-import json
-from time import time
 from flask import url_for
-
 from slugify import slugify
 
-
 from cspawn.docker.manager import ServicesManager, logger
-
 from cspawn.docker.proc import Service
-from cspawn.main.models import CodeHost, db, User
-from ..main.models import HostImage
-from cspawn.util.auth import basic_auth_hash, docker_label_escape, random_string
+from cspawn.models import CodeHost, User, db
+from cspawn.util.auth import (basic_auth_hash, docker_label_escape,
+                              random_string)
+
+from ..models import HostImage
 
 logger = logging.getLogger("cspawn.docker")
 
@@ -276,8 +272,7 @@ def define_cs_container(
         "caddy.@ws.0_header": "Connection *Upgrade*",
         "caddy.@ws.1_header": "Upgrade websocket",
         "caddy.@ws.2_header": "Origin {http.request.header.Origin}",
-        # "caddy.@ws.3_header": "Sec-WebSocket-Protocol {http.request.header.Sec-WebSocket-Protocol}",
-        # "caddy.@ws.4_header": "Sec-WebSocket-Version {http.request.header.Sec-WebSocket-Version}",
+
         # WebSocket Reverse Proxy with HTTP/1.1
         "caddy.0_route.handle": "/websockify*",
         "caddy.0_route.handle.reverse_proxy": "@ws {{upstreams 6080}}",
@@ -289,7 +284,7 @@ def define_cs_container(
         "caddy.1_route.handle_path.reverse_proxy": "{{upstreams 6080}}",
         # General Reverse Proxy
         "caddy.2_route.handle": "/*",
-        "caddy.2_route.handle.reverse_proxy": "{{upstreams 8080}}",
+        "caddy.2_route.handle.reverse_proxy": "{{upstreams 80}}",
         f"caddy.basic_auth.{username}": hashed_pw
     }
 
@@ -333,9 +328,6 @@ class CodeServerManager(ServicesManager):
         Args:
             app: Application instance.
         """
-        from cspawn.util.apptypes import App
-
-        app = cast(App, app)
 
         self.config = app.app_config
 

@@ -9,7 +9,7 @@ from faker import Faker
 from sqlalchemy import MetaData
 
 from cspawn.cli.util import create_demo_users, create_demo_images, make_data
-from cspawn.main.models import *
+from cspawn.models import *
 from cspawn.util.apptypes import App
 
 

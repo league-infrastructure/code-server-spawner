@@ -4,12 +4,12 @@ from pathlib import Path
 
 from faker import Faker
 
-from cspawn.main.models import CodeHost
+from cspawn.models import CodeHost
 from cspawn.util.config import find_parent_dir
 from cspawn.docker.csmanager import logger as ctrl_logger
-from cspawn.main.models import HostImage
+from cspawn.models import HostImage
 from cspawn.init import init_app
-from cspawn.main.models import *
+from cspawn.models import *
 from cspawn.util.app_support import configure_config_tree
 
 logger = logging.getLogger(__name__)

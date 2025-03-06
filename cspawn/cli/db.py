@@ -1,10 +1,19 @@
 import click
 from sqlalchemy import MetaData
-from cspawn.main.models import export_dict, import_dict
+from cspawn.models import export_dict, import_dict, ensure_database_exists
 import json
 
 from .root import cli
 from .util import get_app, load_data, make_data
+
+
+def drop_db(app):
+    db = app.db
+    e = db.engine
+
+    m = MetaData()
+    m.reflect(e)
+    m.drop_all(e)
 
 
 @cli.group()
@@ -20,9 +29,7 @@ def info(ctx):
     app = get_app(ctx)
 
     with app.app_context():
-
-        connection_string = str(app.db.engine.url)
-        print(connection_string)
+        print(str(app.db.engine.url))
 
 
 @db.command()
@@ -32,6 +39,7 @@ def create(ctx):
 
     app = get_app(ctx)
     with app.app_context():
+        ensure_database_exists(app)
         app.db.create_all()
         print("Database tables created successfully.")
 
@@ -73,12 +81,7 @@ def recreate(ctx, demo):
     app = get_app(ctx)
 
     with app.app_context():
-        db = app.db
-        e = db.engine
-
-        m = MetaData()
-        m.reflect(e)
-        m.drop_all(e)
+        drop_db(app)
         print("Database tables destroyed successfully.")
 
         db.create_all()
@@ -111,22 +114,20 @@ def export(ctx, file):
         else:
             print(json.dumps(d, indent=4))
 
-            @db.command()
-            @click.option(
-                "-f", "--file", required=True, help="Import data from a JSON file."
-            )
-            @click.pass_context
-@db.command()
+
+@db.command(name="import")
 @click.option(
     "-f", "--file", help="Load demo data after recreating the database."
 )
-@click.pass_contex
-def import_data(ctx, file):
+@click.pass_context
+def import_(ctx, file):
     """Import data from a JSON file into the database."""
 
     app = get_app(ctx)
 
     with app.app_context():
+        ensure_database_exists(app)
+        drop_db(app)
         with open(file, "r") as f:
             data = json.load(f)
             import_dict(data)
