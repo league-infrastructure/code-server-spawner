@@ -6,11 +6,11 @@ from typing import cast
 
 from flask import (abort, current_app, flash, jsonify, redirect,
                    render_template, request, session, url_for)
-from flask_login import current_user, login_required
+from flask_login import current_user
 
 from cspawn.__version__ import __version__ as version
 
-from cspawn.main import main_bp
+from cspawn.main import main_bp, ca
 from cspawn.main.models import Class, db
 
 
@@ -65,20 +65,6 @@ def admin_required(f):
     return decorated_function
 
 
-empty_status = {
-    "containerName": "",
-    "containerId": "",
-    "state": "",
-    "memory_usage": 0,
-    "hostname": "",
-    "instanceId": "",
-    "lastHeartbeat": "",
-    "average30m": None,
-    "seconds_since_report": 0,
-    "port": None,
-}
-
-
 def unk_filter(v):
     return v if v else "?"
 
@@ -95,37 +81,31 @@ def add_template_filters():
 
 @main_bp.route("/")
 def index():
-    from cspawn.docker.models import CodeHost
+    from cspawn.main.models import CodeHost
 
     if current_user.is_authenticated:
 
         if current_user.is_admin:
 
-            return render_template("index_admin.html", host={}, **context)
+            return render_template("index/admin.html", host={}, **context)
 
         elif current_user.is_instructor:
 
             classes = current_user.classes_instructing
 
-            return render_template("index_instructor.html", classes=classes, **context)
+            return render_template("index/instructor.html", classes=classes, **context)
 
         elif current_user.is_student:
 
             host = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
 
-            return render_template("index_student.html", host=host,  image=None, **context)
+            return render_template("index/student.html", host=host,  image=None, **context)
 
         else:
 
-            return render_template("index_public.html", **context)
+            return render_template("index/public.html", **context)
 
-    return render_template("index.html", **context)
-
-
-@main_bp.route("/private/staff")
-@staff_required
-def staff():
-    return render_template("private-staff.html", **context)
+    return render_template("index/unauth.html", **context)
 
 
 @main_bp.route("/telem", methods=["GET", "POST"])
@@ -153,32 +133,4 @@ def promote():
     else:
         flash("Invalid class code.", "error")
 
-    return redirect(url_for("main.index"))
-
-
-@main_bp.route("/host/<int:host_id>/stop", methods=["GET"])
-@login_required
-def stop_host(host_id):
-    from cspawn.docker.models import CodeHost
-
-    code_host = CodeHost.query.get(host_id)
-
-    if not host_id:
-        flash("No host ID provided", "danger")
-        return redirect(url_for("admin.list_code_hosts"))
-
-    code_host = CodeHost.query.get(host_id)
-
-    try:
-        s = current_app.csm.get(code_host.service_id)
-    except KeyError:
-        s = None
-
-    if not s:
-        flash("Host not found", "danger")
-        return redirect(url_for("admin.list_code_hosts"))
-    s.stop()
-    db.session.delete(code_host)
-    db.session.commit()
-    flash("Host deleted successfully", "success")
     return redirect(url_for("main.index"))

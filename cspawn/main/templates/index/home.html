@@ -1,4 +1,4 @@
-{% extends "page.html" %}
+{% extends "base/page.html" %}
 
 {% block title %}League Code Server{% endblock %}
 
@@ -13,19 +13,19 @@
 <!-- Action Buttons -->
 <div class="row mb-4">
     <div class="col">
-      
-        {% if  host.status == 'running' %}
+
+        {% if host.status == 'running' %}
         <a href="{{ url_for('start_server') }}" class="btn btn-success float-start">Open Server</a>
         {% else %}
         <a href="{{ url_for('start_server') }}" class="btn btn-success float-start">Start Server</a>
         {% endif %}
-        
+
         <a href="{{ url_for('auth.logout') }}" class="btn btn-primary float-end">Logout</a>
 
-        {% if  host.status == 'running' %}
+        {% if host.status == 'running' %}
         <a href="{{ url_for('stop_server') }}" class="btn btn-danger float-end me-2">Stop Server</a>
         {% endif %}
-        
+
     </div>
 </div>
 

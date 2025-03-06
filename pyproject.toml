@@ -36,6 +36,7 @@ dependencies = [
     "paramiko>=3.5.1",
     "python-slugify>=8.0.4",
     "bcrypt>=4.2.1",
+    "tzlocal>=5.3.1",
 ]
 
 [tool.uv]

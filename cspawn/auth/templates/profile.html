@@ -1,4 +1,4 @@
-{% extends "page.html" %}
+{% extends "base/page.html" %}
 
 {% block title %}Profile - League Code Server{% endblock %}
 
@@ -16,17 +16,17 @@
                 <div class="card-body">
                     <h2 class="card-title">Profile Details</h2>
                     {% if user %}
-                        <p><strong>Username:</strong> {{ user.username }}</p>
-                        <p><strong>Display Name:</strong> {{ user.display_name }}</p>
-                        <p><strong>Email:</strong> {{ user.email }}</p>
-                        <p><strong>Role:</strong>{{ user.role }} </p>
-                        <p><strong>OAuth Provider:</strong> {{ user.oauth_provider }}</p>
-                        <p><strong>OAuth ID:</strong> {{ user.oauth_id }}</p>
-                        <p><strong>Avatar:</strong></p>
-                        <img src="{{ user.avatar_url }}" alt="User Avatar" class="img-fluid rounded-circle">
+                    <p><strong>Username:</strong> {{ user.username }}</p>
+                    <p><strong>Display Name:</strong> {{ user.display_name }}</p>
+                    <p><strong>Email:</strong> {{ user.email }}</p>
+                    <p><strong>Role:</strong>{{ user.role }} </p>
+                    <p><strong>OAuth Provider:</strong> {{ user.oauth_provider }}</p>
+                    <p><strong>OAuth ID:</strong> {{ user.oauth_id }}</p>
+                    <p><strong>Avatar:</strong></p>
+                    <img src="{{ user.avatar_url }}" alt="User Avatar" class="img-fluid rounded-circle">
 
                     {% else %}
-                        <p>You are not logged in.</p>
+                    <p>You are not logged in.</p>
                     {% endif %}
                 </div>
             </div>

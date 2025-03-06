@@ -1,4 +1,4 @@
-{% extends "page.html" %}
+{% extends "base/page.html" %}
 
 {% block content %}
 <div class="container mt-4 mb-4">
@@ -16,20 +16,32 @@
                 <th>Class Code</th>
                 <th>Description</th>
                 <th>Image</th>
+                <th>Location</th>
+                <th>Term</th>
                 <th>Start Date</th>
                 <th>End Date</th>
+                <th>Instructors</th>
+                <th>Student Count</th>
                 <th>Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for class in instructing %}
             <tr>
-                <td><a href="{{ url_for('main.view_class', class_id=class.id) }}">{{ class.name }}</a></td>
+                <td><a href="{{ url_for('main.show_class', class_id=class.id) }}">{{ class.name }}</a></td>
                 <td>{{ class.class_code }}</td>
                 <td>{{ class.description }}</td>
                 <td>{% if class.image %}{{ class.image.name }}{% else %}No Image{% endif %}</td>
-                <td>{{ class.start_date }}</td>
-                <td>{{ class.end_date }}</td>
+                <td>{{ class.location }}</td>
+                <td>{{ class.term }}</td>
+                <td>{{ class.start_date.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ class.end_date.strftime('%Y-%m-%d %H:%M') if class.end_date else '' }}</td>
+                <td>
+                    {% for instructor in class.instructors %}
+                    {{ instructor.username }}<br>
+                    {% endfor %}
+                </td>
+                <td>{{ class.students | length }}</td>
                 <td>
                     <a href="{{ url_for('main.edit_class', class_id=class.id) }}"
                         class="btn btn-primary btn-sm">Edit</a>

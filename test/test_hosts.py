@@ -7,11 +7,13 @@ import pytest
 from faker import Faker
 import json
 
-from cspawn.docker.models import CodeHost, HostImage
+from cspawn.main.models import HostImage
 from cspawn.init import db
 from cspawn.main.models import *
 from cspawn.main.models import User
 
+from cspawn.main.models import CodeHost
+from cspawn.main.models import HostImage
 from cspawn.util.test_fixture import *
 
 

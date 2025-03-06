@@ -1,4 +1,4 @@
-{% extends "page.html" %}
+{% extends "base/page.html" %}
 
 {% block title %}Admin Dashboard - League Code Server{% endblock %}
 
@@ -60,24 +60,20 @@
                     {% for c in containers %}
                     <tr>
                         <td>
-                            <a href="https://{{ c.hostname }}" 
-                               target="_blank"
-                               class="text-decoration-none">
+                            <a href="https://{{ c.hostname }}" target="_blank" class="text-decoration-none">
                                 {{ c.service_name }}
                             </a>
                         </td>
                         <td>
                             <div class="small text-muted">
-                                {{c.state}}<br/>
-                                ❤️{{c.heartbeatAgo|unk_filter}} 🗝️{{c.seconds_since_report|unk_filter}}<br/>
-                                Mem: {{c.memory_usage|unk_filter}} MB<br/>               
+                                {{c.state}}<br />
+                                ❤️{{c.heartbeatAgo|unk_filter}} 🗝️{{c.seconds_since_report|unk_filter}}<br />
+                                Mem: {{c.memory_usage|unk_filter}} MB<br />
                             </div>
                         </td>
                         <td>
                             {% if c.state == 'running' %}
-                            <form action="https://{{c.hostname }}/login" 
-                                  method="POST" 
-                                  target="_blank">
+                            <form action="https://{{c.hostname }}/login" method="POST" target="_blank">
                                 <input type="hidden" name="base" value=".">
                                 <input type="hidden" name="href" value="https://{{ c.hostname }}">
                                 <input type="hidden" name="password" value="{{ c.password }}">
@@ -85,7 +81,7 @@
                             </form>
 
                             {% endif %}
-                
+
                         </td>
                     </tr>
                     {% endfor %}

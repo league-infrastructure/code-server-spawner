@@ -190,6 +190,7 @@ def register():
             db.session.commit()
 
         flash("User created. You can login", "success")
+        login_user(user)
         return redirect(url_for("main.index"))
     else:
         form = {}

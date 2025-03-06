@@ -1,7 +1,7 @@
 from datetime import datetime
-from cspawn.main import main_bp
-from cspawn.main.models import Class, User, db
-
+from cspawn.main import main_bp, ca
+from cspawn.main.models import Class, CodeHost, User, db
+from cspawn.main.forms import ClassForm
 
 from flask import abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
@@ -9,11 +9,47 @@ from flask_login import current_user, login_required
 from cspawn.main.routes.main import context
 from cspawn.util.names import class_code
 
+from sqlalchemy.orm import joinedload
+
+
+@main_bp.route("/classes")
+@login_required
+def classes():
+    if not current_user.is_authenticated:
+        return redirect(url_for('main.index'))
+
+    taking = current_user.classes_taking
+    instructing = current_user.classes_instructing
+    return render_template("classes/list.html", taking=taking, instructing=instructing, **context)
+
+
+@main_bp.route('/classes/add', methods=['POST'])
+@login_required
+def add_class():
+    if not current_user.is_student:
+        return redirect(url_for('main.classes'))
+
+    class_code = str(request.form.get('class_code')).strip()
+    class_ = Class.query.filter_by(class_code=class_code).first()
+
+    if class_:
+        current_user.classes_taking.append(class_)
+        db.session.commit()
+    else:
+        flash('Unknown class code.')
+
+    if current_user.is_instructor or current_user.is_admin:
+        return redirect(url_for('main.classes'))
+    elif current_user.is_student:
+        return redirect(url_for('main.index'))
+    else:
+        abort(403)
+
 
 @main_bp.route("/class/<int:class_id>/start")
 @login_required
 def start_class(class_id) -> str:
-    from cspawn.docker.models import CodeHost, HostImage
+    from cspawn.main.models import HostImage
 
     class_ = Class.query.get(class_id)
 
@@ -49,34 +85,11 @@ def start_class(class_id) -> str:
     return redirect(url_for("main.index"))
 
 
-@main_bp.route('/class/<int:class_id>/view')
+@main_bp.route('/class/<int:class_id>/show')
 @login_required
-def view_class(class_id):
+def show_class(class_id):
     class_ = Class.query.get_or_404(class_id)
-    return render_template('class_view.html', class_=class_, **context)
-
-
-@main_bp.route('/classes/add', methods=['POST'])
-@login_required
-def add_class():
-    if not current_user.is_student:
-        return redirect(url_for('main.classes'))
-
-    class_code = str(request.form.get('class_code')).strip()
-    class_ = Class.query.filter_by(class_code=class_code).first()
-
-    if class_:
-        current_user.classes_taking.append(class_)
-        db.session.commit()
-    else:
-        flash('Unknown class code.')
-
-    if current_user.is_instructor or current_user.is_admin:
-        return redirect(url_for('main.classes'))
-    elif current_user.is_student:
-        return redirect(url_for('main.index'))
-    else:
-        abort(403)
+    return render_template('classes/show.html', class_=class_, **context)
 
 
 @main_bp.route('/classes/<int:class_id>/delete')
@@ -86,6 +99,11 @@ def delete_class(class_id):
         return redirect(url_for('main.classes'))
 
     class_ = Class.query.get(class_id)
+
+    if class_.students:
+        flash('Cannot delete a class with enrolled students.', 'error')
+        return redirect(url_for('main.classes'))
+
     if class_:
         # Remove all students and instructors from the class
         class_.students.clear()
@@ -102,72 +120,52 @@ def delete_class(class_id):
 @main_bp.route('/classes/<class_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_class(class_id):
-    from cspawn.docker.models import HostImage
+    from cspawn.main.models import HostImage
 
     if not current_user.is_instructor:
-        return redirect(url_for('main.classes'))
-
-    form_data = request.form
-
-    if class_id == 'new':
-        if request.method == 'POST':
-            # New class, and we are posting a form with the values.
-
-            image = HostImage.query.get(form_data.get('image_id'))
-            if not image:
-                flash('Invalid image selected.', 'error')
-                return redirect(url_for('main.edit_class', class_id=class_id))
-
-            class_ = Class(
-                name=form_data.get('name'),
-                description=form_data.get('description'),
-                class_code=class_code(),
-                image_id=image.id,
-                start_date=form_data.get('start_date') or datetime.now().astimezone()
-            )
-
-            instructor = User.query.get(current_user.id)
-
-            class_.instructors.append(instructor)
-            db.session.add(class_)
-        else:
-            # New class, first time viewing the form, so it is empty.
-            class_ = None
-
-    else:
-        # Existing class
-        class_ = Class.query.get(class_id)
-
-    if request.method == 'POST':
-        # Existing class, posting changes.
-
-        image = HostImage.query.get(form_data.get('image_id'))
-        if not image:
-            flash('Invalid image selected.', 'error')
-            return redirect(url_for('main.edit_class', class_id=class_id))
-
-        class_.name = form_data.get('name') or image.name
-        class_.description = form_data.get('description') or image.desc
-        class_.start_date = form_data.get('start_date') or class_.start_date
-        class_.end_date = form_data.get('end_date') or class_.end_date
-        class_.image_id = image.id
-
-        db.session.commit()
         return redirect(url_for('main.classes'))
 
     all_images = HostImage.query.filter(
         (HostImage.is_public == True) | (HostImage.creator_id == current_user.id)
     ).all()
 
-    return render_template('class_form.html', clazz=class_, all_images=all_images, **context)
+    if class_id == 'new':
+        form = ClassForm()
+        class_ = Class()
+        if request.method == 'POST':
+            instructor = User.query.get(current_user.id)
+            class_.instructors.append(instructor)
+    else:
+        # Editing existing
+        class_ = Class.query.options(joinedload(Class.instructors)).get(class_id)
+        if request.method == 'GET':
+            form = ClassForm.from_model(class_)
+        else:
+            form = ClassForm()
 
+    form.image_id.choices = [(image.id, image.name) for image in all_images]
 
-@main_bp.route("/classes")
-@login_required
-def classes():
-    if not current_user.is_authenticated:
-        return redirect(url_for('main.index'))
+    if request.method == 'POST':
 
-    taking = current_user.classes_taking
-    instructing = current_user.classes_instructing
-    return render_template("classes.html", taking=taking, instructing=instructing, **context)
+        form.to_model(class_)
+
+        if not class_.timezone:
+            class_.timezone = current_user.timezone
+
+        if not class_.start_date:
+            import pytz
+
+            class_.start_date = datetime.now(pytz.timezone(class_.timezone))
+
+        if class_.end_date:
+            class_.end_date = class_.end_date.astimezone(class_.timezone)
+
+        if form.validate():
+            db.session.add(class_)
+            db.session.commit()
+            return redirect(url_for('main.classes'))
+        else:
+            current_app.logger.info('Form did not validate: %s', form.errors)
+            flash('Form did not validate', 'error')
+
+    return render_template('classes/edit.html', clazz=class_, form=form, **context)

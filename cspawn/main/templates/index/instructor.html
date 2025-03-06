@@ -1,4 +1,4 @@
-{% extends "page.html" %}
+{% extends "base/page.html" %}
 
 {% block title %}League Code Server{% endblock %}
 
@@ -18,7 +18,7 @@
                     <button class="btn btn-link" type="button" data-toggle="collapse"
                         data-target="#collapse{{ class.id }}" aria-expanded="true"
                         aria-controls="collapse{{ class.id }}">
-                        {{ class.name }} ({{ class.students | length }} students)
+                        {{ class.name }} {{class.term}} ({{ class.students | length }} students)
                     </button>
                 </h2>
             </div>

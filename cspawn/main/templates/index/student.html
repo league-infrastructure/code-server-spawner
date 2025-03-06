@@ -1,4 +1,4 @@
-{% extends "page.html" %}
+{% extends "base/page.html" %}
 
 {% block title %}League Code Server{% endblock %}
 
@@ -114,7 +114,7 @@
 <script>
     <!-- Polling script to check if the server is ready -->
     (function poll() {
-        const url = `{{ url_for('hosts.is_ready') }}`;
+        const url = `{{ url_for('main.is_ready') }}`;
 
         function pollServer() {
             fetch(url)

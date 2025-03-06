@@ -1,5 +1,7 @@
 import click
 from sqlalchemy import MetaData
+from cspawn.main.models import export_dict, import_dict
+import json
 
 from .root import cli
 from .util import get_app, load_data, make_data
@@ -87,3 +89,45 @@ def recreate(ctx, demo):
         if demo:
             make_data(app)
             print("Demo data loaded successfully.")
+
+
+@db.command()
+@click.option(
+    "-f", "--file", help="Load demo data after recreating the database."
+)
+@click.pass_context
+def export(ctx, file):
+    """ Export the database to JSON """
+
+    app = get_app(ctx)
+
+    d = {}
+    with app.app_context():
+        d = export_dict()
+
+        if file:
+            with open(file, "w") as f:
+                f.write(json.dumps(d, indent=4))
+        else:
+            print(json.dumps(d, indent=4))
+
+            @db.command()
+            @click.option(
+                "-f", "--file", required=True, help="Import data from a JSON file."
+            )
+            @click.pass_context
+@db.command()
+@click.option(
+    "-f", "--file", help="Load demo data after recreating the database."
+)
+@click.pass_contex
+def import_data(ctx, file):
+    """Import data from a JSON file into the database."""
+
+    app = get_app(ctx)
+
+    with app.app_context():
+        with open(file, "r") as f:
+            data = json.load(f)
+            import_dict(data)
+            print("Data imported successfully.")

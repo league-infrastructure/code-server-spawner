@@ -21,8 +21,8 @@ from slugify import slugify
 from cspawn.docker.manager import ServicesManager, logger
 
 from cspawn.docker.proc import Service
-from cspawn.main.models import db, User
-from .models import CodeHost, HostImage
+from cspawn.main.models import CodeHost, db, User
+from ..main.models import HostImage
 from cspawn.util.auth import basic_auth_hash, docker_label_escape, random_string
 
 logger = logging.getLogger("cspawn.docker")

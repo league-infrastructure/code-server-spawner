@@ -3,9 +3,9 @@ import unittest
 
 from faker import Faker
 
-from cspawn.docker.models import CodeHost, HostImage
+from cspawn.main.models import HostImage
 from cspawn.init import db
-from cspawn.main.models import User
+from cspawn.main.models import CodeHost, User
 from cspawn.util.app_support import role_from_email
 
 from cspawn.util.test_fixture import *

@@ -5,8 +5,8 @@ from pathlib import Path
 
 from faker import Faker
 
-from cspawn.docker.models import CodeHost, HostImage
-from cspawn.main.models import User
+from cspawn.main.models import HostImage
+from cspawn.main.models import CodeHost, HostImage, User
 
 from cspawn.util.test_fixture import *
 
