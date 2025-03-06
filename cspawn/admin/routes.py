@@ -4,14 +4,11 @@ from typing import cast
 from flask import current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from cspawn.main.models import HostImage
-from cspawn.main.models import Class, CodeHost, User, db
-from cspawn.util.apptypes import App
+from cspawn.models import HostImage
+from cspawn.models import Class, CodeHost, User, db
 from cspawn.util.names import class_code
 
 from . import admin_bp
-
-ca = cast(App, current_app)
 
 
 def _context():
@@ -239,7 +236,7 @@ def export_classes():
 @admin_bp.route('/classes/<class_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_class(class_id):
-    from cspawn.main.models import HostImage
+    from cspawn.models import HostImage
 
     if not current_user.is_instructor:
         return redirect(url_for('admin.classes'))

@@ -1,7 +1,7 @@
 import logging
 
 from cspawn.cli.root import cli  # noqa: W0611
-from cspawn.main.models import *  # noqa: W0611
+from cspawn.models import *  # noqa: W0611
 
 from .config import config  # noqa: W0611
 from .db import db  # noqa: W0611

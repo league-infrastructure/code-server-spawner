@@ -7,12 +7,12 @@ import pytest
 from faker import Faker
 import json
 
-from cspawn.main.models import HostImage
+from cspawn.models import HostImage
 from cspawn.init import db
-from cspawn.main.models import *
-from cspawn.main.models import User
+from cspawn.models import *
+from cspawn.models import User
 
-from cspawn.main.models import CodeHost
+from cspawn.models import CodeHost
 from cspawn.util.test_fixture import *
 
 from cspawn.cli.util import logger as cli_logger

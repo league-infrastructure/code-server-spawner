@@ -1,6 +1,6 @@
 from datetime import datetime
-from cspawn.main import main_bp, ca
-from cspawn.main.models import Class, CodeHost, User, db
+from cspawn.main import main_bp
+from cspawn.models import Class, CodeHost, User, db
 from cspawn.main.forms import ClassForm
 
 from flask import abort, current_app, flash, redirect, render_template, request, url_for
@@ -10,6 +10,7 @@ from cspawn.main.routes.main import context
 from cspawn.util.names import class_code
 
 from sqlalchemy.orm import joinedload
+from cspawn.init import App
 
 
 @main_bp.route("/classes")
@@ -49,7 +50,7 @@ def add_class():
 @main_bp.route("/class/<int:class_id>/start")
 @login_required
 def start_class(class_id) -> str:
-    from cspawn.main.models import HostImage
+    from cspawn.models import HostImage
 
     class_ = Class.query.get(class_id)
 
@@ -120,7 +121,7 @@ def delete_class(class_id):
 @main_bp.route('/classes/<class_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_class(class_id):
-    from cspawn.main.models import HostImage
+    from cspawn.models import HostImage
 
     if not current_user.is_instructor:
         return redirect(url_for('main.classes'))

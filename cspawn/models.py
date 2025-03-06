@@ -21,8 +21,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, relationship, joinedload
-from sqlalchemy_utils import PasswordType
-from sqlalchemy import event
+from sqlalchemy_utils import PasswordType, database_exists, create_database
+from sqlalchemy import event, create_engine
 from tzlocal import get_localzone_name
 from dataclasses import dataclass
 
@@ -181,6 +181,27 @@ class Class(db.Model):
         "User", secondary="class_students", back_populates="classes_taking"
     )
 
+    @classmethod
+    def from_dict(cls, data):
+        instructors = data.pop("instructors", [])
+        students = data.pop("students", [])
+
+        if data.get("start_date"):
+            data["start_date"] = datetime.fromisoformat(data["start_date"])
+        if data.get("end_date"):
+            data["end_date"] = datetime.fromisoformat(data["end_date"])
+
+        class_instance = cls(**data)
+
+        # Use the session's no_autoflush context manager
+        with db.session.no_autoflush:
+            if instructors:
+                class_instance.instructors = User.query.filter(User.id.in_(instructors)).all()
+            if students:
+                class_instance.students = User.query.filter(User.id.in_(students)).all()
+
+        return class_instance
+
     def to_dict(self):
         fields = [
             "id", "name", "description", "term", "location", "timezone", "reference",
@@ -196,25 +217,6 @@ class Class(db.Model):
         data["instructors"] = [instructor.id for instructor in self.instructors]
         data["students"] = [student.id for student in self.students]
         return data
-
-    @classmethod
-    def from_dict(cls, data):
-        instructors = data.pop("instructors", [])
-        students = data.pop("students", [])
-
-        if data.get("start_date"):
-            data["start_date"] = datetime.fromisoformat(data["start_date"])
-        if data.get("end_date"):
-            data["end_date"] = datetime.fromisoformat(data["end_date"])
-
-        class_instance = cls(**data)
-
-        if instructors:
-            class_instance.instructors = User.query.filter(User.id.in_(instructors)).all()
-        if students:
-            class_instance.students = User.query.filter(User.id.in_(students)).all()
-
-        return class_instance
 
     def __repr__(self):
         return f"<Class(id={self.id}, name={self.name})>"
@@ -449,6 +451,13 @@ event.listen(HostImage, "before_insert", HostImage.set_hash)
 event.listen(HostImage, "before_update", HostImage.set_hash)
 
 
+def ensure_database_exists(app: Flask):
+    uri = app.db.engine.url
+    engine = create_engine(uri)
+    if not database_exists(engine.url):
+        create_database(engine.url)
+
+
 def export_dict():
     import json
 
@@ -484,5 +493,11 @@ def import_dict(data):
     for class_data in data['classes']:
         class_ = Class.from_dict(class_data)
         db.session.add(class_)
+
+    db.session.commit()
+
+    for host_data in data.get('hosts', []):
+        host = CodeHost.from_dict(host_data)
+        db.session.add(host)
 
     db.session.commit()

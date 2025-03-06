@@ -8,7 +8,7 @@ from faker import Faker
 import json
 
 
-from cspawn.main.models import *
+from cspawn.models import *
 from cspawn.util.test_fixture import *
 
 

@@ -9,7 +9,7 @@ from flask_dance.contrib.google import google
 from flask_login import current_user, login_required, login_user, logout_user
 from oauthlib.oauth2.rfc6749.errors import TokenExpiredError
 
-from cspawn.main.models import User, db
+from cspawn.models import User, db
 from cspawn.util.app_support import set_role_from_email
 from cspawn.util.auth import find_username
 
@@ -144,7 +144,7 @@ def uplogin():
 def register():
     """Handle user registration."""
 
-    from cspawn.main.models import db, Class
+    from cspawn.models import db, Class
 
     if request.method == "POST":
         form = request.form

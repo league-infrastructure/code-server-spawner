@@ -4,8 +4,8 @@ from flask import (current_app, flash, jsonify, redirect, render_template,
                    request, url_for)
 from flask_login import current_user, login_required
 
-from cspawn.main import main_bp, ca
-from cspawn.main.models import CodeHost, HostImage
+from cspawn.main import main_bp
+from cspawn.models import CodeHost, HostImage
 
 
 @main_bp.route("/hosts")
@@ -74,7 +74,7 @@ def start_host() -> str:
 @main_bp.route("/host/<host_id>/stop", methods=["GET"])
 @login_required
 def stop_host(host_id) -> str:
-    from cspawn.main.models import CodeHost, db
+    from cspawn.models import CodeHost, db
 
     if host_id == 'mine':
         code_host = CodeHost.query.filter_by(user_id=current_user.id).first()
@@ -114,7 +114,7 @@ def is_ready() -> jsonify:
         if not host:
             return jsonify({"status": "error", "message": "No host found"})
 
-        s = ca.csm.get(host.service_id)
+        s = current_app.csm.get(host.service_id)
 
         s.sync_to_db()
 

@@ -10,8 +10,8 @@ from flask_login import current_user
 
 from cspawn.__version__ import __version__ as version
 
-from cspawn.main import main_bp, ca
-from cspawn.main.models import Class, db
+from cspawn.main import main_bp
+from cspawn.models import Class, db
 
 
 context = {
@@ -81,7 +81,7 @@ def add_template_filters():
 
 @main_bp.route("/")
 def index():
-    from cspawn.main.models import CodeHost
+    from cspawn.models import CodeHost
 
     if current_user.is_authenticated:
 

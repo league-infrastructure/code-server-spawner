@@ -172,8 +172,6 @@ def setup_sessions(app, devel=False, session_expire_time=60 * 60 * 24 * 1):
     app.config["SESSION_TYPE"] = "sqlalchemy"
     app.config["SESSION_SQLALCHEMY"] = app.db
 
-    Session(app)  # Initialize the session
-
     # Set session expiration time
     app.config["PERMANENT_SESSION_LIFETIME"] = session_expire_time
     app.config["SESSION_CLEANUP_N_REQUESTS"] = 100
@@ -191,19 +189,16 @@ def setup_sessions(app, devel=False, session_expire_time=60 * 60 * 24 * 1):
             "None"  # Allow cross-site cookies if needed
         )
 
+    Session(app)  # Initialize the session
+
 
 def setup_database(app):
-    from sqlalchemy.exc import ProgrammingError, OperationalError
 
-    from cspawn.main.models import db
-    from cspawn.main.models import User
+    from cspawn.models import db
+    from cspawn.models import User
 
-    try:
-        with app.app_context():
-            app.root_user = User.create_root_user(app)
-    except (ProgrammingError, OperationalError):
-        # Maybe haven't set up the database yet.
-        pass
+    with app.app_context():
+        app.root_user = User.create_root_user(app)
 
 
 def insert_query_arg(url, key, value):

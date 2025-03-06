@@ -14,9 +14,9 @@ from flask import (
 from flask_login import current_user, login_required
 
 from cspawn.util.apptypes import App
-from cspawn.main.models import HostImage
+from cspawn.models import HostImage
 from cspawn.hosts import hosts_bp
-from cspawn.main.models import CodeHost, db
+from cspawn.models import CodeHost, db
 from cspawn.docker.csmanager import CSMService
 
 import json
