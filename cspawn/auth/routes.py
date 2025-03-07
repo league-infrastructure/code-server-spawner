@@ -9,11 +9,12 @@ from flask_dance.contrib.google import google
 from flask_login import current_user, login_required, login_user, logout_user
 from oauthlib.oauth2.rfc6749.errors import TokenExpiredError
 
-from cspawn.models import User, db
+from cspawn.models import User, Class, db
 from cspawn.util.app_support import set_role_from_email
 from cspawn.util.auth import find_username
 
 from . import auth_bp, logger
+from .forms import UPRegistrationForm, GoogleRegistrationForm, LoginForm
 
 
 def _context():
@@ -26,27 +27,27 @@ def _context():
 @auth_bp.route("/")
 def login_index():
     """Redirect to the login page."""
-    return redirect(url_for("auth.login"))
+    return google_login()
 
 
-@auth_bp.route("/profile")
-def profile():
-    """Render the profile page."""
-    if current_user.is_authenticated:
-        return render_template("profile.html", user=current_user, **_context())
-    else:
-        return render_template("profile.html", user=None, **_context())
-
-
-@auth_bp.route("/login")
+@auth_bp.route("/login", methods=["POST", "GET"])
 def login():
     """Render the login page."""
-    return render_template("login_single.html", **_context())
+
+    form = LoginForm()
+
+    if form.validate_on_submit():
+        user = User.query.filter_by(username=form.username.data).first()
+        login_user(user)
+        return redirect(url_for("main.index"))
+
+    return render_template("login.html", form=form, **_context())
 
 
-@auth_bp.route("/login/google")
+@auth_bp.route("/login/google", methods=["POST", "GET"])
 def google_login():
     """Handle Google OAuth login."""
+
     if not google.authorized:
         return redirect(url_for("google.login"))
 
@@ -86,6 +87,99 @@ def google_login():
     return redirect(url_for("main.index"))
 
 
+def register_user(form):
+    """Handle user registration for username/password """
+    username = form.username.data
+    password = form.password.data
+    class_code = form.class_code.data.strip()
+
+    user = User(
+        user_id=str(uuid.uuid4()),
+        username=username,
+        email=None,
+        oauth_provider=None,
+        oauth_id=None,
+        avatar_url=None,
+        is_student=True,
+        password=password,
+    )
+
+    class_ = Class.query.filter_by(class_code=class_code).first()
+    user.classes_taking.append(class_)
+
+    db.session.add(user)
+    db.session.commit()
+
+    login_user(user)
+
+    return redirect(url_for("main.index"))
+
+
+@auth_bp.route("/register")
+def register():
+    """Handle user registration."""
+    return register_google()
+
+
+@auth_bp.route("/register/google", methods=["POST", "GET"])
+def register_google():
+    """Handle user registration."""
+    form = GoogleRegistrationForm()
+    if form.validate_on_submit():
+        session['reg_class_code'] = form.class_code.data.strip()
+    return render_template("register_google.html", form=form, **_context())
+
+
+@auth_bp.route("/register/up", methods=["POST", "GET"])
+def register_up():
+    """Handle user registration."""
+    form = UPRegistrationForm()
+    if form.validate_on_submit():
+        return register_user(form)
+    return render_template("register_up.html", form=form, **_context())
+
+
+@auth_bp.route("/admin/users")
+@login_required
+def admin_users():
+    """Render the admin users page."""
+    users = User.query.all()
+    return render_template("admin_users.html", users=users, **_context())
+
+
+@auth_bp.route("/admin/user/<int:userid>", methods=["GET", "POST"])
+@login_required
+def admin_user(userid):
+    """Handle user management for a specific user."""
+    user = User.query.get_or_404(userid)
+
+    if request.method == "POST":
+        if "delete" in request.form:
+            db.session.delete(user)
+            db.session.commit()
+            return redirect(url_for("auth.admin_users"))
+
+        user.username = request.form.get("username")
+        user.email = request.form.get("email")
+        user.oauth_provider = request.form.get("oauth_provider")
+        user.oauth_id = request.form.get("oauth_id")
+        user.avatar_url = request.form.get("avatar_url")
+
+        db.session.commit()
+        return redirect(url_for("auth.admin_user", userid=userid))
+
+    return render_template("admin_user.html", user=user)
+
+
+@auth_bp.route("/profile")
+def profile():
+    """Render the profile page."""
+    if current_user.is_authenticated:
+        return render_template("profile.html", user=current_user, **_context())
+    else:
+        return render_template("profile.html", user=None, **_context())
+
+
 @auth_bp.route("/logout")
 def logout():
     """Log out the user and revoke the Google OAuth token if authorized."""
@@ -112,122 +206,3 @@ def logout():
     logout_user()
 
     return redirect(url_for("main.index"))
-
-
-@auth_bp.route("/uplogin", methods=["POST", "GET"])
-def uplogin():
-    """Render the login page for username/password login."""
-    if request.method == "POST":
-        form = request.form
-
-        username = form.get("username")
-        password = form.get("password")
-
-        user = User.query.filter_by(username=username).first()
-
-        if user is None:
-            flash("Invalid username or password", "error")
-            return render_template("login.html", form=form, **_context())
-
-        if user.password != password:
-            flash("Invalid username or password", "error")
-            return render_template("login.html", form=form, **_context())
-
-        login_user(user)
-        return redirect(url_for("main.index"))
-    else:
-        form = {}
-    return render_template("login.html", **_context())
-
-
-@auth_bp.route("/register", methods=["POST", "GET"])
-def register():
-    """Handle user registration."""
-
-    from cspawn.models import db, Class
-
-    if request.method == "POST":
-        form = request.form
-
-        class_reg = bool(form.get("classreg"))
-
-        username = form.get("username")
-        password = form.get("password")
-        confirm_password = form.get("confirm_password")
-        class_code = form.get("class_code", "").strip()
-
-        # Validate passwords match
-        if password != confirm_password:
-            flash("Passwords do not match", "error")
-            return render_template("register_single.html", form=form, **_context())
-
-        user = User.query.filter_by(username=username).first()
-
-        if user:
-            flash("Username is taken", "error")
-            return render_template("register_single.html", form=form, **_context())
-
-        class_ = Class.query.filter_by(class_code=class_code).first()
-
-        if not class_:
-            flash("Invalid class code", "error")
-            return render_template("register_single.html", form=form, **_context())
-
-        if user is None:
-            user = User(
-                user_id=str(uuid.uuid4()),
-                username=username,
-                email=None,
-                oauth_provider=None,
-                oauth_id=None,
-                avatar_url=None,
-                is_student=True,
-                password=password,
-            )
-
-            user.classes_taking.append(class_)
-
-            db.session.add(user)
-            db.session.commit()
-
-        flash("User created. You can login", "success")
-        login_user(user)
-        return redirect(url_for("main.index"))
-    else:
-        form = {}
-
-    return render_template("register_single.html", form=form, **_context())
-
-
-@auth_bp.route("/admin/users")
-@login_required
-def admin_users():
-    """Render the admin users page."""
-    users = User.query.all()
-    return render_template("admin_users.html", users=users, **_context())
-
-
-@auth_bp.route("/admin/user/<int:userid>", methods=["GET", "POST"])
-@login_required
-def admin_user(userid):
-    """Handle user management for a specific user."""
-    user = User.query.get_or_404(userid)
-
-    if request.method == "POST":
-        if "delete" in request.form:
-            db.session.delete(user)
-            db.session.commit()
-            flash("User deleted", "success")
-            return redirect(url_for("auth.admin_users"))
-
-        user.username = request.form.get("username")
-        user.email = request.form.get("email")
-        user.oauth_provider = request.form.get("oauth_provider")
-        user.oauth_id = request.form.get("oauth_id")
-        user.avatar_url = request.form.get("avatar_url")
-
-        db.session.commit()
-        flash("User updated", "success")
-        return redirect(url_for("auth.admin_user", userid=userid))
-
-    return render_template("admin_user.html", user=user)
