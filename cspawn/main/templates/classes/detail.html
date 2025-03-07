@@ -3,6 +3,83 @@
 
 {% block styles %}
 {% include "elements/spinner_styles.html" %}
+<style>
+    /* Modal styles */
+    .code-modal {
+        display: none;
+        position: fixed;
+        z-index: 1050;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0, 0, 0, 0.6);
+    }
+
+    .code-modal-content {
+        position: relative;
+        background-color: #fefefe;
+        margin: 10% auto;
+        padding: 40px 20px;
+        border-radius: 5px;
+        width: 80%;
+        text-align: center;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    }
+
+    .code-modal-close {
+        position: absolute;
+        right: 15px;
+        top: 10px;
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    .large-class-code {
+        font-size: 108px;
+        /* Increased from 72px to 108px (50% larger) */
+        font-weight: bold;
+        margin: 30px 0;
+        letter-spacing: 2px;
+        word-break: break-all;
+    }
+</style>
+{% endblock %}
+
+{% block subnavbar %}
+
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <div class="container-fluid">
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav">
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('admin.index') }}">Admin Home</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('admin.list_users') }}">Users</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#">Instructors</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#">Students</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('admin.classes') }}">Classes</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('admin.list_images') }}">Images</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('admin.list_code_hosts') }}">Code Hosts</a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
 {% endblock %}
 
 {% block content %}
@@ -12,13 +89,14 @@
         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
             <h4>{{ class_.name }}</h4>
             <div>
-                <a href="#" class="btn btn-light btn-sm" id="editClassBtn">Edit Class</a>
+                <a href="{{ url_for('main.edit_class', class_id=class_.id) }}" class="btn btn-light btn-sm">Edit</a>
             </div>
         </div>
         <div class="card-body">
             <div class="row">
                 <div class="col-md-4">
-                    <p><strong>Code:</strong> {{ class_.class_code }}</p>
+                    <p><strong>Code:</strong> <a href="#" id="class-code-link" class="text-primary">{{ class_.class_code
+                            }}</a></p>
                     <p><strong>Created:</strong> {{ class_.start_date.strftime('%Y-%m-%d') }}</p>
                 </div>
                 <div class="col-md-4">
@@ -47,22 +125,10 @@
         </div>
     </div>
 
-    <td>
-        <a href="{{ url_for('main.edit_class', class_id=class_.id) }}" class="btn btn-primary btn-sm">Edit</a>
-
-        {% if class_.students | length == 0 %}
-
-        {% endif %}
-    </td>
-
     <!-- Student Management Section -->
     <div class="card">
         <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
             <h4>Students</h4>
-            <div>
-                <a href="#" class="btn btn-success btn-sm me-2">New Student</a>
-                <a href="#" class="btn btn-primary btn-sm">Enroll Student</a>
-            </div>
         </div>
         <div class="card-body">
             <!-- Student Action Toolbar -->
@@ -109,7 +175,7 @@
                                 {% endif %}
                                 {% endfor %}
                                 {% else %}
-                                <span class="text-muted">No server</span>
+                                <span class="text-muted"></span>
                                 {% endif %}
                             </td>
                         </tr>
@@ -126,8 +192,37 @@
     </div>
 </div>
 
+<!-- Class Code Modal -->
+<div id="codeModal" class="code-modal">
+    <div class="code-modal-content">
+        <span class="code-modal-close">&times;</span>
+        <h3>Class Code</h3>
+        <div class="large-class-code">{{ class_.class_code }}</div>
+    </div>
+</div>
+
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        // Modal functionality
+        const modal = document.getElementById('codeModal');
+        const codeLink = document.getElementById('class-code-link');
+        const closeBtn = document.querySelector('.code-modal-close');
+
+        codeLink.addEventListener('click', function (e) {
+            e.preventDefault();
+            modal.style.display = 'block';
+        });
+
+        closeBtn.addEventListener('click', function () {
+            modal.style.display = 'none';
+        });
+
+        window.addEventListener('click', function (e) {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+
         // Handle student selection
         const studentRadios = document.querySelectorAll('.student-select');
         const actionButtons = document.querySelectorAll('.student-action');
@@ -141,10 +236,6 @@
             });
         });
 
-        // Edit class button
-        document.getElementById('editClassBtn').addEventListener('click', function () {
-            window.location.href = "{{ url_for('main.edit_class', class_id=class_.id) }}";
-        });
 
         // For now, all action buttons will just alert when clicked
         actionButtons.forEach(button => {

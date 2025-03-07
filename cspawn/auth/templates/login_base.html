@@ -1,0 +1,47 @@
+{% extends "base/page.html" %}
+
+{% block title %}{% block form_title %}Login{% endblock %} - League Code Server{% endblock %}
+
+{% block header %}
+<div class="text-center">
+    <h1 class="mb-4">Code Server</h1>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Main Form Container -->
+    <div class="row justify-content-center">
+        <div class="col-md-8" style="max-width: 650px;">
+            <div class="card mb-4">
+                <div class="card-body">
+                    <!-- Form Selector Buttons -->
+                    <div class="btn-group w-100 mb-4" role="group" aria-label="Form selection">
+                        <a href="{{ url_for('auth.login') }}"
+                            class="btn {% block login_active %}btn-outline-primary{% endblock %}">Login</a>
+                        <a href="{{ url_for('auth.register') }}"
+                            class="btn {% block register_active %}btn-outline-primary{% endblock %}">Register</a>
+                    </div>
+
+                    <h2 class="card-title mb-4 text-center">{% block form_heading %}Sign In{% endblock %}</h2>
+
+                    <!-- Form Content Block -->
+                    {% block form_content %}{% endblock %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block footer %}
+<div class="row mt-4">
+    <div class="col">
+        <span class="text-muted">code-server-spawner {{version}}</span>
+    </div>
+    <div class="col text-end">
+        <img class="inline me-2" src="{{ url_for('static', filename='flag.png') }}" alt="Flag">
+        <a href="https://www.jointheleague.org">Join the League</a>
+    </div>
+</div>
+{% endblock %}

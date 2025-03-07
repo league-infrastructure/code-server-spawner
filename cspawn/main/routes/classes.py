@@ -145,6 +145,8 @@ def edit_class(class_id):
 
     if action == 'delete':
         return delete_class(class_id)
+    elif action == 'cancel':
+        return redirect(url_for('main.detail_class', class_id=class_id))
 
     all_images = HostImage.query.filter(
         (HostImage.is_public == True) | (HostImage.creator_id == current_user.id)
