@@ -3,24 +3,23 @@ import random
 
 scientists = [
     "Adleman", "Babbage", "Backus", "Berners-Lee", "Boole", "Brin", "Brooks", "Cerf", "Conway", "Dahl",
-    "Diffie", "Dijkstra", "Engelbart", "Erdős", "Fredkin", "Goslin", "Gray", "Hamming", "Hellman", "Hoare",
+    "Diffie", "Dijkstra", "Engelbart", "Erdos", "Fredkin", "Goslin", "Gray", "Hamming", "Hellman", "Hoare",
     "Iverson", "Kahn", "Karp", "Kay", "Knuth", "Lamport", "Liskov", "McCarthy", "Minsky", "Newell",
     "Nygaard", "Page", "Perlis", "Rabin", "Ritchie", "Rivest", "Rossum", "Shamir", "Shannon", "Simon",
     "Stallman", "Stroustrup", "Sutherland", "Swartz", "Tarjan", "Thompson", "Torvalds", "Turing",
     "vonNeumann", "Wilkes", "Wirth", "Zuse"]
 
-cs_adj = [
-    "imperative", "declarative", "refactored", "sorted", "monotonic",
-    "functional", "recursive", "iterative", "parallel", "asynchronous",
-    "synchronous", "compiled", "interpreted", "typed", "dynamic",
-    "static", "polymorphic", "modular", "scalable", "optimized",
-    "encrypted", "hashed", "compressed", "serialized", "deserialized",
-    "concurrent", "distributed", "efficient", "deterministic", "nondeterministic",
-    "lazy", "eager", "mutable", "immutable", "thread-safe", "event-driven",
-    "fault-tolerant", "robust", "lightweight", "heavyweight", "responsive",
-    "assembled", "machine-readable", "human-readable", "lexical",
-    "syntactic", "semantic", "contextual", "normalized", "indexed",
-    "cacheable", "buffered", "streamed", "tokenized", "composable"]
+cs_adj = ['lazy', 'typed', 'eager', 'lossy', 'modal', 'dense', 'paged', 'sorted', 'hashed', 'cached', 'static',
+          'robust', 'atomic', 'binary', 'nested', 'linked', 'linear', 'cyclic', 'greedy', 'hybrid', 'finite',
+          'native', 'latent', 'sparse', 'opaque', 'signed', 'public', 'secure', 'faulty', 'masked', 'indexed',
+          'mutable', 'lexical', 'dynamic', 'modular', 'virtual', 'bounded', 'generic', 'logical', 'visible',
+          'literal', 'private', 'blocked', 'aligned', 'patched', 'buffered', 'streamed', 'compiled', 'parallel',
+          'scalable', 'semantic', 'volatile', 'lossless', 'directed', 'weighted', 'abstract', 'portable',
+          'unsigned', 'implicit', 'explicit', 'balanced', 'tokenized', 'optimized', 'encrypted', 'efficient',
+          'immutable', 'assembled', 'syntactic', 'recursive', 'iterative', 'heuristic', 'protected',
+          'ephemeral', 'redundant', 'sandboxed', 'quantized', 'refactored', 'compressed', 'serialized',
+          'concurrent', 'responsive', 'contextual', 'normalized', 'composable', 'imperative', 'functional',
+          'linearized', 'persistent', 'serialized', 'vectorized', 'distributed', 'thread-safe']
 
 short_adjectives = [
     "big", "small", "fast", "slow", "happy", "sad", "funny", "serious", "loud", "quiet",
@@ -44,7 +43,7 @@ colors = [
 foods = [
     "apples", "bananas", "carrots", "bread", "cheese", "chicken", "pizza", "pasta",
     "rice", "beans", "tomatoes", "onions", "potatoes", "lettuce", "grapes", "peaches",
-    "pears", "oranges", "watermelon", "strawberries", "blueberries", "eggs", "milk",
+    "pears", "oranges", "melon", "berries", "eggs", "milk",
     "yogurt", "butter"
 ]
 
@@ -61,7 +60,7 @@ singular_verbs = [
 ]
 
 
-def class_code():
+def _class_code():
     """Generate a random class code. 
 
     There are only about 1M codes, so there isn't a lot of entropy here. """
@@ -99,6 +98,15 @@ def class_code():
             code = f"{num} {adj} {animal}"
 
     return code
+
+
+def class_code():
+    """ Generata a class code, but try to find a short one. """
+
+    while (cc := _class_code()) and len(cc) > 25:
+        pass
+
+    return cc
 
 
 if __name__ == "__main__":

@@ -41,7 +41,7 @@ def profile():
 @auth_bp.route("/login")
 def login():
     """Render the login page."""
-    return render_template("login.html", **_context())
+    return render_template("login_single.html", **_context())
 
 
 @auth_bp.route("/login/google")
@@ -151,26 +151,27 @@ def register():
 
         class_reg = bool(form.get("classreg"))
 
-        if class_reg:
-            # Just want to get the class code into the form
-
-            return render_template("register.html", form=form, **_context())
-
         username = form.get("username")
         password = form.get("password")
-        class_code = form.get("class_code").strip()
+        confirm_password = form.get("confirm_password")
+        class_code = form.get("class_code", "").strip()
+
+        # Validate passwords match
+        if password != confirm_password:
+            flash("Passwords do not match", "error")
+            return render_template("register_single.html", form=form, **_context())
 
         user = User.query.filter_by(username=username).first()
 
         if user:
             flash("Username is taken", "error")
-            return render_template("register.html", form=form, **_context())
+            return render_template("register_single.html", form=form, **_context())
 
         class_ = Class.query.filter_by(class_code=class_code).first()
 
         if not class_:
             flash("Invalid class code", "error")
-            return render_template("register.html", form=form, **_context())
+            return render_template("register_single.html", form=form, **_context())
 
         if user is None:
             user = User(
@@ -195,7 +196,7 @@ def register():
     else:
         form = {}
 
-    return render_template("register.html", form=form, **_context())
+    return render_template("register_single.html", form=form, **_context())
 
 
 @auth_bp.route("/admin/users")
