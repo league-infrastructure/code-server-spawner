@@ -1,0 +1,19 @@
+<style>
+    .spinner {
+        width: 40px;
+        height: 40px;
+        background: url('{{ url_for("main.static", filename="bolt.png") }}') no-repeat center center;
+        background-size: contain;
+        animation: spin 2s linear infinite;
+    }
+
+    @keyframes spin {
+        0% {
+            transform: rotate(0deg);
+        }
+
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+</style>

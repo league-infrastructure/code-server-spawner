@@ -1,0 +1,167 @@
+{% extends "base/page.html" %}
+{% block title %}Class Details{% endblock %}
+
+{% block styles %}
+{% include "elements/spinner_styles.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Class Details Block -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h4>{{ class_.name }}</h4>
+            <div>
+                <a href="#" class="btn btn-light btn-sm" id="editClassBtn">Edit Class</a>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <p><strong>Code:</strong> {{ class_.class_code }}</p>
+                    <p><strong>Created:</strong> {{ class_.start_date.strftime('%Y-%m-%d') }}</p>
+                </div>
+                <div class="col-md-4">
+                    <p><strong>Start Date:</strong> {{ class_.start_date.strftime('%Y-%m-%d') if class_.start_date else
+                        'Not set' }}</p>
+                    <p><strong>End Date:</strong> {{ class_.end_date.strftime('%Y-%m-%d') if class_.end_date else 'Not
+                        set' }}</p>
+                </div>
+                <div class="col-md-4">
+                    <p><strong>Image:</strong> {{ class_.image.name if class_.image else 'No image selected' }}</p>
+                    <p><strong>Timezone:</strong> {{ class_.timezone }}</p>
+                </div>
+            </div>
+            {% if class_.description %}
+            <hr>
+            <div class="row">
+                <div class="col-8">
+                    <h5>Description</h5>
+                    <p>{{ class_.description }}</p>
+                </div>
+                <div class="col-4">
+                    {% include "elements/host_controls.html" %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <td>
+        <a href="{{ url_for('main.edit_class', class_id=class_.id) }}" class="btn btn-primary btn-sm">Edit</a>
+
+        {% if class_.students | length == 0 %}
+
+        {% endif %}
+    </td>
+
+    <!-- Student Management Section -->
+    <div class="card">
+        <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+            <h4>Students</h4>
+            <div>
+                <a href="#" class="btn btn-success btn-sm me-2">New Student</a>
+                <a href="#" class="btn btn-primary btn-sm">Enroll Student</a>
+            </div>
+        </div>
+        <div class="card-body">
+            <!-- Student Action Toolbar -->
+            <div class="btn-toolbar mb-3" role="toolbar" aria-label="Student actions toolbar">
+                <div class="btn-group me-2" role="group" aria-label="Student actions">
+                    <button type="button" class="btn btn-outline-secondary student-action" disabled
+                        data-action="edit">Edit</button>
+                    <button type="button" class="btn btn-outline-warning student-action" disabled
+                        data-action="remove">Remove</button>
+                </div>
+
+            </div>
+
+            <!-- Student List -->
+            <div class="table-responsive">
+                <table class="table table-striped table-hover">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px"></th>
+                            <th>Username</th>
+                            <th>Display Name</th>
+                            <th>Created</th>
+                            <th>Code Server Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if class_.students %}
+                        {% for student in class_.students %}
+                        <tr>
+                            <td>
+                                <div class="form-check">
+                                    <input class="form-check-input student-select" type="radio" name="studentSelect"
+                                        id="student{{ student.id }}" value="{{ student.id }}">
+                                </div>
+                            </td>
+                            <td>{{ student.username }}</td>
+                            <td>{{ student.display_name }}</td>
+                            <td>{{ student.created_at.strftime('%Y-%m-%d') }}</td>
+                            <td>
+                                {% if student.code_hosts %}
+                                {% for host in student.code_hosts %}
+                                {% if host.state %}
+                                {{ host.state }}
+                                {% endif %}
+                                {% endfor %}
+                                {% else %}
+                                <span class="text-muted">No server</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center">No students enrolled in this class</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Handle student selection
+        const studentRadios = document.querySelectorAll('.student-select');
+        const actionButtons = document.querySelectorAll('.student-action');
+
+        studentRadios.forEach(radio => {
+            radio.addEventListener('change', function () {
+                // Enable action buttons when a student is selected
+                actionButtons.forEach(button => {
+                    button.disabled = false;
+                });
+            });
+        });
+
+        // Edit class button
+        document.getElementById('editClassBtn').addEventListener('click', function () {
+            window.location.href = "{{ url_for('main.edit_class', class_id=class_.id) }}";
+        });
+
+        // For now, all action buttons will just alert when clicked
+        actionButtons.forEach(button => {
+            button.addEventListener('click', function () {
+                const action = this.getAttribute('data-action');
+                const selectedStudent = document.querySelector('.student-select:checked');
+
+                if (selectedStudent) {
+                    const studentId = selectedStudent.value;
+                    alert(`${action} action for student ID: ${studentId} - Implementation pending`);
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}
+
+{% block scripts %}
+{% include "elements/polling_script.html" %}
+{% endblock %}

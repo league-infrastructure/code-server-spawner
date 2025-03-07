@@ -132,3 +132,16 @@ def import_(ctx, file):
             data = json.load(f)
             import_dict(data)
             print("Data imported successfully.")
+
+        # Update sequence IDs to the max of the id field in each table
+        for table in app.db.metadata.tables.values():
+            if 'id' in table.columns:
+                max_id = app.db.session.query(app.db.func.max(table.c.id)).scalar()
+                if max_id is not None:
+                    sequence_name = f"{table.name}_id_seq"
+                    with app.db.engine.connect() as connection:
+                        connection.execute(
+                            app.db.text(f"SELECT setval(:sequence_name, :max_id)"),
+                            {"sequence_name": sequence_name, "max_id": max_id}
+                        )
+        print("Sequence IDs updated successfully.")

@@ -1,5 +1,5 @@
 
-from .init import init_app
+from cspawn.init import init_app
 
 app = init_app()
 

@@ -115,7 +115,7 @@
             "name": "Python Apprentice",
             "desc": "An introduction to Python programming, aligned with the PCEP Python Exam.",
             "hash": "e3e9db6e1faaf7176dd4d8fcb2703f79",
-            "image_uri": "ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:v0.5.9",
+            "image_uri": "ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:v0.5.12.1",
             "repo_uri": "https://github.com/league-curriculum/Python-Apprentice",
             "repo_branch": null,
             "repo_dir": null,

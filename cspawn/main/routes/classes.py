@@ -10,7 +10,9 @@ from cspawn.main.routes.main import context
 from cspawn.util.names import class_code
 
 from sqlalchemy.orm import joinedload
-from cspawn.init import App
+from cspawn.init import cast_app
+
+current_app = cast_app(current_app)
 
 
 @main_bp.route("/classes")
@@ -52,11 +54,13 @@ def add_class():
 def start_class(class_id) -> str:
     from cspawn.models import HostImage
 
+    return_url = request.args.get('return_url', url_for("main.index"))
+
     class_ = Class.query.get(class_id)
 
     if not class_:
         flash("Class not found", "error")
-        return redirect(url_for("main.index"))
+        return redirect(return_url)
 
     image = class_.image
 
@@ -77,13 +81,15 @@ def start_class(class_id) -> str:
             repo=image.repo_uri,
             syllabus=image.syllabus_path,
         )
-
-        flash(f"Host {s.name} started successfully", "success")
+        if s:
+            flash(f"Host {s.name} started successfully", "success")
+        else:
+            flash("Failed to start host", "error")
     else:
-        s.sync_to_db()
+        s.sync_to_db(check_ready=True)
         flash("Host already running", "info")
 
-    return redirect(url_for("main.index"))
+    return redirect(return_url)
 
 
 @main_bp.route('/class/<int:class_id>/show')
@@ -91,6 +97,15 @@ def start_class(class_id) -> str:
 def show_class(class_id):
     class_ = Class.query.get_or_404(class_id)
     return render_template('classes/show.html', class_=class_, **context)
+
+
+@main_bp.route('/class/<int:class_id>/details')
+@login_required
+def detail_class(class_id):
+    class_ = Class.query.get_or_404(class_id)
+    host = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
+
+    return render_template('classes/detail.html', class_=class_, host=host, return_url=url_for("main.detail_class", class_id=class_id), ** context)
 
 
 @main_bp.route('/classes/<int:class_id>/delete')
@@ -103,7 +118,7 @@ def delete_class(class_id):
 
     if class_.students:
         flash('Cannot delete a class with enrolled students.', 'error')
-        return redirect(url_for('main.classes'))
+        return redirect(url_for('main.index'))
 
     if class_:
         # Remove all students and instructors from the class
@@ -115,7 +130,7 @@ def delete_class(class_id):
         db.session.commit()
         flash('Class deleted.')
 
-    return redirect(url_for('main.classes'))
+    return redirect(url_for('main.index'))
 
 
 @main_bp.route('/classes/<class_id>/edit', methods=['GET', 'POST'])
@@ -124,7 +139,12 @@ def edit_class(class_id):
     from cspawn.models import HostImage
 
     if not current_user.is_instructor:
-        return redirect(url_for('main.classes'))
+        return redirect(url_for('main.detail_class'))
+
+    action = request.form.get('action', None)
+
+    if action == 'delete':
+        return delete_class(class_id)
 
     all_images = HostImage.query.filter(
         (HostImage.is_public == True) | (HostImage.creator_id == current_user.id)
@@ -164,7 +184,7 @@ def edit_class(class_id):
         if form.validate():
             db.session.add(class_)
             db.session.commit()
-            return redirect(url_for('main.classes'))
+            return redirect(url_for('main.detail_class', class_id=class_.id))
         else:
             current_app.logger.info('Form did not validate: %s', form.errors)
             flash('Form did not validate', 'error')

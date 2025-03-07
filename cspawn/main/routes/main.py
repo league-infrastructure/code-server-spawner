@@ -39,10 +39,10 @@ def before_request():
     # app.load_user(current_app)
 
 
-def staff_required(f):
+def instructor_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated or not getattr(current_user, "is_staff", False):
+        if not current_user.is_authenticated or not current_user.is_instructor:
             current_app.logger.warning(
                 f"Unauthorized access attempt by user {current_user.id if current_user.is_authenticated else 'Anonymous'}"
             )
@@ -91,15 +91,17 @@ def index():
 
         elif current_user.is_instructor:
 
-            classes = current_user.classes_instructing
+            host = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
 
-            return render_template("index/instructor.html", classes=classes, **context)
+            if host and host.app_state != 'running':
+                pass
+
+            return render_template("index/instructor.html", host=host, return_url=url_for("main.index"),  **context)
 
         elif current_user.is_student:
 
             host = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
-
-            return render_template("index/student.html", host=host,  image=None, **context)
+            return render_template("index/student.html", host=host, return_url=url_for("main.index"), **context)
 
         else:
 

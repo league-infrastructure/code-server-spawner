@@ -8,46 +8,83 @@
 </div>
 {% endblock %}
 
-{% block content %}
-<div class="container">
-    <div class="accordion" id="classesAccordion">
-        {% for class in classes %}
-        <div class="card">
-            <div class="card-header" id="heading{{ class.id }}">
-                <h2 class="mb-0">
-                    <button class="btn btn-link" type="button" data-toggle="collapse"
-                        data-target="#collapse{{ class.id }}" aria-expanded="true"
-                        aria-controls="collapse{{ class.id }}">
-                        {{ class.name }} {{class.term}} ({{ class.students | length }} students)
-                    </button>
-                </h2>
-            </div>
+{% block styles %}
+{% include "elements/spinner_styles.html" %}
+<style>
+    .btn.btn-table {
+        transform: scale(0.7);
+        /* Reduce size by 30% */
+        font-size: smaller;
+        margin: 3px;
+        padding: 4px;
+        display: inline;
+        /* Add a small margin for spacing */
+    }
 
-            <div id="collapse{{ class.id }}" class="collapse" aria-labelledby="heading{{ class.id }}"
-                data-parent="#classesAccordion">
-                <div class="card-body">
-                    <ul class="list-group">
-                        {% for student in class.students %}
-                        <li class="list-group-item">
-                            {{ student.username }} - {{ student.display_name }}
-                            {% if student.code_host %}
-                            <a href="{{ url_for('hosts.index', host_id=student.code_host.id) }}">View Code Host</a>
-                            {% endif %}
-                        </li>
-                        {% endfor %}
-                    </ul>
-                </div>
-            </div>
-        </div>
-        {% endfor %}
-    </div>
-</div>
+    .actions-column {
+        min-width: 200px;
+        /* Reserve space for about three buttons */
+    }
+</style>
 {% endblock %}
 
+{% block content %}
+
+<div class="container mt-4 mb-4">
+    <h2>Classes</h2>
+
+    {% if current_user.is_instructor %}
+    <div class="mb-3">
+        <a href="{{ url_for('main.edit_class', class_id = 'new') }}" class="btn btn-success btn-smaller">New Class</a>
+    </div>
+    {% if current_user.classes_instructing %}
+    <table class="table table-striped">
+        <thead class="thead-dark">
+            <tr>
+                <th>Name</th>
+                <th>Class Code</th>
+                <th>Image</th>
+                <th>Location</th>
+                <th>Term</th>
+                <th>Start Date</th>
+                <th>End Date</th>
+                <th>Instructors</th>
+                <th>Student Count</th>
+
+            </tr>
+        </thead>
+        <tbody>
+            {% for class_ in current_user.classes_instructing %}
+            <tr>
+                <td><a href="{{ url_for('main.detail_class', class_id=class_.id) }}">{{ class_.name }}</a></td>
+                <td><a href="{{ url_for('main.show_class', class_id=class_.id) }}">{{ class_.class_code }}</a></td>
+
+                <td>{% if class_.image %}{{ class_.image.name }}{% else %}No Image{% endif %}</td>
+                <td>{{ class_.location }}</td>
+                <td>{{ class_.term }}</td>
+                <td>{{ class_.start_date.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ class_.end_date.strftime('%Y-%m-%d %H:%M') if class_.end_date else '' }}</td>
+                <td>
+                    {% for instructor in class_.instructors %}
+                    {{ instructor.username }}<br>
+                    {% endfor %}
+                </td>
+                <td>{{ class_.students | length }}</td>
+
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No classes found.</p>
+    {% endif %}
+    {% endif %}
+</div>
+
+
+{% endblock %}
+
+
 {% block scripts %}
-<script>
-    $(document).ready(function () {
-        $('.collapse').collapse('hide');
-    });
-</script>
+{% include "elements/polling_script.html" %}
 {% endblock %}

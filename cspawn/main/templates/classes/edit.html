@@ -1,8 +1,8 @@
 {% extends "base/page.html" %}
 
 {% block content %}
-<div class="container mt-4" style="max-width: 750px; margin: auto;">
-    <h1>{{ 'Edit Class' if clazz else 'New Class' }}</h1>
+<div class="container mt-4" style="max-width: 900px; margin: auto;">
+    <h1>{{ 'Edit Class' if clazz.id else 'New Class' }}</h1>
     <form method="post" action="{{ url_for('main.edit_class', class_id = ( clazz.id if clazz.id else 'new')) }}">
         {{ form.hidden_tag() }}
         <div class="form-group">
@@ -14,28 +14,49 @@
             {{ form.description(class="form-control") }}
         </div>
         <div class="form-group">
-            {{ form.location.label(class="form-label") }}
-            {{ form.location(class="form-control") }}
+            {{ form.class_code.label(class="form-label") }}
+            {{ form.class_code(class="form-control") }}
         </div>
-        <div class="form-group">
-            {{ form.term.label(class="form-label") }}
-            {{ form.term(class="form-control") }}
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-group">
+                    {{ form.location.label(class="form-label") }}
+                    {{ form.location(class="form-control") }}
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="form-group">
+                    {{ form.term.label(class="form-label") }}
+                    {{ form.term(class="form-control") }}
+                </div>
+            </div>
         </div>
         <div class="form-group">
             {{ form.image_id.label(class="form-label") }}
             {{ form.image_id(class="form-control") }}
         </div>
-        <div class="form-group">
-            {{ form.start_date.label(class="form-label") }}
-            {{ form.start_date(class="form-control", type="datetime-local") }}
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-group">
+                    {{ form.start_date.label(class="form-label") }}
+                    {{ form.start_date(class="form-control", type="datetime-local") }}
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="form-group">
+                    {{ form.end_date.label(class="form-label") }}
+                    {{ form.end_date(class="form-control", type="datetime-local") }}
+                </div>
+            </div>
         </div>
-        <div class="form-group">
-            {{ form.end_date.label(class="form-label") }}
-            {{ form.end_date(class="form-control", type="datetime-local") }}
-        </div>
-        <div class="form-group">
-            <button type="submit" class="btn btn-success">Save</button>
-        </div>
+        <div class="form-group mt-4"></div>
+        <button type="submit" name="action" value="save" class="btn btn-success">Save</button>
+
+        {% if (clazz and clazz.id) and clazz.id != 'new' %}
+        <button type="submit" name="action" value="delete" class="btn btn-danger float-right"
+            onclick="return confirm('Are you sure you want to delete this class?');" style="float: right;" {% if
+            clazz.students|length %}disabled {% endif %}>Delete</button>
+        {% endif %}
     </form>
 </div>
 {% endblock %}

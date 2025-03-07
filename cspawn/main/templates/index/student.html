@@ -8,25 +8,8 @@
 </div>
 {% endblock %}
 {% block styles %}
+{% include "elements/spinner_styles.html" %}
 <style>
-    .spinner {
-        width: 40px;
-        height: 40px;
-        background: url('{{ url_for("main.static", filename="bolt.png") }}') no-repeat center center;
-        background-size: contain;
-        animation: spin 2s linear infinite;
-    }
-
-    @keyframes spin {
-        0% {
-            transform: rotate(0deg);
-        }
-
-        100% {
-            transform: rotate(360deg);
-        }
-    }
-
     .card {
         height: 180px;
         display: flex;
@@ -59,38 +42,8 @@
 {% block content %}
 <div class="container">
     <div class="row">
-        {% for class in current_user.classes_taking %}
-        <div class="col-md-4 mb-4">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">{{ class.name }}</h5>
-                    <p class="card-text">{{ class.description }}</p>
-
-
-                    {% if host %}
-
-                    {% if host.host_image_id == class.image_id %} {# If this is the host for this class. #}
-
-                    {% if host.app_state == 'ready' %}
-
-                    <a href="{{ host.public_url }}" target="code_host" class="btn btn-primary"> Open</a>
-                    <a href="{{ url_for('main.stop_host', host_id=host.id) }}" class="btn btn-warning">Stop</a>
-
-                    {% else %} {# if host.app_state == 'ready' #}
-                    <div id="host_view" class="w-100 p-0">
-                        <div class="spinner"></div>
-                    </div>
-                    {% endif %} {# if host.app_state == 'ready' #}
-
-                    {% endif %} {# if host.host_image_id == class.image_id #}
-
-                    {% else %} {# not if host #}
-                    <a href="{{ url_for('main.start_class', class_id=class.id) }}" class="btn btn-success">Start</a>
-                    {% endif %} {# if host #}
-
-                </div>
-            </div>
-        </div>
+        {% for class_ in current_user.classes_taking %}
+        {% include "elements/class_card.html" %}
         {% endfor %}
     </div>
     <hr>
@@ -98,7 +51,7 @@
         <div class="col-md-4">
             <form method="POST" action="{{ url_for('main.add_class') }}">
                 <div class="form-group">
-                    <label for="class_code">Enter Class Code:</label>
+                    <label for="class_code">Enter a class code to enroll in a class:</label>
                     <input type="text" class="form-control" id="class_code" name="class_code" required>
                 </div>
                 <button type="submit" class="btn btn-primary" style="margin-top: 10px;">Add Class</button>
@@ -111,34 +64,5 @@
 
 
 {% block scripts %}
-<script>
-    <!-- Polling script to check if the server is ready -->
-    (function poll() {
-        const url = `{{ url_for('main.is_ready') }}`;
-
-        function pollServer() {
-            fetch(url)
-                .then(response => response.json())
-                .then(data => {
-                    console.log(" Code host status " + data.status);
-                    if (data.status === 'ready') {
-                        window.location.href = `{{url_for('main.index')}}`;
-                    } else {
-                        setTimeout(pollServer, 2000);
-                    }
-                })
-                .catch(error => {
-                    console.log(" Polling Error: " + error);
-                    setTimeout(pollServer, 2000);
-                });
-        }
-
-        if (`{{host.app_state}}` && `{{host.app_state}}` != 'ready') {
-            pollServer();
-        }
-
-
-
-    })();
-</script>
+{% include "elements/polling_script.html" %}
 {% endblock %}
