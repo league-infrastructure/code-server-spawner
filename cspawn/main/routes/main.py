@@ -107,7 +107,7 @@ def index():
 
             return render_template("index/public.html", **context)
 
-    return render_template("index/unauth.html", **context)
+    return redirect(url_for("auth.login"))
 
 
 @main_bp.route("/telem", methods=["GET", "POST"])

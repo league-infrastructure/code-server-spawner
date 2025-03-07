@@ -1,0 +1,91 @@
+{% extends "base/page.html" %}
+
+{% block title %}Register - League Code Server{% endblock %}
+
+{% block header %}
+<div class="text-center">
+    <h1 class="mb-4">Create a New Account</h1>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Registration Form -->
+    <div class="row justify-content-center">
+        <div class="col-md-8" style="max-width: 650px;">
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h2 class="card-title mb-4 text-center">Register</h2>
+
+                    <!-- Tabs -->
+                    <div class="tabs">
+                        <a href="{{ url_for('auth.register_up') }}" class="tab-btn active">Username & Password</a>
+                        <a href="{{ url_for('auth.register_google') }}" class="tab-btn">{% include
+                            'elements/google_logo.html' %} Google</a>
+                    </div>
+
+                    <!-- Username & Password Form -->
+                    <form action="{{ url_for('auth.register_up') }}" method="POST">
+                        {{ form.hidden_tag() }}
+                        <div class="mb-3">
+                            <label for="class_code" class="form-label">Class Code:</label>
+                            {{ form.class_code(class="form-control" + (" is-invalid" if form.class_code.errors else ""))
+                            }}
+                            {% for error in form.class_code.errors %}
+                            <div class="invalid-feedback">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username:</label>
+                            {{ form.username(class="form-control" + (" is-invalid" if form.username.errors else "")) }}
+                            {% for error in form.username.errors %}
+                            <div class="invalid-feedback">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password:</label>
+                            {{ form.password(class="form-control" + (" is-invalid" if form.password.errors else "")) }}
+                            {% for error in form.password.errors %}
+                            <div class="invalid-feedback">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="confirm_password" class="form-label">Confirm Password:</label>
+                            {{ form.confirm_password(class="form-control" + (" is-invalid" if
+                            form.confirm_password.errors else "")) }}
+                            {% for error in form.confirm_password.errors %}
+                            <div class="invalid-feedback">{{ error }}</div>
+                            {% endfor %}
+                        </div>
+
+                        <div class="d-grid mb-4">
+                            <button type="submit" name='regtype' value='userpass'
+                                class="btn btn-success btn-lg">Register</button>
+                        </div>
+                    </form>
+
+                    <!-- Login Link -->
+                    <div class="text-center mt-3">
+                        <p>Already have an account? <a href="{{ url_for('auth.login') }}">Login</a></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block footer %}
+<div class="row mt-4">
+    <div class="col">
+        <span class="text-muted">code-server-spawner {{version}}</span>
+    </div>
+    <div class="col text-end">
+        <img class="inline me-2" src="{{ url_for('static', filename='flag.png') }}" alt="Flag">
+        <a href="https://www.jointheleague.org">Join the League</a>
+    </div>
+</div>
+{% endblock %}
