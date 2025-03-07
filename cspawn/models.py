@@ -2,6 +2,7 @@
 Database Models
 """
 
+from slugify import slugify
 from datetime import datetime, timezone
 from hashlib import md5
 from flask import Flask
@@ -20,7 +21,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import DeclarativeBase, relationship, joinedload
+from sqlalchemy.orm import DeclarativeBase, relationship, joinedload, validates
 from sqlalchemy_utils import PasswordType, database_exists, create_database
 from sqlalchemy import event, create_engine
 from tzlocal import get_localzone_name
@@ -83,6 +84,14 @@ class User(UserMixin, db.Model):
     @hybrid_property
     def code_host(self):
         return self.code_hosts.first()
+
+    @validates("username")
+    def _clean_username(this, key, value):
+        return User.clean_username(value)
+
+    @classmethod
+    def clean_username(cls, username):
+        return slugify(username)
 
     def __repr__(self):
         return (

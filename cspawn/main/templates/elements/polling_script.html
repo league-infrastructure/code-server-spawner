@@ -1,0 +1,27 @@
+<script>
+    <!-- Polling script to check if the server is ready -->
+    (function poll() {
+        const url = `{{ url_for('main.is_ready') }}`;
+
+        function pollServer() {
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    console.log(" Code host status " + data.status);
+                    if (data.status === 'ready') {
+                        window.location.href = `{{url_for('main.index')}}`;
+                    } else {
+                        setTimeout(pollServer, 2000);
+                    }
+                })
+                .catch(error => {
+                    console.log(" Polling Error: " + error);
+                    setTimeout(pollServer, 2000);
+                });
+        }
+
+        if (`{{host.app_state}}` && `{{host.app_state}}` != 'ready') {
+            pollServer();
+        }
+    })();
+</script>

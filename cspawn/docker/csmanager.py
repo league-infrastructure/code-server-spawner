@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, cast
 from urllib.parse import urlparse
 
 import docker
+from docker import DockerClient
 import paramiko
 import pytz
 import requests
@@ -148,6 +149,7 @@ class CSMService(Service):
         user: User = User.query.filter_by(username=username).first()
 
         if not user:
+
             user = User.query.get(0)
 
         image: HostImage = HostImage.query.filter_by(image_uri=self.image).first()
@@ -242,7 +244,7 @@ def define_cs_container(
         "WORKSPACE_FOLDER": workspace_folder,
         "PASSWORD": password,
         "DISPLAY": ":0",
-        "VNC_URL": public_url_no_auth + "vnc/",
+        "VNC_URL": public_url_no_auth + "vnc/?scale=true",
         "PUBLIC_URL": public_url,
         "KST_REPORTING_URL": config.KST_REPORTING_URL,
         "KST_CONTAINER_ID": name,
@@ -335,7 +337,7 @@ class CodeServerManager(ServicesManager):
             return app.app_config["NODE_HOSTNAME_TEMPLATE"].format(nodename=node_name)
 
         super().__init__(
-            docker.DockerClient(base_url=self.config.DOCKER_URI),
+            DockerClient(base_url=self.config.DOCKER_URI),
             env=env,
             network=network,
             labels=labels,
@@ -437,7 +439,11 @@ class CodeServerManager(ServicesManager):
         except docker.errors.APIError as e:
             if e.response.status_code == 409:
                 logger.error("Container for %s already exists: %s", username, e)
-                return self.get_by_username(username)
+                s = self.get_by_username(username)
+                if not s:
+                    logger.error("Error getting existing container for username %s ", username)
+
+                    return None
             else:
                 logger.error("Error creating container: %s", e)
                 return None
@@ -538,7 +544,10 @@ class CodeServerManager(ServicesManager):
             CSMService: Code Server instance.
         """
 
+        username = slugify(username)
+
         for service in self.list():
+
             if service.username == username:
                 return service
         return None

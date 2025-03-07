@@ -76,6 +76,8 @@ def start_host() -> str:
 def stop_host(host_id) -> str:
     from cspawn.models import CodeHost, db
 
+    return_url = request.args.get('return_url', url_for("main.index"))
+
     if host_id == 'mine':
         code_host = CodeHost.query.filter_by(user_id=current_user.id).first()
     else:
@@ -100,7 +102,7 @@ def stop_host(host_id) -> str:
     db.session.delete(code_host)
     db.session.commit()
     flash("Host stopped", "success")
-    return redirect(url_for("main.index"))
+    return redirect(return_url)
 
 
 @main_bp.route("/host/is_ready", methods=["GET"])
