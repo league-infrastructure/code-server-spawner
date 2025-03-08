@@ -31,6 +31,13 @@
           ingress: "true"
       when: ingress | bool
 
+    - name: Set nfs label if nfs is true
+      community.docker.docker_node:
+        hostname: "{{ hostname }}"
+        labels:
+          nfs: "true"
+      when: nfs | bool
+
     - name: Copy private SSH key
       copy:
         src: id_rsa
