@@ -45,40 +45,31 @@
         letter-spacing: 2px;
         word-break: break-all;
     }
+
+    .copy-icon {
+        cursor: pointer;
+        margin-left: 10px;
+        font-size: 18px;
+        color: #007bff;
+    }
+
+    .toast {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        min-width: 200px;
+        background-color: #007bff;
+        color: white;
+        padding: 10px;
+        border-radius: 5px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        display: none;
+        z-index: 1051;
+    }
 </style>
 {% endblock %}
 
 {% block subnavbar %}
-
-<nav class="navbar navbar-expand-lg navbar-light bg-light">
-    <div class="container-fluid">
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav">
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.index') }}">Admin Home</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.list_users') }}">Users</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="#">Instructors</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="#">Students</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.classes') }}">Classes</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.list_images') }}">Images</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.list_code_hosts') }}">Code Hosts</a>
-                </li>
-            </ul>
-        </div>
-    </div>
-</nav>
 
 {% endblock %}
 
@@ -95,8 +86,10 @@
         <div class="card-body">
             <div class="row">
                 <div class="col-md-4">
-                    <p><strong>Code:</strong> <a href="#" id="class-code-link" class="text-primary">{{ class_.class_code
-                            }}</a></p>
+                    <p><strong>Code:</strong>
+                        <a href="#" id="class-code-link" class="text-primary">{{ class_.class_code }}</a>
+                        <i class="fas fa-copy copy-icon" id="copy-class-code" title="Copy to clipboard"></i>
+                    </p>
                     <p><strong>Created:</strong> {{ class_.start_date.strftime('%Y-%m-%d') }}</p>
                 </div>
                 <div class="col-md-4">
@@ -160,7 +153,7 @@
                         <tr>
                             <td>
                                 <div class="form-check">
-                                    <input class="form-check-input student-select" type="radio" name="studentSelect"
+                                    <input class="form-check-input student-select" type="checkbox" name="studentSelect"
                                         id="student{{ student.id }}" value="{{ student.id }}">
                                 </div>
                             </td>
@@ -201,6 +194,11 @@
     </div>
 </div>
 
+<div class="toast" id="copy-toast">Class code copied to clipboard</div>
+
+{% endblock %}
+
+{% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         // Modal functionality
@@ -224,35 +222,82 @@
         });
 
         // Handle student selection
-        const studentRadios = document.querySelectorAll('.student-select');
+        const studentCheckboxes = document.querySelectorAll('.student-select');
         const actionButtons = document.querySelectorAll('.student-action');
 
-        studentRadios.forEach(radio => {
-            radio.addEventListener('change', function () {
-                // Enable action buttons when a student is selected
-                actionButtons.forEach(button => {
-                    button.disabled = false;
-                });
+        function updateActionButtons() {
+            const selectedCheckboxes = document.querySelectorAll('.student-select:checked');
+            const editButton = document.querySelector('[data-action="edit"]');
+            const removeButton = document.querySelector('[data-action="remove"]');
+
+            if (selectedCheckboxes.length === 0) {
+                editButton.disabled = true;
+                removeButton.disabled = true;
+            } else if (selectedCheckboxes.length === 1) {
+                editButton.disabled = false;
+                removeButton.disabled = false;
+            } else {
+                editButton.disabled = true;
+                removeButton.disabled = false;
+            }
+        }
+
+        studentCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', updateActionButtons);
+        });
+
+        // Handle remove action
+        const removeButton = document.querySelector('[data-action="remove"]');
+        removeButton.addEventListener('click', function () {
+            const selectedStudents = document.querySelectorAll('.student-select:checked');
+            const studentIds = Array.from(selectedStudents).map(cb => cb.value);
+
+            if (studentIds.length > 0) {
+                fetch('{{ url_for("main.remove_students") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        student_ids: studentIds,
+                        class_id: '{{ class_.id }}'
+                    }),
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            location.reload();
+                        } else {
+                            alert('Failed to remove students: ' + data.error);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('An error occurred while removing students.');
+                    });
+            }
+        });
+
+        // Handle copy to clipboard
+        const copyIcon = document.getElementById('copy-class-code');
+        const classCodeLink = document.getElementById('class-code-link');
+        const toast = document.getElementById('copy-toast');
+
+        copyIcon.addEventListener('click', function () {
+            const classCode = classCodeLink.textContent;
+            navigator.clipboard.writeText(classCode).then(function () {
+                toast.style.display = 'block';
+                setTimeout(function () {
+                    toast.style.display = 'none';
+                }, 5000);
+            }, function (err) {
+                console.error('Could not copy text: ', err);
             });
         });
 
-
-        // For now, all action buttons will just alert when clicked
-        actionButtons.forEach(button => {
-            button.addEventListener('click', function () {
-                const action = this.getAttribute('data-action');
-                const selectedStudent = document.querySelector('.student-select:checked');
-
-                if (selectedStudent) {
-                    const studentId = selectedStudent.value;
-                    alert(`${action} action for student ID: ${studentId} - Implementation pending`);
-                }
-            });
-        });
+        // Initial button state update
+        updateActionButtons();
     });
 </script>
-{% endblock %}
-
-{% block scripts %}
 {% include "elements/polling_script.html" %}
 {% endblock %}

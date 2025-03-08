@@ -9,7 +9,7 @@
                 .then(data => {
                     console.log(" Code host status " + data.status);
                     if (data.status === 'ready') {
-                        window.location.href = `{{url_for('main.index')}}`;
+                        window.location.href = `{{return_url}}`;
                     } else {
                         setTimeout(pollServer, 2000);
                     }

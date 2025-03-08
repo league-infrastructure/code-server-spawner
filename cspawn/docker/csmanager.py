@@ -456,6 +456,13 @@ class CodeServerManager(ServicesManager):
         logger.info("Created new Code Server instance for %s", username)
         return s
 
+    def stop_cs(self, username):
+        """Stop a Code Server instance by username."""
+
+        s = self.get_by_username(username)
+        if s:
+            s.stop()
+
     def list(
         self, filters: Optional[Dict[str, Any]] = {"label": "jtl.codeserver"}
     ) -> List[CSMService]:

@@ -3,7 +3,7 @@ from cspawn.main import main_bp
 from cspawn.models import Class, CodeHost, User, db
 from cspawn.main.forms import ClassForm
 
-from flask import abort, current_app, flash, redirect, render_template, request, url_for
+from flask import abort, current_app, flash, redirect, render_template, request, url_for, jsonify
 from flask_login import current_user, login_required
 
 from cspawn.main.routes.main import context
@@ -12,18 +12,7 @@ from cspawn.util.names import class_code
 from sqlalchemy.orm import joinedload
 from cspawn.init import cast_app
 
-current_app = cast_app(current_app)
-
-
-@main_bp.route("/classes")
-@login_required
-def classes():
-    if not current_user.is_authenticated:
-        return redirect(url_for('main.index'))
-
-    taking = current_user.classes_taking
-    instructing = current_user.classes_instructing
-    return render_template("classes/list.html", taking=taking, instructing=instructing, **context)
+ca = cast_app(current_app)
 
 
 @main_bp.route('/classes/add', methods=['POST'])
@@ -39,7 +28,7 @@ def add_class():
         current_user.classes_taking.append(class_)
         db.session.commit()
     else:
-        flash('Unknown class code.')
+        flash('Unknown class code.', 'error')
 
     if current_user.is_instructor or current_user.is_admin:
         return redirect(url_for('main.classes'))
@@ -72,10 +61,10 @@ def start_class(class_id) -> str:
         return redirect(url_for("hosts.index"))
 
     # Create a new CodeHost instance
-    s = current_app.csm.get_by_username(current_user.username)
+    s = ca.csm.get_by_username(current_user.username)
 
     if not s:
-        s = current_app.csm.new_cs(
+        s = ca.csm.new_cs(
             user=current_user,
             image=image.image_uri,
             repo=image.repo_uri,
@@ -105,7 +94,8 @@ def detail_class(class_id):
     class_ = Class.query.get_or_404(class_id)
     host = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
 
-    return render_template('classes/detail.html', class_=class_, host=host, return_url=url_for("main.detail_class", class_id=class_id), ** context)
+    return render_template('classes/detail.html', class_=class_, host=host,
+                           return_url=url_for("main.detail_class", class_id=class_id), ** context)
 
 
 @main_bp.route('/classes/<int:class_id>/delete')
@@ -122,6 +112,12 @@ def delete_class(class_id):
 
     if class_:
         # Remove all students and instructors from the class
+        for student in class_.students:
+            host = CodeHost.query.filter_by(user_id=student.id).first()
+            if host:
+                ca.csm.stop_cs(host.name)
+                db.session.delete(host)
+
         class_.students.clear()
         class_.instructors.clear()
         db.session.commit()  # Commit the changes to update the relationships
@@ -188,7 +184,36 @@ def edit_class(class_id):
             db.session.commit()
             return redirect(url_for('main.detail_class', class_id=class_.id))
         else:
-            current_app.logger.info('Form did not validate: %s', form.errors)
+            ca.logger.info('Form did not validate: %s', form.errors)
             flash('Form did not validate', 'error')
 
     return render_template('classes/edit.html', clazz=class_, form=form, **context)
+
+
+@main_bp.route('/classes/students/remove', methods=['POST'])
+@login_required
+def remove_students():
+
+    data = request.get_json()
+    student_ids = data.get('student_ids', [])
+    class_id = data.get('class_id')
+
+    class_ = Class.query.get_or_404(class_id)
+
+    if not current_user.is_instructor or current_user not in class_.instructors:
+        return jsonify({'error': 'Unauthorized access'}), 403
+
+    for student_id in student_ids:
+        student = User.query.get(student_id)
+
+        if student in class_.students:
+
+            host = CodeHost.query.filter_by(service_name=student.username).first()
+            if host:
+                ca.csm.stop_cs(host.service_name)
+                db.session.delete(host)
+
+            class_.students.remove(student)
+
+    db.session.commit()
+    return jsonify({'success': 'Selected students have been removed from the class.'})

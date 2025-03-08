@@ -117,22 +117,3 @@ def telem():
         # current_app.csm.keyrate.add_report(request.get_json())
 
     return jsonify("OK")
-
-
-@main_bp.route("/public/promote", methods=["POST"])
-def promote():
-    """Promote a public user to a student."""
-    class_code = request.form.get("class_code")
-    class_ = Class.query.filter_by(class_code=class_code).first()
-
-    if class_:
-        current_user.is_student = True
-
-        current_user.classes_taking.append(class_)
-
-        db.session.commit()
-        flash("You have been promoted to a student.", "success")
-    else:
-        flash("Invalid class code.", "error")
-
-    return redirect(url_for("main.index"))

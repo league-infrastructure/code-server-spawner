@@ -38,6 +38,7 @@
         <a href="{{ url_for('main.edit_class', class_id = 'new') }}" class="btn btn-success btn-smaller">New Class</a>
     </div>
     {% if current_user.classes_instructing %}
+
     <table class="table table-striped">
         <thead class="thead-dark">
             <tr>
@@ -54,10 +55,10 @@
             </tr>
         </thead>
         <tbody>
-            {% for class_ in current_user.classes_instructing %}
+            {% for class_ in current_user.classes_instructing|sort(attribute='start_date', reverse=True) %}
             <tr>
                 <td><a href="{{ url_for('main.detail_class', class_id=class_.id) }}">{{ class_.name }}</a></td>
-                <td><a href="{{ url_for('main.show_class', class_id=class_.id) }}">{{ class_.class_code }}</a></td>
+                <td>{{ class_.class_code }}</td>
 
                 <td>{% if class_.image %}{{ class_.image.name }}{% else %}No Image{% endif %}</td>
                 <td>{{ class_.location }}</td>
