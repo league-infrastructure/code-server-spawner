@@ -84,7 +84,7 @@ def stop_host(host_id) -> str:
 
         code_host = CodeHost.query.get(host_id)
 
-        if code_host.user_id != current_user.id:
+        if not code_host or code_host.user_id != current_user.id:
             flash("Host not found", "danger")
             return redirect(url_for("main.index"))
 
@@ -93,15 +93,19 @@ def stop_host(host_id) -> str:
     except KeyError:
         s = None
 
-    if not s:
+    if code_host:
+        if not s:
+            flash("Host not found", "danger")
+            return redirect(url_for("admin.list_code_hosts"))
+
+        s.stop()
+
+        db.session.delete(code_host)
+        db.session.commit()
+        flash("Host stopped", "success")
+    else:
         flash("Host not found", "danger")
-        return redirect(url_for("admin.list_code_hosts"))
 
-    s.stop()
-
-    db.session.delete(code_host)
-    db.session.commit()
-    flash("Host stopped", "success")
     return redirect(return_url)
 
 

@@ -1,28 +1,29 @@
-
 {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-        {% for category, message in messages %}         
-            {% if category == 'error' %}
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+{% if messages %}
+<div aria-live="polite" aria-atomic="true" class="position-relative">
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        {% for category, message in messages %}
+        <div class="toast align-items-center text-white bg-{{ 'danger' if category == 'error' else 'primary' if category == 'message' else 'info' if category == 'notice' or category == 'info' or not category else 'success' }} border-0"
+            role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="20000">
+            <div class="d-flex">
+                <div class="toast-body">
                     {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
-            {% elif category == 'message' %}
-                <div class="alert alert-primary alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            {% elif category == 'notice' or category == 'info' or not category %}
-                <div class="alert alert-info alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            {% elif category == 'success' %}
-                <div class="alert alert-success alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            {% endif %}
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"
+                    aria-label="Close"></button>
+            </div>
+        </div>
         {% endfor %}
-    {% endif %}
+    </div>
+</div>
+{% endif %}
 {% endwith %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var toastElList = [].slice.call(document.querySelectorAll('.toast'))
+        var toastList = toastElList.map(function (toastEl) {
+            return new bootstrap.Toast(toastEl)
+        })
+        toastList.forEach(toast => toast.show());
+    });
+</script>

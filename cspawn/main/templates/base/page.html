@@ -49,7 +49,8 @@
 
 {% block subnavbar %}{% endblock %}
 
-{% block messages %}{{ render_messages(container=True) }}{% endblock %}
+{# {% block messages %}{{ render_messages(container=True) }}{% endblock %} #}
+{% block messages %}{% include 'base/_messages.html' %}{% endblock %}
 
 {% block header %}{% endblock %}
 

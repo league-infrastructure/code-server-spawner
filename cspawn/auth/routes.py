@@ -48,6 +48,8 @@ def login():
 def google_login():
     """Handle Google OAuth login."""
 
+    # The first time we come here, we aren't authorized, so we kick it to
+    # the oath blueprint.
     if not google.authorized:
         return redirect(url_for("google.login"))
 
@@ -62,13 +64,14 @@ def google_login():
     user_info = resp.json()
 
     email = user_info.get("email")
+    user_id = "google_" + user_info["id"]
 
-    user = User.query.filter_by(email=email).first()
+    user = User.query.filter_by(user_id=user_id).first()
     if user is None:
         user = User(
-            username="not_set",
+            username="not_set",  # wll set later, after User constructed.
             user_id="google_" + user_info["id"],
-            email=email,
+            email=user_info.get("email"),
             oauth_provider="google",
             oauth_id=user_info["id"],
             avatar_url=user_info["picture"],
@@ -77,10 +80,16 @@ def google_login():
         set_role_from_email(current_app, user)
         user.username = find_username(user)
 
-        db.session.add(user)
-        db.session.commit()
+    if session['reg_class_code']:
+        class_code = session['reg_class_code']
+        class_ = Class.query.filter_by(class_code=class_code).first()
+        user.classes_taking.append(class_)
+        del session['reg_class_code']
 
-        user = User.query.filter_by(email=email).first()
+    db.session.add(user)
+    db.session.commit()
+
+    user = User.query.filter_by(email=email).first()
 
     login_user(user)
 
@@ -125,8 +134,11 @@ def register():
 def register_google():
     """Handle user registration."""
     form = GoogleRegistrationForm()
+
     if form.validate_on_submit():
         session['reg_class_code'] = form.class_code.data.strip()
+        return redirect(url_for("google.login"))
+
     return render_template("register_google.html", form=form, **_context())
 
 
