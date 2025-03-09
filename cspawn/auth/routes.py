@@ -73,14 +73,13 @@ def google_login():
             user_id="google_" + user_info["id"],
             email=user_info.get("email"),
             oauth_provider="google",
-            oauth_id=user_info["id"],
             avatar_url=user_info["picture"],
         )
 
         set_role_from_email(current_app, user)
         user.username = find_username(user)
 
-    if session['reg_class_code']:
+    if session.get('reg_class_code'):
         class_code = session['reg_class_code']
         class_ = Class.query.filter_by(class_code=class_code).first()
         user.classes_taking.append(class_)

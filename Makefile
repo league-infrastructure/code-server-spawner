@@ -1,7 +1,6 @@
 
 .PHONY: setup build publish compile up down
 
-
 VERSION := $(shell grep '^version =' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
 
 FAPP := cspawn.app:app 
