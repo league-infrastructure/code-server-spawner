@@ -3,6 +3,8 @@ Initialize the Application
 """
 
 from .docker.csmanager import CodeServerManager
+from .util.app_support import is_running_under_gunicorn
+
 from typing import cast
 
 from flask import Flask, g
@@ -56,12 +58,6 @@ def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> 
 
     app = cast(App, Flask(__name__))
 
-    @app.teardown_appcontext
-    def close_db(exception):
-        db = g.pop("db", None)
-        if db is not None:
-            db.close()
-
     # Register the filter with Flask or Jinja2
     app.jinja_env.filters["human_time"] = human_time_format
 
@@ -103,11 +99,6 @@ def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> 
     login_manager.init_app(app)
     login_manager.login_view = "auth.login"
 
-    @login_manager.user_loader
-    def load_user(user_id):
-        from cspawn.models import User
-        return User.query.get(user_id)
-
     # Configure PostgreSQL database
 
     if sqlfile is not None:
@@ -128,6 +119,21 @@ def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> 
         migrate = Migrate(app, db)
     except (OperationalError, ProgrammingError) as e:
         app.logger.debug(f"Database error: {e}")
-        app.logger.error("Erroring configuraing databse; No Database.")
+        app.logger.error("Error configuraing databse; No Database.")
+
+        if is_running_under_gunicorn():
+            app.logger.critical("Fatal error: running under gunicorn without a database.")
+            raise e
+
+    @app.teardown_appcontext
+    def close_db(exception):
+        db = g.pop("db", None)
+        if db is not None:
+            db.close()
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        from cspawn.models import User
+        return User.query.get(user_id)
 
     return app
