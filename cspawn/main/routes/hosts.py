@@ -128,7 +128,7 @@ def is_ready() -> jsonify:
             return jsonify({"status": "ready", "hostname_url": s.public_url})
         else:
             return jsonify({"status": "not_ready"})
-    except NotFound as e:
+    except (NotFound, AttributeError) as e:
         return jsonify({"status": "error", "message": str(e)})
 
 

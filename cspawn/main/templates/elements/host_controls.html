@@ -1,19 +1,30 @@
-{% if host %}
-
-{% if host.host_image_id == class_.image_id %} {# If this is the host for this class_. #}
-
-{% if host.app_state == 'ready' %}
+{% set hb = host_buttons(current_user, class_) %}
+{% if 'open' in hb %}
 <a href="{{ host.public_url }}" target="code_host" class="btn btn-primary btn-table"> Open</a>
+{% endif %}
+
+{% if 'stop' in hb %}
 <a href="{{ url_for('main.stop_host', host_id=host.id, return_url=return_url) }}"
     class="btn btn-warning btn-table">Stop</a>
-{% else %} {# if host.app_state == 'ready' #}
-<div id="host_view" class="w-100 p-0">
+{% endif %}
 
-    <div class="spinner"></div>
-</div>
-{% endif %} {# if host.app_state == 'ready' #}
-{% endif %} {# if host.host_image_id == class_.image_id #}
-{% else %} {# not if host #}
+{% if 'other' in hb %}
+<small class="text-muted">
+    {% if host.class_id %}
+    <a href="{{url_for('main.detail_class', class_id=host.class_.id)}}">Host is for another class.</a>
+    {% else %}
+    Host is for unknown class
+    {% endif %}
+</small>
+{% endif %}
+
+{% if 'start' in hb %}
 <a href="{{ url_for('main.start_class', class_id=class_.id, return_url=return_url) }}"
     class="btn btn-success btn-table ">Start</a>
-{% endif %} {# if host #}
+{% endif %}
+
+{% if 'spin' in hb %}
+<div id="host_view" class="w-100 p-0">
+    <div class="spinner"></div>
+</div>
+{% endif %}

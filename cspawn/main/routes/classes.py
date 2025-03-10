@@ -53,6 +53,8 @@ def start_class(class_id) -> str:
 
     image = class_.image
 
+    assert class_.image_id == image.id
+
     # Look for an existing CodeHost for the current user
     extant_host = CodeHost.query.filter_by(user_id=current_user.id).first()
 
@@ -64,16 +66,19 @@ def start_class(class_id) -> str:
     s = ca.csm.get_by_username(current_user.username)
 
     if not s:
-        s = ca.csm.new_cs(
-            user=current_user,
-            image=image.image_uri,
-            repo=image.repo_uri,
-            syllabus=image.syllabus_path,
-        )
+        s, ch = ca.csm.new_cs(user=current_user, image=image)
+
         if s:
             flash(f"Host {s.name} started successfully", "success")
         else:
             flash("Failed to start host", "error")
+
+        if ch and ch.class_id is None:
+            assert ch.host_image_id == image.id
+            ch.class_id = class_id
+            db.session.add(ch)
+            db.session.commit()
+
     else:
         s.sync_to_db(check_ready=True)
         flash("Host already running", "info")
@@ -88,11 +93,22 @@ def show_class(class_id):
     return render_template('classes/show.html', class_=class_, **context)
 
 
+def host_buttons(user, class_):
+    from cspawn.util.host import host_class_state, which_host_buttons
+    return which_host_buttons(host_class_state(current_user, class_))
+
+
+context['host_buttons'] = host_buttons
+
+
 @main_bp.route('/class/<int:class_id>/details')
 @login_required
 def detail_class(class_id):
+
     class_ = Class.query.get_or_404(class_id)
     host = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
+
+    print("Host buttons:", host_buttons)
 
     return render_template('classes/detail.html', class_=class_, host=host,
                            return_url=url_for("main.detail_class", class_id=class_id), ** context)

@@ -149,10 +149,7 @@ class CSMService(Service):
         user: User = User.query.filter_by(username=username).first()
 
         if not user:
-
             user = User.query.get(0)
-
-        image: HostImage = HostImage.query.filter_by(image_uri=self.image).first()
 
         if no_container:
             c = None
@@ -170,7 +167,6 @@ class CSMService(Service):
             container_id=c.id if c else None,
             container_name=c.name if c else None,
             state=self.status,
-            host_image_id=image.id if image else None,
             node_id=c.node.id if c else None,
             node_name=c.node.attrs["Description"]["Hostname"] if c else None,
             public_url=self.public_url,
@@ -395,7 +391,7 @@ class CodeServerManager(ServicesManager):
 
         return user_dir
 
-    def new_cs(self, user: User, image=None, repo=None, syllabus=None):
+    def new_cs(self, user: User, image: HostImage):
         """
         Create a new Code Server instance.
 
@@ -410,19 +406,21 @@ class CodeServerManager(ServicesManager):
         """
         username = user.username
 
+        assert isinstance(image, HostImage)
+
         container_def = define_cs_container(
             config=self.config,
             username=username,
-            image=image,
+            image=image.image_uri,
             hostname_template=self.config.HOSTNAME_TEMPLATE,
-            repo=repo,
-            syllabus=syllabus,
+            repo=image.repo_uri,
+            syllabus=image.syllabus_path
         )
 
         existing_ch = CodeHost.query.filter_by(service_name=username).first()
         if existing_ch:
             logger.info("CodeHost record for %s already exists", username)
-            return self.get(existing_ch.service_id)
+            return self.get(existing_ch.service_id), existing_ch
 
         # import yaml
         # logger.debug(f"Container Definition\n {yaml.dump(container_def)}")
@@ -436,6 +434,7 @@ class CodeServerManager(ServicesManager):
         try:
             logger.debug("Running container")
             s: CSMService = self.run(**container_def)
+
         except docker.errors.APIError as e:
             if e.response.status_code == 409:
                 logger.error("Container for %s already exists: %s", username, e)
@@ -443,18 +442,20 @@ class CodeServerManager(ServicesManager):
                 if not s:
                     logger.error("Error getting existing container for username %s ", username)
 
-                    return None
+                    return None, None
             else:
                 logger.error("Error creating container: %s", e)
-                return None
+                return None, None
 
         logger.debug("Committing model")
         ch: CodeHost = s.to_model(no_container=True)
+        ch.host_image_id = image.id
+
         db.session.add(ch)
         db.session.commit()
 
         logger.info("Created new Code Server instance for %s", username)
-        return s
+        return s, ch
 
     def stop_cs(self, username):
         """Stop a Code Server instance by username."""
