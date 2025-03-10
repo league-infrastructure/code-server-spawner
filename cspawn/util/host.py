@@ -13,8 +13,6 @@ def host_class_state(user: User, class_: Class) -> str:
     class_image = class_.image_id
     host_image = host.host_image_id if host else None
 
-    print("!!!!", class_image, host_image, host)
-
     if not host:
         # There is no host running
         return "stopped"

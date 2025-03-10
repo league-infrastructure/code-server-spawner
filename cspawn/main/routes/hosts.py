@@ -35,12 +35,12 @@ def hosts() -> str:
 @main_bp.route("/host/start")
 @login_required
 def start_host() -> str:
+    from cspawn.init import cast_app
+
+    ca = cast_app(current_app)
+
     image_id = request.args.get("image_id")
     image = HostImage.query.get(image_id)
-
-    import logging
-    logger = logging.getLogger("cspawn.docker")
-    logger.setLevel(logging.DEBUG)
 
     if not image:
         flash("Image not found", "error")
@@ -53,10 +53,10 @@ def start_host() -> str:
         return redirect(url_for("hosts.index"))
 
     # Create a new CodeHost instance
-    s = ca().csm.get_by_username(current_user.username)
+    s = ca.csm.get_by_username(current_user.username)
 
     if not s:
-        s = ca().csm.new_cs(
+        s = ca.csm.new_cs(
             user=current_user,
             image=image.image_uri,
             repo=image.repo_uri,
@@ -75,6 +75,9 @@ def start_host() -> str:
 @login_required
 def stop_host(host_id) -> str:
     from cspawn.models import CodeHost, db
+    from cspawn.init import cast_app
+
+    ca = cast_app(current_app)
 
     return_url = request.args.get('return_url', url_for("main.index"))
 
@@ -89,7 +92,7 @@ def stop_host(host_id) -> str:
             return redirect(url_for("main.index"))
 
     try:
-        s = current_app.csm.get(code_host.service_id)
+        s = ca.csm.get(code_host.service_id)
     except KeyError:
         s = None
 
