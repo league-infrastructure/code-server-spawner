@@ -1,7 +1,7 @@
 from datetime import datetime
 from cspawn.main import main_bp
 from cspawn.models import Class, CodeHost, User, db
-from cspawn.main.forms import ClassForm
+from cspawn.forms import ClassForm
 
 from flask import abort, current_app, flash, redirect, render_template, request, url_for, jsonify
 from flask_login import current_user, login_required
