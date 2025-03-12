@@ -108,12 +108,3 @@ def index():
             return render_template("index/public.html", **context)
 
     return redirect(url_for("auth.login"))
-
-
-@main_bp.route("/telem", methods=["GET", "POST"])
-def telem():
-    if request.method == "POST":
-        pass
-        # current_app.csm.keyrate.add_report(request.get_json())
-
-    return jsonify("OK")

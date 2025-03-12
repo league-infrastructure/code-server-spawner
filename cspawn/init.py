@@ -23,7 +23,7 @@ from cspawn.__version__ import __version__ as version
 
 from .util.app_support import (configure_app_dir, configure_config_tree,
                                human_time_format, init_logger, setup_database,
-                               setup_sessions)
+                               setup_sessions, setup_mongo)
 
 default_context = {
     "version": version,
@@ -124,6 +124,8 @@ def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> 
         if is_running_under_gunicorn():
             app.logger.critical("Fatal error: running under gunicorn without a database.")
             raise e
+
+    setup_mongo(app)
 
     @app.teardown_appcontext
     def close_db(exception):

@@ -12,6 +12,7 @@ from dotenv import dotenv_values
 from flask import Flask, current_app, g, session
 from flask_login import LoginManager
 from flask_session import Session
+from flask_pymongo import PyMongo
 
 from cspawn.util.config import get_config, get_config_tree
 
@@ -199,6 +200,13 @@ def setup_database(app):
 
     with app.app_context():
         app.root_user = User.create_root_user(app)
+
+
+def setup_mongo(app):
+
+    # Configure MongoDB
+    app.config["MONGO_URI"] = app.app_config["MONGO_URI"]
+    app.mongo = PyMongo(app)
 
 
 def insert_query_arg(url, key, value):

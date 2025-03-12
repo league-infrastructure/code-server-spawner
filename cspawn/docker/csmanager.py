@@ -20,7 +20,7 @@ from cspawn.models import CodeHost, User, db
 from cspawn.util.auth import (basic_auth_hash, docker_label_escape,
                               random_string)
 
-from ..models import HostImage
+from ..models import HostImage, Class
 
 logger = logging.getLogger("cspawn.docker")
 
@@ -180,8 +180,9 @@ class CSMService(Service):
 
 def define_cs_container(
     config,
-    image,
     username,
+    class_,
+    image,
     hostname_template,
     repo=None,
     syllabus=None,
@@ -230,28 +231,28 @@ def define_cs_container(
     public_url = f"https://{username}:{password}@{hostname}/"
     public_url_no_auth = f"https://{hostname}/"
 
-    try:
-        stop_url = url_for("hosts.stop_host")
-    except:
-        # Can fail in testing when there is no home server URL
-        stop_url = None
-
     _env_vars = {
         "WORKSPACE_FOLDER": workspace_folder,
         "PASSWORD": password,
         "DISPLAY": ":0",
-        "VNC_URL": public_url_no_auth + "vnc/?scale=true",
-        "PUBLIC_URL": public_url,
+
+        "JTL_USERNAME": username,
+        "JTL_CLASS_ID": class_.id if class_ else None,
+        "JTL_VNC_URL": public_url_no_auth + "vnc/?scale=true",
+        "JTL_PUBLIC_URL": public_url,
+        "JTL_SYLLABUS": syllabus,
+        "JTL_IMAGE_URI": image,
+        "JTL_REPO": repo,
+        "JTL_CODESERVER_URL": public_url,
+
         "KST_REPORTING_URL": config.KST_REPORTING_URL,
         "KST_CONTAINER_ID": name,
         "KST_REPORT_RATE": (
-            config.KST_REPORT_RATE if hasattr(config, "KST_REPORT_RATE") else 30
+            config.KST_REPORT_INTERVAL if hasattr(config, "KST_REPORT_INTERVAL") else 30
         ),
         "CS_DISABLE_GETTING_STARTED_OVERRIDE": "1",  # Disable the getting started page
-        "INITIAL_GIT_REPO": repo,
-        "JTL_SYLLABUS": syllabus,
-        "CODESERVER_URL": public_url,
-        "CODESERVER_STOP_URL": stop_url,
+
+
     }
 
     env_vars = {**_env_vars, **env_vars}
@@ -391,7 +392,7 @@ class CodeServerManager(ServicesManager):
 
         return user_dir
 
-    def new_cs(self, user: User, image: HostImage):
+    def new_cs(self, user: User, image: HostImage, class_: Class):
         """
         Create a new Code Server instance.
 
@@ -411,10 +412,12 @@ class CodeServerManager(ServicesManager):
         container_def = define_cs_container(
             config=self.config,
             username=username,
+            class_=class_,
             image=image.image_uri,
             hostname_template=self.config.HOSTNAME_TEMPLATE,
             repo=image.repo_uri,
             syllabus=image.syllabus_path
+
         )
 
         existing_ch = CodeHost.query.filter_by(service_name=username).first()

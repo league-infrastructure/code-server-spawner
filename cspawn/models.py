@@ -26,6 +26,7 @@ from sqlalchemy_utils import PasswordType, database_exists, create_database
 from sqlalchemy import event, create_engine
 from tzlocal import get_localzone_name
 from dataclasses import dataclass
+from .telemetry import TelemetryReport, FileStat
 
 
 class Base(DeclarativeBase):
@@ -375,6 +376,19 @@ class CodeHost(db.Model):
         data["updated_at"] = datetime.fromisoformat(data["updated_at"]) if data.get(
             "updated_at") else datetime.now(timezone.utc)
         return cls(**data)
+
+    def update_telemetry(self, telemetry: TelemetryReport):
+
+        from datetime import timedelta, datetime
+
+        self.last_stats = telemetry.timestamp
+        self.last_heartbeat = telemetry.timestamp
+        self.last_utilization = telemetry.timestamp
+
+        self.utilization_1 = telemetry.average30m
+        self.utilization_2 = telemetry.keystrokes
+
+        self.user_activity_rate = telemetry.reportingRate
 
     def __repr__(self):
         return f"<CodeHost(id={self.id}, user_id={self.user_id}, service_id={self.service_id})>"
