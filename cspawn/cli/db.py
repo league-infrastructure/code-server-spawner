@@ -29,7 +29,9 @@ def info(ctx):
     app = get_app(ctx)
 
     with app.app_context():
-        print(str(app.db.engine.url))
+        print("Postgres: ", str(app.db.engine.url))
+
+        print("Mongo: ", str(app.mongo.cx))
 
 
 @db.command()
