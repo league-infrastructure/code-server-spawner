@@ -3,10 +3,13 @@ from cspawn.main import main_bp
 from flask import jsonify, request, current_app
 from cspawn.telemetry import TelemetryReport, FileStat
 from pydantic import ValidationError
+from cspawn.models import CodeHost, db
 
 
 @main_bp.route("/telem", methods=["GET", "POST"])
 def telem():
+    """Recieve telemetry data and write it into the code host record"""
+
     if request.method == "POST":
 
         telemetry_data = request.get_json()
@@ -14,14 +17,15 @@ def telem():
         try:
             telemetry = TelemetryReport(**telemetry_data)
 
-            # print(telemetry)
-
-            print("30m", telemetry.average30m)
-            print(" 5m", telemetry.average5m)
-
             current_app.mongo.db.telem.insert_one(request.get_json())
+
+            ch = CodeHost.query.filter_by(service_name=telemetry.username).first()
+
+            if ch:
+                ch.update_telemetry(telemetry)
+                db.session.commit()
+
         except ValidationError as e:
-            print(e)
             return jsonify("Error")
 
     return jsonify("OK")

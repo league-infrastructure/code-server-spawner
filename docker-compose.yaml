@@ -8,7 +8,7 @@ services:
 
     # These labels set up the domain name in the Caddy proxy
     labels:
-      caddy: code.jtlapp.net
+      caddy: code.jointheleague.org
       caddy.reverse_proxy: "{{upstreams 8000}}"
 
     environment:
