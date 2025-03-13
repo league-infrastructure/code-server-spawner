@@ -66,7 +66,7 @@ def start_class(class_id) -> str:
     s = ca.csm.get_by_username(current_user.username)
 
     if not s:
-        s, ch = ca.csm.new_cs(user=current_user, image=image)
+        s, ch = ca.csm.new_cs(user=current_user, image=image, class_=class_)
 
         if s:
             flash(f"Host {s.name} started successfully", "success")

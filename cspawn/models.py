@@ -275,15 +275,15 @@ class CodeHost(db.Model):
 
     memory_usage = Column(Integer, nullable=True)
     last_stats = Column(DateTime, nullable=True)
-    last_heartbeat = Column(DateTime, nullable=True)
-    last_utilization = Column(DateTime, nullable=True)
+    last_heartbeat = Column(DateTime, nullable=True)  # Last time of any report
+    last_utilization = Column(DateTime, nullable=True)  # Last time user editied a file
+    user_activity_rate = Column(Float, default=0.0, nullable=True)  # 5 M keystroke rate.
     utilization_1 = Column(Float, nullable=True)
     utilization_2 = Column(Float, nullable=True)
 
     data = Column(Text, nullable=True)
     labels = Column(Text, nullable=True)
 
-    user_activity_rate = Column(Float, default=0.0, nullable=True)
     last_heartbeat_ago = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
@@ -381,14 +381,17 @@ class CodeHost(db.Model):
 
         from datetime import timedelta, datetime
 
+        max_last_modified = max(file_stat.lastModified for file_name, file_stat in telemetry.fileStats.items())
+
         self.last_stats = telemetry.timestamp
         self.last_heartbeat = telemetry.timestamp
-        self.last_utilization = telemetry.timestamp
+        self.last_utilization = max_last_modified
+
+        self.memory_usage = telemetry.sysMemory
+        self.user_activity_rate = telemetry.average5m
 
         self.utilization_1 = telemetry.average30m
-        self.utilization_2 = telemetry.keystrokes
-
-        self.user_activity_rate = telemetry.reportingRate
+        self.utilization_2 = telemetry.average1m
 
     def __repr__(self):
         return f"<CodeHost(id={self.id}, user_id={self.user_id}, service_id={self.service_id})>"

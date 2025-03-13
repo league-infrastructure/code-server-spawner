@@ -17,7 +17,8 @@ class TelemetryReport(BaseModel):
     keystrokes: int
     average30m: float
     average5m: float
-    sysMemory: int
+    average1m: float
+    sysMemory: int | None
     processMemory: int
     reportingRate: int
     fileStats: Dict[str, FileStat]
@@ -25,5 +26,5 @@ class TelemetryReport(BaseModel):
     image: str
     repo: str
     syllabus: str
-    class_id: str
+    class_id: int
     username: str
