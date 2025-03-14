@@ -8,15 +8,12 @@ import random
 from faker import Faker
 from sqlalchemy import MetaData
 
-from cspawn.cli.util import create_demo_users, create_demo_images, make_data
-from cspawn.models import *
-from cspawn.util.apptypes import App
+from cspawn.cli.util import create_demo_users, create_demo_images
+from cspawn.models import db, User
 
 
 class CSUnitTest(unittest.TestCase):
-
     def setUp(self):
-
         import cspawn
         from cspawn.init import init_app
 
@@ -39,7 +36,6 @@ class CSUnitTest(unittest.TestCase):
 
     def drop_db(self):
         with self.app.app_context():
-
             e = self.app.db.engine
 
             m = MetaData()
@@ -48,13 +44,11 @@ class CSUnitTest(unittest.TestCase):
             m.drop_all(e)
 
     def create_demo_users(self):
-
         with self.app.app_context():
             db.create_all()
             create_demo_users(self.app)
 
     def create_demo_images(self):
-
         with self.app.app_context():
             db.create_all()
             create_demo_images(self.app)
@@ -62,7 +56,6 @@ class CSUnitTest(unittest.TestCase):
 
 @pytest.fixture
 def app():
-
     import cspawn
     from cspawn.init import init_app
 
@@ -80,7 +73,6 @@ def fake():
 
 
 def make_fake_user(fake: Faker) -> User:
-
     is_admin = random.random() < 0.02
     is_instructor = not is_admin and random.random() < 0.05
     is_student = not is_admin and not is_instructor
