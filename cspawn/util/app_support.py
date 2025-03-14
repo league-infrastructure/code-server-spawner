@@ -1,24 +1,17 @@
 import logging
 import os
-import secrets
-import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-import sqlitedict
-from dotenv import dotenv_values
-from flask import Flask, current_app, g, session
-from flask_login import LoginManager
 from flask_session import Session
 from flask_pymongo import PyMongo
 
-from cspawn.util.config import get_config, get_config_tree
+from cspawn.util.config import get_config
 
 
 def human_time_format(seconds):
-
     try:
         if seconds < 60:
             return f"{int(seconds)}s"
@@ -29,7 +22,7 @@ def human_time_format(seconds):
             hours, remainder = divmod(seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
             return f"{int(hours)}h {int(minutes)}m"
-    except Exception as e:
+    except Exception:
         return seconds
 
 
@@ -60,7 +53,6 @@ def init_logger(app, log_level=None):
     """Initialize the logger for the app, either production or debug"""
 
     if log_level is not None:
-
         app.logger.setLevel(log_level)
         app.logger.debug("Logger initialized for debug")
 
@@ -76,39 +68,11 @@ def init_logger(app, log_level=None):
         app.logger.debug("Logger initialized for flask")
 
 
-def configure_config(app):
+def configure_config_tree(
+    start_dir=None, jtl_app_dir=None, jtl_deployment=None
+) -> Dict[str, Any]:
     # Determine if we're running in production or development
-    if is_running_under_gunicorn():
-        config_file_name = "prod.env"
-    else:
-        config_file_name = "devel.env"
 
-        # Bypass the HTTPS requirement, because we are either running in development,
-        # or behind a proxy than handles https. May be better to set the X-Forwarded-Proto,
-        # but that looks really complicated.
-        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
-
-    # Load configuration
-    config = get_config(config_file_name)
-
-    # Set the Flask secret key
-    app.secret_key = config.get("SECRET_KEY")
-
-    # Resolve the path to the secrets file
-    if "SECRETS_FILE_NAME" in config:
-        config["SECRETS_FILE"] = (
-            Path(config["__CONFIG_PATH"]).parent / config["SECRETS_FILE_NAME"]
-        ).resolve()
-
-    # Store
-
-    app.app_config = config
-
-    return config
-
-
-def configure_config_tree(start_dir=None, jtl_app_dir=None, jtl_deployment=None) -> Dict[str, Any]:
-    # Determine if we're running in production or development
     jtl_app_dir = os.getenv("JTL_APP_DIR", jtl_app_dir)
 
     if jtl_app_dir and Path(jtl_app_dir).is_dir():
@@ -127,10 +91,10 @@ def configure_config_tree(start_dir=None, jtl_app_dir=None, jtl_deployment=None)
     else:
         deploy = "devel"
 
-    if deploy == 'devel':
+    if deploy == "devel":
         os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
-    config = get_config_tree(config_dir, deploy_name=deploy)
+    config = get_config(config_dir, deploy=deploy)
 
     # Resolve the path to the secrets file
     if "SECRETS_FILE_NAME" in config:
@@ -142,7 +106,6 @@ def configure_config_tree(start_dir=None, jtl_app_dir=None, jtl_deployment=None)
 
 
 def configure_app_dir(app):
-
     # Configure the appdir
 
     app.app_config.app_dir = app_dir = Path(app.app_config.APP_DIR)
@@ -150,7 +113,7 @@ def configure_app_dir(app):
     if not app_dir.exists():
         app_dir.mkdir(parents=True)
 
-    app.app_config.data_dir = data_dir = Path(app.app_config.DATA_DIR)
+    app.app_config.data_dir = Path(app.app_config.DATA_DIR)
 
     app.app_config.db_dir = db_dir = app.app_config.data_dir / "db"
 
@@ -194,8 +157,6 @@ def setup_sessions(app, devel=False, session_expire_time=60 * 60 * 24 * 1):
 
 
 def setup_database(app):
-
-    from cspawn.models import db
     from cspawn.models import User
 
     with app.app_context():
@@ -203,7 +164,6 @@ def setup_database(app):
 
 
 def setup_mongo(app):
-
     # Configure MongoDB
     app.config["MONGO_URI"] = app.app_config["MONGO_URI"]
     app.mongo = PyMongo(app)
