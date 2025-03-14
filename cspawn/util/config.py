@@ -83,138 +83,99 @@ def walk_up(d, f=None) -> List[Path]:
     return paths
 
 
-def get_config_dirs(cwd=None, root=Path("/"), home=Path().home()) -> List[Path]:
-    if cwd is None:
-        cwd = Path.cwd()
-    else:
-        cwd = Path(cwd)
+def get_config_dirs(cwd=Path.cwd(), root=Path("/"), home=Path().home()) -> List[Path]:
+    """Return possible config dirs in order of precedence:
 
-    root = Path(root)
-    home = Path(home)
-
-    return [
-        cwd,
-        home.joinpath(".jtl"),
-        root / "app/config",
-        root / "app/secrets",
-        root / "config",
-        root / "secrets",
-        cwd.joinpath("secrets"),
-        cwd.parent.joinpath("secrets"),
-    ]
-
-
-def find_config_files(
-    file: str | List[str], dirs: List[str] | List[Path] = None
-) -> Path:
-    """Find the first instance of a config file, from  a list of possible files,
-    in a list of directories. Return the first file that exists."""
-
-    if isinstance(file, str):
-        file = [file]
-
-    if dirs is None:
-        dirs = get_config_dirs()
-
-    files = []
-    for d in dirs:
-        for f in file:
-            p = Path(d) / f
-
-            if p.exists():
-                files.append(p)
-
-    if files:
-        return files
-    else:
-        raise FileNotFoundError(f"Could not find any of {file} in {dirs}")
-
-
-def find_config_file(
-    file: str | List[str], dirs: List[str] | List[Path] = None
-) -> Path:
-    files = find_config_files(file, dirs)
-    if len(files) > 1:
-        raise FileNotFoundError(f"Found multiple files: {files}")
-    return files[0]
-
-
-def get_config(
-    file: str | Path | List[str] | List[Path] = None,
-    dirs: List[str] | List[Path] = None,
-) -> Config:
-    """Get the first config file found. The is for when you
-    just want one config file, but there may be multiple places for it."""
-
-    if file is None:
-        file = "config.env"
-
-    if "/" in str(file):
-        fp = Path(file)
-    else:
-        fp = find_config_file(file, dirs)
-
-    config = {
-        "__CONFIG_PATH": str(fp.absolute()),
-        **os.environ,
-        **dotenv_values(fp),
-    }
-
-    return Config(config)
-
-
-def get_config_tree(config_root: Path, deploy_name="devel", env_pos="last") -> Config:
-    """Assemble a configuration from a tree of config files. In this case
-    (* different from get_config) the config is split into multiple
-    parts, and the parts are assembled into a single config object, and all of the
-    configurations are stored in a set of subdirs of a common root directory.
-
-    For each of the dirs 'config' and secret', the function will look for a file
-    names 'config.env' and then '{deploy_name}.env' ( either 'devel' or 'prod' )
-    and combine them into a single config object.
-
-    So, if they exist, these files will be read and combined:
-
-        'config/config.env',
-        '{deploy_name}.env',
-        'secrets/config.env',
-        'secrets/{deploy_name}.env',
-
-    The env_pos parameter controls when the environment variables are loaded. If it is
-    None, they are loaded last. If it is 'first', they are loaded first. If it is 'last',
-    they are loaded last, overwriting any values that were loaded from the files. If None
-     the env vars are not loaded. Defaults to 'last'
+    JT_CONFIG_DIR env var
+    Current directory
+    $HOME/.jtl
+    /app/config
+    /config
 
     """
 
-    root = Path(config_root).resolve()
+    import os
 
-    tree = [
-        "config/config.env",
-        "config/{deploy_name}.env",
-        "secrets/secret.env",
-        "secrets/{deploy_name}.env",
+    jtl_config_dir = os.getenv("JTL_CONFIG_DIR")
+
+    cwd = Path(cwd)
+    root = Path(root)
+    home = Path(home)
+
+    return (
+        [Path(jtl_config_dir)]
+        if jtl_config_dir
+        else []
+        + [
+            home.joinpath(".jtl"),
+            root / "app/config",
+            root / "config",
+            cwd,
+        ]
+    )
+
+
+def get_config_files(
+    dirs: List[Path], config_name="config", deploy: str = "devel"
+) -> List[Path]:
+    """ """
+
+    config_name += ".env"
+
+    def first_config():
+        for d in dirs:
+            if (d / config_name).exists():
+                return d
+
+    cdir = first_config()
+
+    if not cdir:
+        raise FileNotFoundError(f"No config files found in ${dirs}")
+
+    f = [
+        (cdir / config_name),
+        cdir / f"{deploy}.env",
+        cdir / "secrets/secret.env",
+        cdir / f"secrets/{deploy}.env",
     ]
 
-    d = {}
+    return [p for p in f if p.exists()]
 
-    if env_pos == "first":
-        d.update(os.environ)
 
-    configs = []
+def get_config(
+    root: str | Path = None,
+    dirs: List[str] | List[Path] = None,
+    file: str | Path | List[str] | List[Path] = None,
+    deploy: str = "devel",
+) -> Config:
+    """Get the first config file found. There must at least be a file 'config.env',
+    and may be a file '{deploy}.env' where deploy is typically 'devel' or 'prod'.
 
-    for e in tree:
-        f = root / Path(e.format(deploy_name=deploy_name))
+    After finding a config file in dir $D, the function will look for a file
+    $D/secrets/secret.env and $D/secrets/{deploy}.env and combine them into a single
+    config object.
 
+    """
+
+    if file is None:
+        file = "config"
+
+    config = {}
+    loaded = []
+
+    cf = get_config_files(
+        dirs or get_config_dirs(root=root), config_name=file, deploy=deploy
+    )
+
+    for f in cf:
         if f.exists():
-            d.update(dotenv_values(f))
-            configs.append(f)
-    if env_pos == "last":
-        d.update(os.environ)
+            config.update(dotenv_values(f))
+            loaded.append(f)
 
-    d["__CONFIG_PATH"] = configs
+    config.update(os.environ)
+    config["__CONFIG_PATH"] = loaded
 
-    return Config(d)
+    return Config(config)
 
 
 def path_interp(path: str, **kwargs) -> Tuple[str, Dict[str, Any]]:
