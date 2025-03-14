@@ -50,7 +50,6 @@ class Config:
 
 
 def find_parent_dir():
-
     jtp_app_dir = os.getenv("JTP_APP_DIR")
     if jtp_app_dir and Path(jtp_app_dir).is_dir():
         return Path(jtp_app_dir)
@@ -62,10 +61,10 @@ def find_parent_dir():
             return cwd
         try:
             cwd = cwd.parent
-        except:
+        except Exception:
             break
 
-    raise FileNotFoundError("No directory with 'config' or 'secrets' found")
+    raise FileNotFoundError("No directory with 'config'found")
 
 
 def walk_up(d, f=None) -> List[Path]:
@@ -85,7 +84,6 @@ def walk_up(d, f=None) -> List[Path]:
 
 
 def get_config_dirs(cwd=None, root=Path("/"), home=Path().home()) -> List[Path]:
-
     if cwd is None:
         cwd = Path.cwd()
     else:
@@ -106,7 +104,9 @@ def get_config_dirs(cwd=None, root=Path("/"), home=Path().home()) -> List[Path]:
     ]
 
 
-def find_config_files(file: str | List[str], dirs: List[str] | List[Path] = None) -> Path:
+def find_config_files(
+    file: str | List[str], dirs: List[str] | List[Path] = None
+) -> Path:
     """Find the first instance of a config file, from  a list of possible files,
     in a list of directories. Return the first file that exists."""
 
@@ -130,14 +130,19 @@ def find_config_files(file: str | List[str], dirs: List[str] | List[Path] = None
         raise FileNotFoundError(f"Could not find any of {file} in {dirs}")
 
 
-def find_config_file(file: str | List[str], dirs: List[str] | List[Path] = None) -> Path:
+def find_config_file(
+    file: str | List[str], dirs: List[str] | List[Path] = None
+) -> Path:
     files = find_config_files(file, dirs)
     if len(files) > 1:
         raise FileNotFoundError(f"Found multiple files: {files}")
     return files[0]
 
 
-def get_config(file: str | Path | List[str] | List[Path] = None, dirs: List[str] | List[Path] = None) -> Config:
+def get_config(
+    file: str | Path | List[str] | List[Path] = None,
+    dirs: List[str] | List[Path] = None,
+) -> Config:
     """Get the first config file found. The is for when you
     just want one config file, but there may be multiple places for it."""
 

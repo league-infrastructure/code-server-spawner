@@ -21,9 +21,15 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from cspawn.__version__ import __version__ as version
 
 
-from .util.app_support import (configure_app_dir, configure_config_tree,
-                               human_time_format, init_logger, setup_database,
-                               setup_sessions, setup_mongo)
+from .util.app_support import (
+    configure_app_dir,
+    configure_config_tree,
+    human_time_format,
+    init_logger,
+    setup_database,
+    setup_sessions,
+    setup_mongo,
+)
 
 default_context = {
     "version": version,
@@ -49,7 +55,7 @@ def cast_app(app: Flask) -> App:
 
 
 def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> App:
-    """ Initialize Flask application """
+    """Initialize Flask application"""
 
     from .models import db
     from .admin import admin_bp
@@ -75,7 +81,9 @@ def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> 
 
     # Blueprints
 
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1)  # So goggle oauth will use https behind proxy
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app, x_proto=1
+    )  # So goggle oauth will use https behind proxy
 
     google_bp = make_google_blueprint(
         scope=GOOGLE_LOGIN_SCOPES,
@@ -116,13 +124,15 @@ def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> 
 
         app.csm = CodeServerManager(app)
 
-        migrate = Migrate(app, db)
+        app.migrate = Migrate(app, db)
     except (OperationalError, ProgrammingError) as e:
         app.logger.debug(f"Database error: {e}")
         app.logger.error("Error configuraing databse; No Database.")
 
         if is_running_under_gunicorn():
-            app.logger.critical("Fatal error: running under gunicorn without a database.")
+            app.logger.critical(
+                "Fatal error: running under gunicorn without a database."
+            )
             raise e
 
     setup_mongo(app)
@@ -136,6 +146,7 @@ def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> 
     @login_manager.user_loader
     def load_user(user_id):
         from cspawn.models import User
+
         return User.query.get(user_id)
 
     return app

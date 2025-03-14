@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1
 
-# Comments are provided throughout this file to help you get started.
-# If you need more help, visit the Dockerfile reference guide at
-# https://docs.docker.com/engine/reference/builder/
-
 ARG PYTHON_VERSION=3.11
+ARG VERSION=latest
+
 FROM python:${PYTHON_VERSION}-slim AS base
+
+LABEL version=$VERSION
 
 ENV JTL_APP_DIR=/app
 ENV JTL_DEPLOYMENT='prod'
@@ -13,7 +13,7 @@ ENV JTL_DEPLOYMENT='prod'
 # Prevents Python from writing pyc files.
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Keeps Python from buffering stdout and stderr to avoid situations where
+# Keeps Python from buffering stdout and stderr to avoid situations wheredocker ps 
 # the application crashes without emitting any logs due to buffering.
 ENV PYTHONUNBUFFERED=1
 

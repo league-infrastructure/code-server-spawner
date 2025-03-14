@@ -4,8 +4,17 @@ import uuid
 from functools import wraps
 from typing import cast
 
-from flask import (abort, current_app, flash, jsonify, redirect,
-                   render_template, request, session, url_for)
+from flask import (
+    abort,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from flask_login import current_user
 
 from cspawn.__version__ import __version__ as version
@@ -21,13 +30,14 @@ context = {
 
 
 def ensure_session():
-
     if "cron" in request.path or "telem" in request.path:
         return
 
     if "session_id" not in session:
         session["session_id"] = str(uuid.uuid4())
-        current_app.logger.info(f"New session created with ID: {session['session_id']} for {request.path}")
+        current_app.logger.info(
+            f"New session created with ID: {session['session_id']} for {request.path}"
+        )
     else:
         pass
 
@@ -55,7 +65,9 @@ def instructor_required(f):
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated or not getattr(current_user, "is_admin", False):
+        if not current_user.is_authenticated or not getattr(
+            current_user, "is_admin", False
+        ):
             current_app.logger.warning(
                 f"Unauthorized access attempt by user {current_user.id if current_user.is_authenticated else 'Anonymous'}"
             )
@@ -69,7 +81,7 @@ def unk_filter(v):
     return v if v else "?"
 
 
-def datetimeformat(value, format='%Y-%m-%dT%H:%M'):
+def datetimeformat(value, format="%Y-%m-%dT%H:%M"):
     return value.strftime(format)
 
 
@@ -84,27 +96,36 @@ def index():
     from cspawn.models import CodeHost
 
     if current_user.is_authenticated:
-
         if current_user.is_admin:
-
             return render_template("index/admin.html", host={}, **context)
 
         elif current_user.is_instructor:
+            host = CodeHost.query.filter_by(
+                user_id=current_user.id
+            ).first()  # extant code host
 
-            host = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
-
-            if host and host.app_state != 'running':
+            if host and host.app_state != "running":
                 pass
 
-            return render_template("index/instructor.html", host=host, return_url=url_for("main.index"),  **context)
+            return render_template(
+                "index/instructor.html",
+                host=host,
+                return_url=url_for("main.index"),
+                **context,
+            )
 
         elif current_user.is_student:
-
-            host = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
-            return render_template("index/student.html", host=host, return_url=url_for("main.index"), **context)
+            host = CodeHost.query.filter_by(
+                user_id=current_user.id
+            ).first()  # extant code host
+            return render_template(
+                "index/student.html",
+                host=host,
+                return_url=url_for("main.index"),
+                **context,
+            )
 
         else:
-
             return render_template("index/public.html", **context)
 
     return redirect(url_for("auth.login"))
