@@ -25,7 +25,8 @@ setup:
 # Docker 
 
 build:
-	docker compose -f docker-stack.yaml build 
+	docker compose -f docker-stack.yaml build  --build-arg VERSION=$(VERSION)
+	docker tag codeserv codeserv:$(VERSION)
 
 up:
 	docker stack deploy --detach=false -c docker-stack.yaml codeserv
@@ -47,8 +48,10 @@ dbshell:
 routes:
 	@flask --app $(FAPP) routes
 
+# Make a migration
 migrate:
 	@flask --app $(FAPP) db migrate -m'.'
 
+# Run the migration
 upgrade:
 	@flask --app $(FAPP) db upgrade

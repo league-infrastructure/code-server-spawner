@@ -21,12 +21,11 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import DeclarativeBase, relationship, joinedload, validates
+from sqlalchemy.orm import DeclarativeBase, relationship, validates
 from sqlalchemy_utils import PasswordType, database_exists, create_database
 from sqlalchemy import event, create_engine
 from tzlocal import get_localzone_name
-from dataclasses import dataclass
-from .telemetry import TelemetryReport, FileStat
+from .telemetry import TelemetryReport
 
 
 class Base(DeclarativeBase):
@@ -102,7 +101,6 @@ class User(UserMixin, db.Model):
 
     @classmethod
     def create_root_user(cls, ap: Flask | str):
-
         if isinstance(ap, str):
             password = ap
         elif isinstance(ap, Flask):
@@ -130,7 +128,7 @@ class User(UserMixin, db.Model):
             "user_id": self.user_id,
             "username": self.username,
             "email": self.email,
-            "password": self.password.hash.decode('utf-8') if self.password else None,
+            "password": self.password.hash.decode("utf-8") if self.password else None,
             "timezone": self.timezone,
             "oauth_provider": self.oauth_provider,
             "oauth_id": self.oauth_id,
@@ -141,7 +139,7 @@ class User(UserMixin, db.Model):
             "is_instructor": self.is_instructor,
             "display_name": self.display_name,
             "birth_year": self.birth_year,
-            "created_at": self.created_at.isoformat()
+            "created_at": self.created_at.isoformat(),
         }
 
     @classmethod
@@ -155,7 +153,11 @@ class User(UserMixin, db.Model):
         if password:
             user.password = Password(password, secret=False)
 
-        user.created_at = datetime.fromisoformat(data["created_at"]) if user.created_at else datetime.now()
+        user.created_at = (
+            datetime.fromisoformat(data["created_at"])
+            if user.created_at
+            else datetime.now()
+        )
 
         return user
 
@@ -206,7 +208,9 @@ class Class(db.Model):
         # Use the session's no_autoflush context manager
         with db.session.no_autoflush:
             if instructors:
-                class_instance.instructors = User.query.filter(User.id.in_(instructors)).all()
+                class_instance.instructors = User.query.filter(
+                    User.id.in_(instructors)
+                ).all()
             if students:
                 class_instance.students = User.query.filter(User.id.in_(students)).all()
 
@@ -214,9 +218,21 @@ class Class(db.Model):
 
     def to_dict(self):
         fields = [
-            "id", "name", "description", "term", "location", "timezone", "reference",
-            "start_date", "end_date", "recurrence_rule", "image_id", "start_script",
-            "class_code", "active", "hidden"
+            "id",
+            "name",
+            "description",
+            "term",
+            "location",
+            "timezone",
+            "reference",
+            "start_date",
+            "end_date",
+            "recurrence_rule",
+            "image_id",
+            "start_script",
+            "class_code",
+            "active",
+            "hidden",
         ]
         if self.start_date:
             self.start_date = self.start_date.isoformat()
@@ -277,7 +293,9 @@ class CodeHost(db.Model):
     last_stats = Column(DateTime, nullable=True)
     last_heartbeat = Column(DateTime, nullable=True)  # Last time of any report
     last_utilization = Column(DateTime, nullable=True)  # Last time user editied a file
-    user_activity_rate = Column(Float, default=0.0, nullable=True)  # 5 M keystroke rate.
+    user_activity_rate = Column(
+        Float, default=0.0, nullable=True
+    )  # 5 M keystroke rate.
     utilization_1 = Column(Float, nullable=True)
     utilization_2 = Column(Float, nullable=True)
 
@@ -316,7 +334,6 @@ class CodeHost(db.Model):
         self.public_url = ci["hostname"]
 
     def update_stats(self, record: dict):
-
         record["last_heartbeat"] = (
             datetime.now().astimezone().isoformat()
         )  # set this for every record
@@ -351,37 +368,66 @@ class CodeHost(db.Model):
             "password": self.password,
             "memory_usage": self.memory_usage,
             "last_stats": self.last_stats.isoformat() if self.last_stats else None,
-            "last_heartbeat": self.last_heartbeat.isoformat() if self.last_heartbeat else None,
-            "last_utilization": self.last_utilization.isoformat() if self.last_utilization else None,
+            "last_heartbeat": self.last_heartbeat.isoformat()
+            if self.last_heartbeat
+            else None,
+            "last_utilization": self.last_utilization.isoformat()
+            if self.last_utilization
+            else None,
             "utilization_1": self.utilization_1,
             "utilization_2": self.utilization_2,
             "data": self.data,
             "labels": self.labels,
             "user_activity_rate": self.user_activity_rate,
-            "last_heartbeat_ago": self.last_heartbeat_ago.isoformat() if self.last_heartbeat_ago else None,
+            "last_heartbeat_ago": self.last_heartbeat_ago.isoformat()
+            if self.last_heartbeat_ago
+            else None,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
 
     @classmethod
     def from_dict(cls, data):
-        data["last_stats"] = datetime.fromisoformat(data["last_stats"]) if data.get("last_stats") else None
-        data["last_heartbeat"] = datetime.fromisoformat(data["last_heartbeat"]) if data.get("last_heartbeat") else None
-        data["last_utilization"] = datetime.fromisoformat(
-            data["last_utilization"]) if data.get("last_utilization") else None
-        data["last_heartbeat_ago"] = datetime.fromisoformat(
-            data["last_heartbeat_ago"]) if data.get("last_heartbeat_ago") else None
-        data["created_at"] = datetime.fromisoformat(data["created_at"]) if data.get(
-            "created_at") else datetime.now(timezone.utc)
-        data["updated_at"] = datetime.fromisoformat(data["updated_at"]) if data.get(
-            "updated_at") else datetime.now(timezone.utc)
+        data["last_stats"] = (
+            datetime.fromisoformat(data["last_stats"])
+            if data.get("last_stats")
+            else None
+        )
+        data["last_heartbeat"] = (
+            datetime.fromisoformat(data["last_heartbeat"])
+            if data.get("last_heartbeat")
+            else None
+        )
+        data["last_utilization"] = (
+            datetime.fromisoformat(data["last_utilization"])
+            if data.get("last_utilization")
+            else None
+        )
+        data["last_heartbeat_ago"] = (
+            datetime.fromisoformat(data["last_heartbeat_ago"])
+            if data.get("last_heartbeat_ago")
+            else None
+        )
+        data["created_at"] = (
+            datetime.fromisoformat(data["created_at"])
+            if data.get("created_at")
+            else datetime.now(timezone.utc)
+        )
+        data["updated_at"] = (
+            datetime.fromisoformat(data["updated_at"])
+            if data.get("updated_at")
+            else datetime.now(timezone.utc)
+        )
         return cls(**data)
 
     def update_telemetry(self, telemetry: TelemetryReport):
-
-        from datetime import timedelta, datetime
-
-        max_last_modified = max(file_stat.lastModified for file_name, file_stat in telemetry.fileStats.items())
+        try:
+            max_last_modified = max(
+                file_stat.lastModified
+                for file_name, file_stat in telemetry.fileStats.items()
+            )
+        except ValueError:
+            max_last_modified = None
 
         self.last_stats = telemetry.timestamp
         self.last_heartbeat = telemetry.timestamp
@@ -428,7 +474,6 @@ class HostImage(db.Model):
 
     @staticmethod
     def set_hash(mapper, connection, target):
-
         def generate_hash(*args):
             hash_input = "".join([str(arg) for arg in args if arg is not None])
             return md5(hash_input.encode("utf-8")).hexdigest()
@@ -466,10 +511,16 @@ class HostImage(db.Model):
 
     @classmethod
     def from_dict(cls, data):
-        data["created_at"] = datetime.fromisoformat(data["created_at"]) if data.get(
-            "created_at") else datetime.now(timezone.utc)
-        data["updated_at"] = datetime.fromisoformat(data["updated_at"]) if data.get(
-            "updated_at") else datetime.now(timezone.utc)
+        data["created_at"] = (
+            datetime.fromisoformat(data["created_at"])
+            if data.get("created_at")
+            else datetime.now(timezone.utc)
+        )
+        data["updated_at"] = (
+            datetime.fromisoformat(data["updated_at"])
+            if data.get("updated_at")
+            else datetime.now(timezone.utc)
+        )
         return cls(**data)
 
 
@@ -485,44 +536,36 @@ def ensure_database_exists(app: Flask):
 
 
 def export_dict():
-    import json
-
     users = [u.to_dict() for u in User.query.all()]
     classes = [c.to_dict() for c in Class.query.all()]
     images = [i.to_dict() for i in HostImage.query.all()]
     hosts = [h.to_dict() for h in CodeHost.query.all()]
 
-    return {
-        "users": users,
-        "images": images,
-        "classes": classes,
-        "hosts": hosts
-    }
+    return {"users": users, "images": images, "classes": classes, "hosts": hosts}
 
 
 def import_dict(data):
-
     db.create_all()
 
-    for user_data in data['users']:
+    for user_data in data["users"]:
         user = User.from_dict(user_data)
         db.session.add(user)
 
     db.session.commit()
 
-    for image_data in data['images']:
+    for image_data in data["images"]:
         image = HostImage.from_dict(image_data)
         db.session.add(image)
 
     db.session.commit()
 
-    for class_data in data['classes']:
+    for class_data in data["classes"]:
         class_ = Class.from_dict(class_data)
         db.session.add(class_)
 
     db.session.commit()
 
-    for host_data in data.get('hosts', []):
+    for host_data in data.get("hosts", []):
         host = CodeHost.from_dict(host_data)
         db.session.add(host)
 

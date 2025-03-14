@@ -1,7 +1,6 @@
-
 from cspawn.main import main_bp
 from flask import jsonify, request, current_app
-from cspawn.telemetry import TelemetryReport, FileStat
+from cspawn.telemetry import TelemetryReport
 from pydantic import ValidationError
 from cspawn.models import CodeHost, db
 
@@ -11,7 +10,6 @@ def telem():
     """Recieve telemetry data and write it into the code host record"""
 
     if request.method == "POST":
-
         telemetry_data = request.get_json()
 
         try:
@@ -25,7 +23,7 @@ def telem():
                 ch.update_telemetry(telemetry)
                 db.session.commit()
 
-        except ValidationError as e:
+        except ValidationError:
             return jsonify("Error")
 
     return jsonify("OK")

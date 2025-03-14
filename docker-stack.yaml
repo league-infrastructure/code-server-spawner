@@ -1,15 +1,16 @@
 services:
   codeserv:
-    image: codeserv # CHANGE to an image name specific to this project
+    image: codeserv
     container_name: codeserv
     build:
       context: .
       dockerfile: Dockerfile
 
+
     deploy:
       replicas: 1
       labels:
-        caddy: code.jtlapp.net
+        caddy: code.jointheleague.org
         caddy.reverse_proxy: "{{upstreams 8000}}"
       placement:
         constraints:
