@@ -1,18 +1,9 @@
-import re
-import unittest
-
-from faker import Faker
-
-from cspawn.models import HostImage
-from cspawn.init import db
-from cspawn.models import CodeHost, User
 from cspawn.util.app_support import role_from_email
 
-from cspawn.util.test_fixture import *
+from cspawn.util.test_fixture import CSUnitTest
 
 
 class TestMisc(CSUnitTest):
-
     def test_role_from_email(self):
         test_cases = [
             ("admin", "eric.busboom@jointheleague.org"),
