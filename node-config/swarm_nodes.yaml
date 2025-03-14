@@ -40,14 +40,14 @@
 
     - name: Copy private SSH key
       copy:
-        src: id_rsa
+        src: ../config/secrets/id_rsa
         dest: /root/.ssh/id_rsa
         mode: "0600"
       become: true
 
     - name: Copy public SSH key
       copy:
-        src: id_rsa.pub
+        src: ../config/secrets/id_rsa.pub
         dest: /root/.ssh/id_rsa.pub
         mode: "0644"
       become: true
@@ -56,7 +56,14 @@
       authorized_key:
         user: root
         state: present
-        key: "{{ lookup('file', 'id_rsa.pub') }}"
+        key: "{{ lookup('file', '../config/secrets/id_rsa.pub') }}"
+      become: true
+
+    - name: Remove SSH key for eric@braeburn from authorized_keys
+      authorized_key:
+        user: root
+        state: absent
+        key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDgUx8Dh1bedevPzCKuSXTgDaV2F7E5KyRX5r2GwKZfJCgWUHIuj9K1ApTxAUppcLfe49OSTGCPvknJjkx+GxYWNXhJveaKVMSNVCgNIHBm5I7Wx/xd6rO33U7cYlWJKIpC7AONfsfiG8Ix+7aj5AnMyuEhljHbAnjvnVEhj5sET373VV3s0EhSgo1IOPuCnavqTY3hOwVd6U6mrbPpLbK7c+CIhtQIuYH3vxBFY6lclx7Y0fbPD8L4wTd/FPb6BhV2Fj2ibgq3F6tsWTImNCQs02EKSPD9vyWhFcSCVlonNDI5NCnkXYOgO04bhivOOAvOqBxPLQpD4EjKWVJ2uTmOS+R0YYNv+Bf7lpZJ+AZz6iU+lC2++omUiFYQhK4+7dUWsnqcRQbD6GDe/fPkgTkBvv/HLgz8ge8PaRHMg6PiBTdJDku8ZgFeZ3JrY6JqaJ/iBKs+TAx/mRSbx4JwA/w8IBTjWf3+eWzpT436PHDXdtSIEaJCcT2qki52nBBhSOM= eric@braeburn"
       become: true
 
     - name: Configure SSH to disable strict host key checking
