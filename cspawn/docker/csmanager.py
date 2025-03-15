@@ -17,8 +17,7 @@ from slugify import slugify
 from cspawn.docker.manager import ServicesManager, logger
 from cspawn.docker.proc import Service
 from cspawn.models import CodeHost, User, db
-from cspawn.util.auth import (basic_auth_hash, docker_label_escape,
-                              random_string)
+from cspawn.util.auth import basic_auth_hash, docker_label_escape, random_string
 
 from ..models import HostImage, Class
 
@@ -77,14 +76,10 @@ class CSMService(Service):
         logger.setLevel(logging.DEBUG)
         try:
             response = requests.get(self.public_url, timeout=10)
-            logger.debug(
-                "Response from %s: %s", self.public_url, response.status_code
-            )
+            logger.debug("Response from %s: %s", self.public_url, response.status_code)
             return response.status_code in [200, 302]
         except requests.exceptions.SSLError:
-            logger.debug(
-                "SSL error encountered when connecting to %s", self.public_url
-            )
+            logger.debug("SSL error encountered when connecting to %s", self.public_url)
             return False
         except requests.exceptions.RequestException as e:
             logger.debug("Error checking server status to %s: %s", self.public_url, e)
@@ -102,7 +97,6 @@ class CSMService(Service):
         return CodeHost.query.filter_by(service_id=self.id).first()
 
     def check_ready(self):
-
         is_ready = self.is_ready  # Container is running
         is_running = self.is_running  # web-app is running
         rec = self.rec
@@ -141,7 +135,7 @@ class CSMService(Service):
 
         Args:
             no_container (bool): If True, do not include the container. Use this
-            when creating new services and container isn't set initially. 
+            when creating new services and container isn't set initially.
 
         """
 
@@ -149,7 +143,7 @@ class CSMService(Service):
         user: User = User.query.filter_by(username=username).first()
 
         if not user:
-            user = User.query.get(0)
+            user = User.query.get(0)  # Get the root user
 
         if no_container:
             c = None
@@ -157,7 +151,9 @@ class CSMService(Service):
             try:
                 c = next(self.containers)
             except (KeyError, StopIteration):
-                logger.error("CodeHost.to_model(): No container found for service %s", self.name)
+                logger.error(
+                    "CodeHost.to_model(): No container found for service %s", self.name
+                )
                 c = None
 
         return CodeHost(
@@ -235,7 +231,6 @@ def define_cs_container(
         "WORKSPACE_FOLDER": workspace_folder,
         "PASSWORD": password,
         "DISPLAY": ":0",
-
         "JTL_USERNAME": username,
         "JTL_CLASS_ID": class_.id if class_ else None,
         "JTL_VNC_URL": public_url_no_auth + "vnc/?scale=true",
@@ -244,15 +239,12 @@ def define_cs_container(
         "JTL_IMAGE_URI": image,
         "JTL_REPO": repo,
         "JTL_CODESERVER_URL": public_url,
-
         "KST_REPORTING_URL": config.KST_REPORTING_URL,
         "KST_CONTAINER_ID": name,
         "KST_REPORT_RATE": (
             config.KST_REPORT_INTERVAL if hasattr(config, "KST_REPORT_INTERVAL") else 30
         ),
         "CS_DISABLE_GETTING_STARTED_OVERRIDE": "1",  # Disable the getting started page
-
-
     }
 
     env_vars = {**_env_vars, **env_vars}
@@ -271,7 +263,6 @@ def define_cs_container(
         "caddy.@ws.0_header": "Connection *Upgrade*",
         "caddy.@ws.1_header": "Upgrade websocket",
         "caddy.@ws.2_header": "Origin {http.request.header.Origin}",
-
         # WebSocket Reverse Proxy with HTTP/1.1
         "caddy.0_route.handle": "/websockify*",
         "caddy.0_route.handle.reverse_proxy": "@ws {{upstreams 6080}}",
@@ -284,7 +275,7 @@ def define_cs_container(
         # General Reverse Proxy
         "caddy.2_route.handle": "/*",
         "caddy.2_route.handle.reverse_proxy": "{{upstreams 80}}",
-        f"caddy.basic_auth.{username}": hashed_pw
+        f"caddy.basic_auth.{username}": hashed_pw,
     }
 
     # This part sets up a port redirection for development, where we don't have
@@ -306,12 +297,11 @@ def define_cs_container(
         "environment": env_vars,
         "ports": ports,
         "network": ["caddy", "jtlctl"],
-        "mounts": [f"{str(Path(config.USER_DIRS)/slugify(username))}:/workspace"],
+        "mounts": [f"{str(Path(config.USER_DIRS) / slugify(username))}:/workspace"],
     }
 
 
 class CodeServerManager(ServicesManager):
-
     service_class = CSMService
 
     def __init__(
@@ -372,7 +362,9 @@ class CodeServerManager(ServicesManager):
 
             _, stdout, stderr = ssh.exec_command(f"mkdir -p {user_dir}")
 
-            _, stdout, stderr = ssh.exec_command(f"chown  {user_id}:{user_id} {user_dir}")
+            _, stdout, stderr = ssh.exec_command(
+                f"chown  {user_id}:{user_id} {user_dir}"
+            )
 
             exit_status = stdout.channel.recv_exit_status()
 
@@ -416,8 +408,7 @@ class CodeServerManager(ServicesManager):
             image=image.image_uri,
             hostname_template=self.config.HOSTNAME_TEMPLATE,
             repo=image.repo_uri,
-            syllabus=image.syllabus_path
-
+            syllabus=image.syllabus_path,
         )
 
         existing_ch = CodeHost.query.filter_by(service_name=username).first()
@@ -443,7 +434,9 @@ class CodeServerManager(ServicesManager):
                 logger.error("Container for %s already exists: %s", username, e)
                 s = self.get_by_username(username)
                 if not s:
-                    logger.error("Error getting existing container for username %s ", username)
+                    logger.error(
+                        "Error getting existing container for username %s ", username
+                    )
 
                     return None, None
             else:
@@ -497,7 +490,7 @@ class CodeServerManager(ServicesManager):
         not_in_swarm = in_db - in_swarm
 
         # Mark the missing services as missing in action
-        logger.info(f'Services in db but not in swarm: {len(not_in_swarm)}')
+        logger.info(f"Services in db but not in swarm: {len(not_in_swarm)}")
         for service_id in not_in_swarm:
             ch = CodeHost.query.filter_by(service_id=service_id).first()
             if ch:
@@ -507,19 +500,19 @@ class CodeServerManager(ServicesManager):
 
         # Get the CodeHosts records that have state != 'running' or 'app_state' != 'ready'
         not_ready_hosts = CodeHost.query.filter(
-            (CodeHost.state != 'running') | (CodeHost.app_state != 'ready')
+            (CodeHost.state != "running") | (CodeHost.app_state != "ready")
         ).all()
 
         # Update remaining services.
-        logger.info(f'Syncing not-ready hosts: {len(not_ready_hosts)}')
+        logger.info(f"Syncing not-ready hosts: {len(not_ready_hosts)}")
         for ch in not_ready_hosts:
-            if ch.state == 'mia':
+            if ch.state == "mia":
                 continue
             s: CSMService = self.get(ch.service_id)
             logger.info("Syncing service %s", s.name)
             s.sync_to_db(check_ready=check_ready)
 
-        logger.info(f'Syncing not-in-db hosts: {len(not_in_db)}')
+        logger.info(f"Syncing not-in-db hosts: {len(not_in_db)}")
         # Create the missing services
         for service_id in not_in_db:
             s: CSMService = self.get(service_id)
@@ -558,7 +551,6 @@ class CodeServerManager(ServicesManager):
         username = slugify(username)
 
         for service in self.list():
-
             if service.username == username:
                 return service
         return None

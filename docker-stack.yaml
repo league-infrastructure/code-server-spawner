@@ -29,10 +29,12 @@ services:
       - caddy
       - jtlctl
 
+
+
 networks:
   caddy:
     external: true
-  jtlctl:
+  jtlctl: # docker network create --driver overlay --attachable jtlctl
 
 volumes:
   app-data:

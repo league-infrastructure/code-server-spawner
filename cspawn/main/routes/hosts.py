@@ -1,11 +1,21 @@
 from typing import cast
 
-from flask import (current_app, flash, jsonify, redirect, render_template,
-                   request, url_for)
+from flask import (
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import current_user, login_required
 
 from cspawn.main import main_bp
 from cspawn.models import CodeHost, HostImage
+from cspawn.init import cast_app
+
+ca = cast_app(current_app)
 
 
 @main_bp.route("/hosts")
@@ -15,7 +25,7 @@ def hosts() -> str:
 
     ch = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
 
-    s: CSMService = ca().csm.get(ch.service_id) if ch else None
+    s: CSMService = ca.csm.get(ch.service_id) if ch else None
 
     if s:
         ch: CodeHost = s.sync_to_db(check_ready=True)  # update the host record
@@ -29,7 +39,9 @@ def hosts() -> str:
                 host_images = [host_image]
                 break
 
-    return render_template("hosts/image_host_list.html", host=ch, host_images=host_images)
+    return render_template(
+        "hosts/image_host_list.html", host=ch, host_images=host_images
+    )
 
 
 @main_bp.route("/host/start")
@@ -79,12 +91,11 @@ def stop_host(host_id) -> str:
 
     ca = cast_app(current_app)
 
-    return_url = request.args.get('return_url', url_for("main.index"))
+    return_url = request.args.get("return_url", url_for("main.index"))
 
-    if host_id == 'mine':
+    if host_id == "mine":
         code_host = CodeHost.query.filter_by(user_id=current_user.id).first()
     else:
-
         code_host = CodeHost.query.get(host_id)
 
         if not code_host or code_host.user_id != current_user.id:
@@ -138,7 +149,6 @@ def is_ready() -> jsonify:
 @main_bp.route("/host/<chost_id>/open", methods=["GET"])
 @login_required
 def open_codehost(chost_id: str) -> str:
-
     ch = CodeHost.query.filter_by(id=chost_id).first()
 
     if not ch:
