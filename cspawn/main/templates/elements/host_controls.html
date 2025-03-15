@@ -1,6 +1,6 @@
 {% set hb = host_buttons(current_user, class_) %}
 {% if 'open' in hb %}
-<a href="javascript:void(0);" onclick="pollOnce(function(isReady) { if (isReady) { window.open('{{ host.public_url }}', '_blank'); } else { location.reload(); } });" class="btn btn-primary btn-table"> Open</a>
+<a href="javascript:void(0);" onclick="openHost( {{host.id}} )" class="btn btn-primary btn-table"> Open</a>
 {% endif %}
 
 {% if 'stop' in hb %}

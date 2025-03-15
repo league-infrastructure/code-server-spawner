@@ -1,3 +1,4 @@
+import json
 from typing import cast
 
 from flask import (
@@ -12,7 +13,7 @@ from flask import (
 from flask_login import current_user, login_required
 
 from cspawn.main import main_bp
-from cspawn.models import CodeHost, HostImage
+from cspawn.models import CodeHost, HostImage, db
 from cspawn.init import cast_app
 
 ca = cast_app(current_app)
@@ -39,9 +40,7 @@ def hosts() -> str:
                 host_images = [host_image]
                 break
 
-    return render_template(
-        "hosts/image_host_list.html", host=ch, host_images=host_images
-    )
+    return render_template("hosts/image_host_list.html", host=ch, host_images=host_images)
 
 
 @main_bp.route("/host/start")
@@ -86,9 +85,6 @@ def start_host() -> str:
 @main_bp.route("/host/<host_id>/stop", methods=["GET"])
 @login_required
 def stop_host(host_id) -> str:
-    from cspawn.models import CodeHost, db
-    from cspawn.init import cast_app
-
     ca = cast_app(current_app)
 
     return_url = request.args.get("return_url", url_for("main.index"))
@@ -121,6 +117,26 @@ def stop_host(host_id) -> str:
         flash("Host not found", "danger")
 
     return redirect(return_url)
+
+
+@main_bp.route("/host/<host_id>/open", methods=["GET"])
+@login_required
+def open_host(host_id) -> str:
+    code_host = CodeHost.query.get(host_id)
+
+    if not code_host:
+        return jsonify({"success": False, "message": "Host record not found"})
+
+    s = ca.csm.get(code_host)
+
+    if not s:
+        # There was no service for the code host
+        db.session.delete(code_host)
+        db.session.commit()
+
+        return jsonify({"success": False, "message": "Host service not found"})
+
+    return jsonify({"success": True, "message": "Host found", "public_url": s.public_url})
 
 
 @main_bp.route("/host/is_ready", methods=["GET"])
