@@ -31,4 +31,21 @@
                 callback(false);
             });
     }
+
+    function openHost(host_id) {
+        fetch(`/host/${host_id}/open`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    window.open(data.public_url, '_blank');
+                } else {
+                    location.reload();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                location.reload();
+            });
+    }
+
 </script>

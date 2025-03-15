@@ -16,7 +16,7 @@ def host_class_state(user: User, class_: Class) -> str:
         # There is no host running
         return "stopped"
 
-    elif host and class_image == host_image:
+    elif host and class_.id == host.class_id:
         if host.app_state == "ready":
             # There is a host running, and it is for this class
             return "running"
