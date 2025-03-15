@@ -35,9 +35,7 @@ def ensure_session():
 
     if "session_id" not in session:
         session["session_id"] = str(uuid.uuid4())
-        current_app.logger.info(
-            f"New session created with ID: {session['session_id']} for {request.path}"
-        )
+        current_app.logger.info(f"New session created with ID: {session['session_id']} for {request.path}")
     else:
         pass
 
@@ -65,9 +63,7 @@ def instructor_required(f):
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated or not getattr(
-            current_user, "is_admin", False
-        ):
+        if not current_user.is_authenticated or not getattr(current_user, "is_admin", False):
             current_app.logger.warning(
                 f"Unauthorized access attempt by user {current_user.id if current_user.is_authenticated else 'Anonymous'}"
             )
@@ -96,14 +92,12 @@ def index():
     from cspawn.models import CodeHost
 
     if current_user.is_authenticated:
+        host = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
+
         if current_user.is_admin:
             return render_template("index/admin.html", host={}, **context)
 
         elif current_user.is_instructor:
-            host = CodeHost.query.filter_by(
-                user_id=current_user.id
-            ).first()  # extant code host
-
             if host and host.app_state != "running":
                 pass
 
@@ -115,9 +109,6 @@ def index():
             )
 
         elif current_user.is_student:
-            host = CodeHost.query.filter_by(
-                user_id=current_user.id
-            ).first()  # extant code host
             return render_template(
                 "index/student.html",
                 host=host,

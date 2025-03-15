@@ -1,7 +1,11 @@
+import time
+from bson import Code
 import click
 
+from cspawn.models import CodeHost
+
 from .root import cli
-from .util import get_app, load_data, make_data
+from .util import get_app
 from docker.errors import NotFound
 
 
@@ -40,7 +44,6 @@ def ls(ctx):
 @click.pass_context
 def start(ctx, service_name, no_wait):
     """Start the specified service."""
-    from time import sleep, time
 
     app = get_app(ctx)
 
@@ -82,7 +85,6 @@ def find(ctx, query):
     app = get_app(ctx)
 
     def _f():
-
         try:
             return app.csm.get(query)
         except NotFound:
@@ -130,3 +132,42 @@ def sync(ctx):
     app = get_app(ctx)
     with app.app_context():
         app.csm.sync(check_ready=True)
+
+
+@host.command()
+@click.option(
+    "-N",
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be done, without making any changes.",
+)
+@click.pass_context
+def reap(ctx, dry_run: bool):
+    """Remove containers that are MIA or are quiescent."""
+    from datetime import datetime, timezone
+
+    app = get_app(ctx)
+
+    with app.app_context():
+        app.csm.sync(check_ready=True)
+
+        for ch in CodeHost.query.all():
+            if ch.is_mia or ch.is_quiescent:
+                s = app.csm.get(ch)
+                print(ch.service_name + ": ", end=" ")
+
+                if ch.is_mia or not s:
+                    print("MIA", end=" ")
+                elif ch.is_quiescent:
+                    print("Quiescent", end=" ")
+
+                if not dry_run:
+                    if s:
+                        s.stop()
+                    app.db.session.delete(ch)
+                    print(f"; Stopped and deleted {ch.service_name}")
+                else:
+                    print(f"; Would stop and delete {ch.service_name}")
+
+        if not dry_run:
+            app.db.session.commit()

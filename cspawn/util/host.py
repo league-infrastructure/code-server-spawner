@@ -1,5 +1,4 @@
-
-from cspawn.models import *
+from cspawn.models import User, Class, CodeHost
 from typing import Tuple
 
 
@@ -29,7 +28,6 @@ def host_class_state(user: User, class_: Class) -> str:
 
 
 def which_host_buttons(state: str) -> Tuple[str]:
-
     if state == "stopped":
         return ("start",)
     elif state == "running":
