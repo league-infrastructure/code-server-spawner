@@ -21,7 +21,8 @@
 
     - name: Allow SSH (22/tcp) with rate limit from all other sources
       ufw:
-        rule: limit
+        #rule: limit
+        rule: allow
         port: "22"
         proto: tcp
         comment: "Allow SSH with rate limit from all other sources"
@@ -40,8 +41,6 @@
         port: "2375"
         proto: tcp
         comment: "Deny Docker API from all sources"
-
-
 
     - name: Reload UFW
       ufw:

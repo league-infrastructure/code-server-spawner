@@ -43,6 +43,10 @@ dependencies = [
 [tool.uv]
 package = true
 
+[tool.ruff]
+line-length = 120
+
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["cspawn*"]  # Include all subpackages

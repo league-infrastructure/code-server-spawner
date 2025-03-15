@@ -3,7 +3,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 import docker
@@ -11,17 +11,16 @@ from docker import DockerClient
 import paramiko
 import pytz
 import requests
-from flask import url_for
 from slugify import slugify
 
 from cspawn.docker.manager import ServicesManager, logger
 from cspawn.docker.proc import Service
-from cspawn.models import CodeHost, User, db
-from cspawn.util.auth import basic_auth_hash, docker_label_escape, random_string
+from cspawn.models import CodeHost, User, HostState, db
+from cspawn.util.auth import basic_auth_hash, random_string
 
 from ..models import HostImage, Class
 
-logger = logging.getLogger("cspawn.docker")
+logger = logging.getLogger("cspawn.docker")  # noqa: F811
 
 
 class CSMService(Service):
@@ -76,7 +75,7 @@ class CSMService(Service):
         logger.setLevel(logging.DEBUG)
         try:
             response = requests.get(self.public_url, timeout=10)
-            logger.debug("Response from %s: %s", self.public_url, response.status_code)
+            # logger.debug("Response from %s: %s", self.public_url, response.status_code)
             return response.status_code in [200, 302]
         except requests.exceptions.SSLError:
             logger.debug("SSL error encountered when connecting to %s", self.public_url)
@@ -101,9 +100,9 @@ class CSMService(Service):
         is_running = self.is_running  # web-app is running
         rec = self.rec
 
-        if is_running and rec.state != "running":
+        if is_running and rec.state != HostState.RUNNING.value:
             self.sync_to_db()  # Sets state=running and also container_id
-        elif is_ready and rec.app_state != "ready":
+        elif is_ready and rec.app_state != HostState.READY.value:
             self.sync_to_db(check_ready=True)
 
         return is_ready
@@ -117,7 +116,7 @@ class CSMService(Service):
 
         if check_ready:
             if self.is_ready:
-                m.app_state = "ready"
+                m.app_state = HostState.READY.value
 
         if ch:
             for key, value in m.__dict__.items():
@@ -151,9 +150,7 @@ class CSMService(Service):
             try:
                 c = next(self.containers)
             except (KeyError, StopIteration):
-                logger.error(
-                    "CodeHost.to_model(): No container found for service %s", self.name
-                )
+                logger.error("CodeHost.to_model(): No container found for service %s", self.name)
                 c = None
 
         return CodeHost(
@@ -168,9 +165,7 @@ class CSMService(Service):
             public_url=self.public_url,
             password=self.labels.get("jtl.codeserver.password"),
             labels=json.dumps(self.labels),
-            created_at=datetime.fromisoformat(
-                self.labels.get("jtl.codeserver.start_time")
-            ),
+            created_at=datetime.fromisoformat(self.labels.get("jtl.codeserver.start_time")),
         )
 
 
@@ -212,7 +207,6 @@ def define_cs_container(
     container_name = name = slugify(username)
 
     hashed_pw = basic_auth_hash(password)
-    quoted_pw = docker_label_escape(hashed_pw)
 
     hostname = hostname_template.format(username=container_name)
 
@@ -240,10 +234,9 @@ def define_cs_container(
         "JTL_REPO": repo,
         "JTL_CODESERVER_URL": public_url,
         "KST_REPORTING_URL": config.KST_REPORTING_URL,
+        "KST_REPORT_DIR": config.KST_REPORT_DIR,
         "KST_CONTAINER_ID": name,
-        "KST_REPORT_RATE": (
-            config.KST_REPORT_INTERVAL if hasattr(config, "KST_REPORT_INTERVAL") else 30
-        ),
+        "KST_REPORT_INTERVAL": (config.KST_REPORT_INTERVAL if hasattr(config, "KST_REPORT_INTERVAL") else 30),
         "CS_DISABLE_GETTING_STARTED_OVERRIDE": "1",  # Disable the getting started page
     }
 
@@ -255,9 +248,7 @@ def define_cs_container(
         "jtl.codeserver.username": username,
         "jtl.codeserver.password": password,
         "jtl.codeserver.public_url": public_url,
-        "jtl.codeserver.start_time": datetime.now(
-            pytz.timezone("America/Los_Angeles")
-        ).isoformat(),
+        "jtl.codeserver.start_time": datetime.now(pytz.timezone("America/Los_Angeles")).isoformat(),
         "caddy": hostname,
         # WebSocket Handling
         "caddy.@ws.0_header": "Connection *Upgrade*",
@@ -352,9 +343,7 @@ class CodeServerManager(ServicesManager):
         parsed_uri = urlparse(self.config["DOCKER_URI"])
 
         if parsed_uri.scheme == "ssh":
-            logger.info(
-                "Creating directory %s on remote host %s", user_dir, parsed_uri.hostname
-            )
+            logger.info("Creating directory %s on remote host %s", user_dir, parsed_uri.hostname)
 
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -362,9 +351,7 @@ class CodeServerManager(ServicesManager):
 
             _, stdout, stderr = ssh.exec_command(f"mkdir -p {user_dir}")
 
-            _, stdout, stderr = ssh.exec_command(
-                f"chown  {user_id}:{user_id} {user_dir}"
-            )
+            _, stdout, stderr = ssh.exec_command(f"chown  {user_id}:{user_id} {user_dir}")
 
             exit_status = stdout.channel.recv_exit_status()
 
@@ -434,9 +421,7 @@ class CodeServerManager(ServicesManager):
                 logger.error("Container for %s already exists: %s", username, e)
                 s = self.get_by_username(username)
                 if not s:
-                    logger.error(
-                        "Error getting existing container for username %s ", username
-                    )
+                    logger.error("Error getting existing container for username %s ", username)
 
                     return None, None
             else:
@@ -460,9 +445,13 @@ class CodeServerManager(ServicesManager):
         if s:
             s.stop()
 
-    def list(
-        self, filters: Optional[Dict[str, Any]] = {"label": "jtl.codeserver"}
-    ) -> List[CSMService]:
+    def get(self, service_id: str | CodeHost) -> CSMService:
+        if isinstance(service_id, CodeHost):
+            service_id = service_id.service_id
+
+        return super().get(service_id)
+
+    def list(self, filters: Optional[Dict[str, Any]] = {"label": "jtl.codeserver"}) -> List[CSMService]:
         """
         List all Code Server instances, from the Docker API.
 
@@ -481,8 +470,6 @@ class CodeServerManager(ServicesManager):
     def sync(self, check_ready=False):
         """Sync the database with the Docker API."""
 
-        service_ids = {ch.service_id for ch in CodeHost.query.all()}
-
         in_db = {ch.service_id for ch in CodeHost.query.all()}
         in_swarm = {s.id for s in self.list()}
 
@@ -494,19 +481,19 @@ class CodeServerManager(ServicesManager):
         for service_id in not_in_swarm:
             ch = CodeHost.query.filter_by(service_id=service_id).first()
             if ch:
-                ch.state = "mia"  # "Missing in Action"
-                ch.app_state = "mia"
+                ch.state = HostState.MIA.value  # "Missing in Action"
+                ch.app_state = HostState.MIA.value
             db.session.commit()
 
         # Get the CodeHosts records that have state != 'running' or 'app_state' != 'ready'
         not_ready_hosts = CodeHost.query.filter(
-            (CodeHost.state != "running") | (CodeHost.app_state != "ready")
+            (CodeHost.state != HostState.RUNNING.value) | (CodeHost.app_state != HostState.READY.value)
         ).all()
 
         # Update remaining services.
         logger.info(f"Syncing not-ready hosts: {len(not_ready_hosts)}")
         for ch in not_ready_hosts:
-            if ch.state == "mia":
+            if ch.state == HostState.MIA.value:
                 continue
             s: CSMService = self.get(ch.service_id)
             logger.info("Syncing service %s", s.name)

@@ -41,7 +41,7 @@ dbinfo:
 	 docker compose -f docker-stack.yaml   run --rm codeserv cspawnctl db info
 
 tunnel:
-	ssh -L 5000:localhost:5000 -p 2222 tunnel@swarm1.dojtl.net
+	ssh   -R 6000:0.0.0.0:5000 -p 2222 tunnel@swarm1.dojtl.net -N
 
 
 # for development database

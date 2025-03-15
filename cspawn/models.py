@@ -2,8 +2,9 @@
 Database Models
 """
 
+from enum import Enum
 from slugify import slugify
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from hashlib import md5
 from flask import Flask
 from flask_login import UserMixin
@@ -63,12 +64,8 @@ class User(UserMixin, db.Model):
     created_at = Column(DateTime, default=func.now())
 
     # Add the relationships for classes_instructing and classes_taking
-    classes_instructing = relationship(
-        "Class", secondary="class_instructors", back_populates="instructors"
-    )
-    classes_taking = relationship(
-        "Class", secondary="class_students", back_populates="students"
-    )
+    classes_instructing = relationship("Class", secondary="class_instructors", back_populates="instructors")
+    classes_taking = relationship("Class", secondary="class_students", back_populates="students")
 
     @hybrid_property
     def role(self):
@@ -94,10 +91,7 @@ class User(UserMixin, db.Model):
         return slugify(username)
 
     def __repr__(self):
-        return (
-            f"<User(id={self.id}, username={self.username}, "
-            f"email={self.email}, provider={self.oauth_provider})>"
-        )
+        return f"<User(id={self.id}, username={self.username}, email={self.email}, provider={self.oauth_provider})>"
 
     @classmethod
     def create_root_user(cls, ap: Flask | str):
@@ -153,11 +147,7 @@ class User(UserMixin, db.Model):
         if password:
             user.password = Password(password, secret=False)
 
-        user.created_at = (
-            datetime.fromisoformat(data["created_at"])
-            if user.created_at
-            else datetime.now()
-        )
+        user.created_at = datetime.fromisoformat(data["created_at"]) if user.created_at else datetime.now()
 
         return user
 
@@ -186,12 +176,8 @@ class Class(db.Model):
     active = Column(Boolean, default=True, nullable=False)
     hidden = Column(Boolean, default=False, nullable=False)
 
-    instructors = relationship(
-        "User", secondary="class_instructors", back_populates="classes_instructing"
-    )
-    students = relationship(
-        "User", secondary="class_students", back_populates="classes_taking"
-    )
+    instructors = relationship("User", secondary="class_instructors", back_populates="classes_instructing")
+    students = relationship("User", secondary="class_students", back_populates="classes_taking")
 
     @classmethod
     def from_dict(cls, data):
@@ -208,9 +194,7 @@ class Class(db.Model):
         # Use the session's no_autoflush context manager
         with db.session.no_autoflush:
             if instructors:
-                class_instance.instructors = User.query.filter(
-                    User.id.in_(instructors)
-                ).all()
+                class_instance.instructors = User.query.filter(User.id.in_(instructors)).all()
             if students:
                 class_instance.students = User.query.filter(User.id.in_(students)).all()
 
@@ -263,6 +247,14 @@ class_students = Table(
 )
 
 
+class HostState(Enum):
+    UNKNOWN = "unknown"
+    RUNNING = "running"
+    READY = "ready"
+    MIA = "mia"
+    STARTING = "starting"
+
+
 class CodeHost(db.Model):
     __tablename__ = "code_host"
 
@@ -293,9 +285,7 @@ class CodeHost(db.Model):
     last_stats = Column(DateTime, nullable=True)
     last_heartbeat = Column(DateTime, nullable=True)  # Last time of any report
     last_utilization = Column(DateTime, nullable=True)  # Last time user editied a file
-    user_activity_rate = Column(
-        Float, default=0.0, nullable=True
-    )  # 5 M keystroke rate.
+    user_activity_rate = Column(Float, default=0.0, nullable=True)  # 5 M keystroke rate.
     utilization_1 = Column(Float, nullable=True)
     utilization_2 = Column(Float, nullable=True)
 
@@ -312,19 +302,34 @@ class CodeHost(db.Model):
         nullable=False,
     )
 
-    @property
-    def heart_beat_ago(self):
+    @staticmethod
+    def to_minutes(td: timedelta):
+        return int(round(td.total_seconds() / 60))
+
+    @hybrid_property
+    def heart_beat_ago(self) -> int:
+        """Time since last hearbeat in minutes"""
         try:
-            return datetime.now(timezone.utc) - self.last_heartbeat
+            return CodeHost.to_minutes(datetime.now(timezone.utc) - self.last_heartbeat.replace(tzinfo=timezone.utc))
+        except TypeError:
+            raise
+            return None
+
+    @hybrid_property
+    def modified_ago(self) -> int:
+        """Time since last file modification in minutes"""
+        try:
+            return CodeHost.to_minutes(datetime.now(timezone.utc) - self.last_utilization.replace(tzinfo=timezone.utc))
         except TypeError:
             return None
 
-    @property
-    def seconds_since_last_stats(self):
-        try:
-            return (datetime.now(timezone.utc) - self.last_stats).total_seconds()
-        except TypeError:
-            return None
+    @hybrid_property
+    def is_quiescent(self) -> bool:
+        return self.heart_beat_ago > 20 or self.modified_ago > 15
+
+    @hybrid_property
+    def is_mia(self) -> bool:
+        return self.app_state == HostState.MIA.value or self.state == HostState.MIA.value
 
     def update_from_ci(self, ci):
         self.service_name = ci["service_name"]
@@ -332,23 +337,6 @@ class CodeHost(db.Model):
         self.node_id = ci["node_id"]
         self.state = ci["state"]
         self.public_url = ci["hostname"]
-
-    def update_stats(self, record: dict):
-        record["last_heartbeat"] = (
-            datetime.now().astimezone().isoformat()
-        )  # set this for every record
-
-        if (
-            record.get("utilization_1") is not None
-            or record.get("utilization_2") is not None
-        ):
-            record["last_utilization"] = datetime.now().astimezone().isoformat()
-
-        if record["memory_usage"] is not None:
-            record["last_stats"] = datetime.now().astimezone().isoformat()
-
-        if record["username"] is None:
-            record["username"] = record["labels"].get("jtl.codeserver.username")
 
     def to_dict(self):
         return {
@@ -368,69 +356,47 @@ class CodeHost(db.Model):
             "password": self.password,
             "memory_usage": self.memory_usage,
             "last_stats": self.last_stats.isoformat() if self.last_stats else None,
-            "last_heartbeat": self.last_heartbeat.isoformat()
-            if self.last_heartbeat
-            else None,
-            "last_utilization": self.last_utilization.isoformat()
-            if self.last_utilization
-            else None,
+            "last_heartbeat": self.last_heartbeat.isoformat() if self.last_heartbeat else None,
+            "last_utilization": self.last_utilization.isoformat() if self.last_utilization else None,
             "utilization_1": self.utilization_1,
             "utilization_2": self.utilization_2,
             "data": self.data,
             "labels": self.labels,
             "user_activity_rate": self.user_activity_rate,
-            "last_heartbeat_ago": self.last_heartbeat_ago.isoformat()
-            if self.last_heartbeat_ago
-            else None,
+            "last_heartbeat_ago": self.last_heartbeat_ago.isoformat() if self.last_heartbeat_ago else None,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
 
     @classmethod
     def from_dict(cls, data):
-        data["last_stats"] = (
-            datetime.fromisoformat(data["last_stats"])
-            if data.get("last_stats")
-            else None
-        )
-        data["last_heartbeat"] = (
-            datetime.fromisoformat(data["last_heartbeat"])
-            if data.get("last_heartbeat")
-            else None
-        )
+        data["last_stats"] = datetime.fromisoformat(data["last_stats"]) if data.get("last_stats") else None
+        data["last_heartbeat"] = datetime.fromisoformat(data["last_heartbeat"]) if data.get("last_heartbeat") else None
         data["last_utilization"] = (
-            datetime.fromisoformat(data["last_utilization"])
-            if data.get("last_utilization")
-            else None
+            datetime.fromisoformat(data["last_utilization"]) if data.get("last_utilization") else None
         )
         data["last_heartbeat_ago"] = (
-            datetime.fromisoformat(data["last_heartbeat_ago"])
-            if data.get("last_heartbeat_ago")
-            else None
+            datetime.fromisoformat(data["last_heartbeat_ago"]) if data.get("last_heartbeat_ago") else None
         )
         data["created_at"] = (
-            datetime.fromisoformat(data["created_at"])
-            if data.get("created_at")
-            else datetime.now(timezone.utc)
+            datetime.fromisoformat(data["created_at"]) if data.get("created_at") else datetime.now(timezone.utc)
         )
         data["updated_at"] = (
-            datetime.fromisoformat(data["updated_at"])
-            if data.get("updated_at")
-            else datetime.now(timezone.utc)
+            datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else datetime.now(timezone.utc)
         )
         return cls(**data)
 
     def update_telemetry(self, telemetry: TelemetryReport):
         try:
-            max_last_modified = max(
-                file_stat.lastModified
-                for file_name, file_stat in telemetry.fileStats.items()
-            )
+            # This finds the time of the last file modification
+            # but there may be more recent keystrokes.
+            max_last_modified = max(file_stat.lastModified for file_name, file_stat in telemetry.fileStats.items())
         except ValueError:
             max_last_modified = None
 
         self.last_stats = telemetry.timestamp
-        self.last_heartbeat = telemetry.timestamp
+
+        self.last_heartbeat = telemetry.timestamp  # TIme of
         self.last_utilization = max_last_modified
 
         self.memory_usage = telemetry.sysMemory
@@ -438,6 +404,18 @@ class CodeHost(db.Model):
 
         self.utilization_1 = telemetry.average30m
         self.utilization_2 = telemetry.average1m
+
+    def update_stats(self, record: dict):
+        record["last_heartbeat"] = datetime.now().astimezone().isoformat()  # set this for every record
+
+        if record.get("utilization_1") is not None or record.get("utilization_2") is not None:
+            record["last_utilization"] = datetime.now().astimezone().isoformat()
+
+        if record["memory_usage"] is not None:
+            record["last_stats"] = datetime.now().astimezone().isoformat()
+
+        if record["username"] is None:
+            record["username"] = record["labels"].get("jtl.codeserver.username")
 
     def __repr__(self):
         return f"<CodeHost(id={self.id}, user_id={self.user_id}, service_id={self.service_id})>"
@@ -512,14 +490,10 @@ class HostImage(db.Model):
     @classmethod
     def from_dict(cls, data):
         data["created_at"] = (
-            datetime.fromisoformat(data["created_at"])
-            if data.get("created_at")
-            else datetime.now(timezone.utc)
+            datetime.fromisoformat(data["created_at"]) if data.get("created_at") else datetime.now(timezone.utc)
         )
         data["updated_at"] = (
-            datetime.fromisoformat(data["updated_at"])
-            if data.get("updated_at")
-            else datetime.now(timezone.utc)
+            datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else datetime.now(timezone.utc)
         )
         return cls(**data)
 

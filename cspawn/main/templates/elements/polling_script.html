@@ -4,24 +4,31 @@
         const url = `{{ url_for('main.is_ready') }}`;
 
         function pollServer() {
-            fetch(url)
-                .then(response => response.json())
-                .then(data => {
-                    console.log(" Code host status " + data.status);
-                    if (data.status === 'ready') {
-                        window.location.href = `{{return_url}}`;
-                    } else {
-                        setTimeout(pollServer, 2000);
-                    }
-                })
-                .catch(error => {
-                    console.log(" Polling Error: " + error);
+            pollOnce(function(isReady) {
+                if (isReady) {
+                    window.location.href = `{{return_url}}`;
+                } else {
                     setTimeout(pollServer, 2000);
-                });
+                }
+            });
         }
 
         if (`{{host.app_state}}` && `{{host.app_state}}` != 'ready') {
             pollServer();
         }
     })();
+
+    function pollOnce(callback) {
+        const url = `{{ url_for('main.is_ready') }}`;
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                console.log(" Code host status " + data.status);
+                callback(data.status === 'ready');
+            })
+            .catch(error => {
+                console.log(" Polling Error: " + error);
+                callback(false);
+            });
+    }
 </script>
