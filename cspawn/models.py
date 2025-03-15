@@ -311,8 +311,7 @@ class CodeHost(db.Model):
         """Time since last hearbeat in minutes"""
         try:
             return CodeHost.to_minutes(datetime.now(timezone.utc) - self.last_heartbeat.replace(tzinfo=timezone.utc))
-        except TypeError:
-            raise
+        except (TypeError, AttributeError):
             return None
 
     @hybrid_property
@@ -320,7 +319,7 @@ class CodeHost(db.Model):
         """Time since last file modification in minutes"""
         try:
             return CodeHost.to_minutes(datetime.now(timezone.utc) - self.last_utilization.replace(tzinfo=timezone.utc))
-        except TypeError:
+        except (TypeError, AttributeError):
             return None
 
     @hybrid_property

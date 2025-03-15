@@ -23,15 +23,19 @@ def ls(ctx):
 
     app = get_app(ctx)
 
-    rows = []
-    for s in app.csm.list():
-        for c in s.containers_info():
+    with app.app_context():
+        rows = []
+        for s in app.csm.list():
+            s.sync_to_db()
+            ch = CodeHost.query.filter_by(service_name=s.name).first()
             rows.append(
                 {
-                    "service": c["service_name"],
-                    "state": c["state"],
-                    "node_id": c["node_id"],
-                    "hostname": c["hostname"],
+                    "service": ch.service_name,
+                    "state": ch.state,
+                    "app state": ch.app_state,
+                    "node": ch.node_name,
+                    "act rate": round(ch.user_activity_rate, 3),
+                    "last act": ch.modified_ago,
                 }
             )
 
