@@ -1,14 +1,18 @@
 import json
 from datetime import datetime
-from typing import cast
-from flask import current_app, flash, redirect, render_template, request, url_for
+
+from flask import current_app, flash, redirect, render_template, request, url_for, abort
+from functools import wraps
 from flask_login import current_user, login_required
 
 from cspawn.models import HostImage
 from cspawn.models import Class, CodeHost, User, db
 from cspawn.util.names import class_code
+from cspawn.init import cast_app
 
 from . import admin_bp
+
+ca = cast_app(current_app)
 
 
 def _context():
@@ -17,21 +21,31 @@ def _context():
     return default_context
 
 
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_admin:
+            return redirect(url_for("main.index"))
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
 @admin_bp.route("/")
-@login_required
+@admin_required
 def index():
     return render_template("admin/index.html", **_context())
 
 
 @admin_bp.route("/hosts")
-@login_required
+@admin_required
 def list_code_hosts():
     code_hosts = CodeHost.query.all()
     return render_template("admin/code_hosts.html", code_hosts=code_hosts)
 
 
 @admin_bp.route("/host/<int:host_id>/delete", methods=["POST"])
-@login_required
+@admin_required
 def delete_host(host_id):
     code_host = CodeHost.query.get_or_404(host_id)
     db.session.delete(code_host)
@@ -41,7 +55,7 @@ def delete_host(host_id):
 
 
 @admin_bp.route("/host/<int:host_id>/stop", methods=["POST"])
-@login_required
+@admin_required
 def stop_host(host_id):
     code_host = CodeHost.query.get(host_id)
 
@@ -62,7 +76,7 @@ def stop_host(host_id):
 
 
 @admin_bp.route("/host/<int:host_id>/details", methods=["GET"])
-@login_required
+@admin_required
 def view_host(host_id):
     code_host = CodeHost.query.get_or_404(host_id)
     service = ca.csm.get(code_host.service_id)
@@ -73,7 +87,7 @@ def view_host(host_id):
 
 
 @admin_bp.route("/images")
-@login_required
+@admin_required
 def list_images():
     images = HostImage.query.all()
     image_data = []
@@ -84,7 +98,7 @@ def list_images():
 
 
 @admin_bp.route("/image/<int:image_id>", methods=["GET", "POST"])
-@login_required
+@admin_required
 def edit_image(image_id):
     image = HostImage.query.get_or_404(image_id)
     has_code_hosts = CodeHost.query.filter_by(host_image_id=image_id).count() > 0
@@ -104,7 +118,7 @@ def edit_image(image_id):
 
 
 @admin_bp.route("/image/new", methods=["GET", "POST"])
-@login_required
+@admin_required
 def new_image():
     if request.method == "POST":
         new_image = HostImage(
@@ -122,7 +136,7 @@ def new_image():
 
 
 @admin_bp.route("/image/<int:image_id>/delete", methods=["POST"])
-@login_required
+@admin_required
 def delete_image(image_id):
     image = HostImage.query.get_or_404(image_id)
     db.session.delete(image)
@@ -132,7 +146,7 @@ def delete_image(image_id):
 
 
 @admin_bp.route("/images/export", methods=["GET"])
-@login_required
+@admin_required
 def export_images():
     images = HostImage.query.all()
     image_data = [
@@ -154,7 +168,7 @@ def export_images():
 
 
 @admin_bp.route("/images/import", methods=["GET", "POST"])
-@login_required
+@admin_required
 def import_images():
     if request.method == "POST":
         if "file" not in request.files:
@@ -197,7 +211,7 @@ def import_images():
 
 
 @admin_bp.route("/users")
-@login_required
+@admin_required
 def list_users():
     users = User.query.all()
     current_year = datetime.now().year
@@ -205,14 +219,14 @@ def list_users():
 
 
 @admin_bp.route("/classes")
-@login_required
+@admin_required
 def classes():
     classes = Class.query.all()
     return render_template("admin/classes.html", classes=classes)
 
 
 @admin_bp.route("/classes/export", methods=["GET"])
-@login_required
+@admin_required
 def export_classes():
     classes = Class.query.all()
     class_data = [
@@ -233,31 +247,31 @@ def export_classes():
     return response
 
 
-@admin_bp.route('/classes/<class_id>/edit', methods=['GET', 'POST'])
-@login_required
+@admin_bp.route("/classes/<class_id>/edit", methods=["GET", "POST"])
+@admin_required
 def edit_class(class_id):
     from cspawn.models import HostImage
 
     if not current_user.is_instructor:
-        return redirect(url_for('admin.classes'))
+        return redirect(url_for("admin.classes"))
 
     form_data = request.form
 
-    if class_id == 'new':
-        if request.method == 'POST':
+    if class_id == "new":
+        if request.method == "POST":
             # New class, and we are posting a form with the values.
 
-            image = HostImage.query.get(form_data.get('image_id'))
+            image = HostImage.query.get(form_data.get("image_id"))
             if not image:
-                flash('Invalid image selected.', 'error')
-                return redirect(url_for('main.edit_class', class_id=class_id))
+                flash("Invalid image selected.", "error")
+                return redirect(url_for("main.edit_class", class_id=class_id))
 
             class_ = Class(
-                name=form_data.get('name'),
-                description=form_data.get('description'),
+                name=form_data.get("name"),
+                description=form_data.get("description"),
                 class_code=class_code(),
                 image_id=image.id,
-                start_date=form_data.get('start_date') or datetime.now().astimezone()
+                start_date=form_data.get("start_date") or datetime.now().astimezone(),
             )
 
             instructor = User.query.get(current_user.id)
@@ -272,35 +286,37 @@ def edit_class(class_id):
         # Existing class
         class_ = Class.query.get(class_id)
 
-    if request.method == 'POST':
+    if request.method == "POST":
         # Existing class, posting changes.
 
-        image = HostImage.query.get(form_data.get('image_id'))
+        image = HostImage.query.get(form_data.get("image_id"))
         if not image:
-            flash('Invalid image selected.', 'error')
-            return redirect(url_for('admin.edit_class', class_id=class_id))
+            flash("Invalid image selected.", "error")
+            return redirect(url_for("admin.edit_class", class_id=class_id))
 
-        class_.name = form_data.get('name') or image.name
-        class_.description = form_data.get('description') or image.desc
-        class_.start_date = form_data.get('start_date') or class_.start_date
-        class_.end_date = form_data.get('end_date') or class_.end_date
+        class_.name = form_data.get("name") or image.name
+        class_.description = form_data.get("description") or image.desc
+        class_.start_date = form_data.get("start_date") or class_.start_date
+        class_.end_date = form_data.get("end_date") or class_.end_date
         class_.image_id = image.id
 
         db.session.commit()
-        return redirect(url_for('admin.classes'))
+        return redirect(url_for("admin.classes"))
 
     all_images = HostImage.query.filter(
-        (HostImage.is_public == True) | (HostImage.creator_id == current_user.id)
+        (HostImage.is_public) | (HostImage.creator_id == current_user.id)
     ).all()
 
-    return render_template('class_form.html', clazz=class_, all_images=all_images, **context)
+    return render_template(
+        "class_form.html", clazz=class_, all_images=all_images, **_context()
+    )
 
 
-@admin_bp.route('/classes/<int:class_id>/delete')
-@login_required
+@admin_bp.route("/classes/<int:class_id>/delete")
+@admin_required
 def delete_class(class_id):
     if not current_user.is_instructor:
-        return redirect(url_for('admin.classes'))
+        return redirect(url_for("admin.classes"))
 
     class_ = Class.query.get(class_id)
     if class_:
@@ -311,6 +327,6 @@ def delete_class(class_id):
 
         db.session.delete(class_)
         db.session.commit()
-        flash('Class deleted.')
+        flash("Class deleted.")
 
-    return redirect(url_for('admin.classes'))
+    return redirect(url_for("admin.classes"))

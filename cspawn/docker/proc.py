@@ -1,4 +1,3 @@
-
 from paramiko.ssh_exception import NoValidConnectionsError
 import logging
 
@@ -86,7 +85,6 @@ class Container(ProcessBase):
 
     @property
     def simple_stats(self):
-
         mem = self.stats["memory_stats"]["usage"]
         return {
             "container_id": self.o.id,
@@ -160,7 +158,9 @@ class Service(ProcessBase):
             try:
                 n_manager = self.manager._node_manager(node_name)
             except NoValidConnectionsError as e:
-                logger.error(f"Error connecting to node {node_name}: {e}")
+                logger.error(
+                    f"Error connecting to node {node_name} for container {c}: {e}"
+                )
                 continue
 
             c = n_manager.get(container_id)
@@ -169,9 +169,7 @@ class Service(ProcessBase):
             yield c
 
     def containers_info(self):
-
         for t in self.tasks:
-
             labels = t["Spec"]["ContainerSpec"]["Labels"]
             hostname = labels.get("caddy")
             labels = {k: v for k, v in labels.items() if not k.startswith("caddy")}
@@ -179,7 +177,9 @@ class Service(ProcessBase):
             yield {
                 "service_id": self.id,
                 "service_name": self.name,
-                "container_id": t["Status"].get("ContainerStatus", {}).get("ContainerID"),
+                "container_id": t["Status"]
+                .get("ContainerStatus", {})
+                .get("ContainerID"),
                 "node_id": t.get("NodeID"),
                 "state": t["Status"]["State"],
                 "image_uri": t["Spec"]["ContainerSpec"]["Image"],

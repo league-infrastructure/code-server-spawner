@@ -19,12 +19,29 @@
         from_ip: "76.218.254.19" # Replace with your specific trusted IP
         comment: "Allow unrestricted SSH from trusted external IP"
 
-    - name: Turn off rate limit for SSH (22/tcp) from all other sources
+    - name: Allow SSH (22/tcp) with rate limit from all other sources
       ufw:
-        rule: allow
+        rule: limit
         port: "22"
         proto: tcp
-        comment: "Allow SSH from all other sources"
+        comment: "Allow SSH with rate limit from all other sources"
+
+    - name: Allow SSH (2222/tcp) unrestricted from specific trusted IP
+      ufw:
+        rule: allow
+        port: "2222"
+        proto: tcp
+        from_ip: "76.218.254.19" # Replace with your specific trusted IP
+        comment: "Allow unrestricted SSH from trusted external IP"
+
+    - name: Deny Docker API (2375/tcp) from all sources
+      ufw:
+        rule: deny
+        port: "2375"
+        proto: tcp
+        comment: "Deny Docker API from all sources"
+
+
 
     - name: Reload UFW
       ufw:
