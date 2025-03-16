@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+import re
 from cspawn.main import main_bp
 from cspawn.models import Class, CodeHost, User, db
 from cspawn.forms import ClassForm
@@ -6,7 +7,7 @@ from cspawn.forms import ClassForm
 from flask import abort, current_app, flash, redirect, render_template, request, url_for, jsonify
 from flask_login import current_user, login_required
 
-from cspawn.main.routes.main import context
+from cspawn.main.routes.main import context, instructor_required
 from cspawn.util.names import class_code
 
 from sqlalchemy.orm import joinedload
@@ -15,25 +16,25 @@ from cspawn.init import cast_app
 ca = cast_app(current_app)
 
 
-@main_bp.route('/classes/add', methods=['POST'])
+@main_bp.route("/classes/add", methods=["POST"])
 @login_required
 def add_class():
     if not current_user.is_student:
-        return redirect(url_for('main.classes'))
+        return redirect(url_for("main.classes"))
 
-    class_code = str(request.form.get('class_code')).strip()
+    class_code = str(request.form.get("class_code")).strip()
     class_ = Class.query.filter_by(class_code=class_code).first()
 
     if class_:
         current_user.classes_taking.append(class_)
         db.session.commit()
     else:
-        flash('Unknown class code.', 'error')
+        flash("Unknown class code.", "error")
 
     if current_user.is_instructor or current_user.is_admin:
-        return redirect(url_for('main.classes'))
+        return redirect(url_for("main.classes"))
     elif current_user.is_student:
-        return redirect(url_for('main.index'))
+        return redirect(url_for("main.index"))
     else:
         abort(403)
 
@@ -43,7 +44,7 @@ def add_class():
 def start_class(class_id) -> str:
     from cspawn.models import HostImage
 
-    return_url = request.args.get('return_url', url_for("main.index"))
+    return_url = request.args.get("return_url", url_for("main.index"))
 
     class_ = Class.query.get(class_id)
 
@@ -86,45 +87,50 @@ def start_class(class_id) -> str:
     return redirect(return_url)
 
 
-@main_bp.route('/class/<int:class_id>/show')
+@main_bp.route("/class/<int:class_id>/show")
 @login_required
 def show_class(class_id):
     class_ = Class.query.get_or_404(class_id)
-    return render_template('classes/show.html', class_=class_, **context)
+    return render_template("classes/show.html", class_=class_, **context)
 
 
 def host_buttons(user, class_):
     from cspawn.util.host import host_class_state, which_host_buttons
+
     return which_host_buttons(host_class_state(current_user, class_))
 
 
-context['host_buttons'] = host_buttons
+context["host_buttons"] = host_buttons
 
 
-@main_bp.route('/class/<int:class_id>/details')
+@main_bp.route("/class/<int:class_id>/details")
 @login_required
 def detail_class(class_id):
-
     class_ = Class.query.get_or_404(class_id)
     host = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
 
     print("Host buttons:", host_buttons)
 
-    return render_template('classes/detail.html', class_=class_, host=host,
-                           return_url=url_for("main.detail_class", class_id=class_id), ** context)
+    return render_template(
+        "classes/detail.html",
+        class_=class_,
+        host=host,
+        return_url=url_for("main.detail_class", class_id=class_id),
+        **context,
+    )
 
 
-@main_bp.route('/classes/<int:class_id>/delete')
+@main_bp.route("/classes/<int:class_id>/delete")
 @login_required
 def delete_class(class_id):
     if not current_user.is_instructor:
-        return redirect(url_for('main.classes'))
+        return redirect(url_for("main.classes"))
 
     class_ = Class.query.get(class_id)
 
     if class_.students:
-        flash('Cannot delete a class with enrolled students.', 'error')
-        return redirect(url_for('main.index'))
+        flash("Cannot delete a class with enrolled students.", "error")
+        return redirect(url_for("main.index"))
 
     if class_:
         # Remove all students and instructors from the class
@@ -140,90 +146,106 @@ def delete_class(class_id):
 
         db.session.delete(class_)
         db.session.commit()
-        flash('Class deleted.')
+        flash("Class deleted.")
 
-    return redirect(url_for('main.index'))
+    return redirect(url_for("main.index"))
 
 
-@main_bp.route('/classes/<class_id>/edit', methods=['GET', 'POST'])
-@login_required
+@main_bp.route("/classes/<class_id>/edit", methods=["GET", "POST"])
+@instructor_required
 def edit_class(class_id):
+    return _edit_class(class_id, "main.detail_class")
+
+
+def _edit_class(class_id, return_page):
     from cspawn.models import HostImage
 
     if not current_user.is_instructor:
-        return redirect(url_for('main.detail_class'))
+        return redirect(url_for(return_page))
 
-    action = request.form.get('action', None)
+    action = request.form.get("action", None)
 
-    if action == 'delete':
+    if action == "delete":
         return delete_class(class_id)
-    elif action == 'cancel':
-        return redirect(url_for('main.detail_class', class_id=class_id))
+    elif action == "cancel":
+        return redirect(url_for(return_page, class_id=class_id))
 
-    all_images = HostImage.query.filter(
-        (HostImage.is_public == True) | (HostImage.creator_id == current_user.id)
-    ).all()
-
-    if class_id == 'new':
+    if class_id == "new":
         form = ClassForm()
         class_ = Class()
-        if request.method == 'POST':
+        if request.method == "POST":
             instructor = User.query.get(current_user.id)
             class_.instructors.append(instructor)
+
     else:
         # Editing existing
         class_ = Class.query.options(joinedload(Class.instructors)).get(class_id)
-        if request.method == 'GET':
+        if request.method == "GET":
             form = ClassForm.from_model(class_)
         else:
             form = ClassForm()
 
-    form.image_id.choices = [(image.id, image.name) for image in all_images]
+    all_images = HostImage.query.filter(HostImage.is_public | (HostImage.creator_id == current_user.id)).all()
 
-    if request.method == 'POST':
+    form.image_id.choices = [(0, "")] + [(image.id, image.name) for image in all_images]
+
+    if request.method == "POST":
+        reload = not form.name.data
 
         form.to_model(class_)
-
-        if not class_.timezone:
-            class_.timezone = current_user.timezone
-
-        if not class_.start_date:
-            import pytz
-
-            class_.start_date = datetime.now(pytz.timezone(class_.timezone))
-
-        if class_.end_date:
-            class_.end_date = class_.end_date.astimezone(class_.timezone)
 
         if form.validate():
             db.session.add(class_)
             db.session.commit()
-            return redirect(url_for('main.detail_class', class_id=class_.id))
+            if reload:
+                reload_form = ClassForm.from_model(class_)
+                reload.image_id.choices = form.image_id.choices
+                return render_template(
+                    "classes/edit.html", clazz=class_, form=reload_form, return_page=return_page, **context
+                )
+            else:
+                return redirect(url_for(return_page, class_id=class_.id))
         else:
-            ca.logger.info('Form did not validate: %s', form.errors)
-            flash('Form did not validate', 'error')
+            ca.logger.info("Form did not validate: %s", form.errors)
+            flash("Form did not validate", "error")
 
-    return render_template('classes/edit.html', clazz=class_, form=form, **context)
+    return render_template("classes/edit.html", clazz=class_, form=form, return_page=return_page, **context)
 
 
-@main_bp.route('/classes/students/remove', methods=['POST'])
+@main_bp.route("/classes/<class_id>/copy", methods=["GET"])
+@instructor_required
+def copy_class(class_id):
+    class_ = Class.query.get_or_404(class_id)
+
+    clone = Class(**{c.name: getattr(class_, c.name) for c in class_.__table__.columns if c.name != "id"})
+
+    clone.name = f"{clone.name} (copy)"
+    clone.class_code = class_code()
+    clone.students = []
+    clone.instructors = [current_user]
+
+    db.session.add(clone)
+    db.session.commit()
+
+    return redirect(url_for("main.edit_class", class_id=clone.id))
+
+
+@main_bp.route("/classes/students/remove", methods=["POST"])
 @login_required
 def remove_students():
-
     data = request.get_json()
-    student_ids = data.get('student_ids', [])
-    class_id = data.get('class_id')
+    student_ids = data.get("student_ids", [])
+    class_id = data.get("class_id")
 
     class_ = Class.query.get_or_404(class_id)
 
     if not current_user.is_instructor or current_user not in class_.instructors:
-        return jsonify({'error': 'Unauthorized access'}), 403
+        return jsonify({"error": "Unauthorized access"}), 403
 
     for student_id in student_ids:
         student = User.query.get(student_id)
 
         if student in class_.students:
-
             host = CodeHost.query.filter_by(service_name=student.username).first()
             if host:
                 ca.csm.stop_cs(host.service_name)
@@ -232,4 +254,25 @@ def remove_students():
             class_.students.remove(student)
 
     db.session.commit()
-    return jsonify({'success': 'Selected students have been removed from the class.'})
+    return jsonify({"success": "Selected students have been removed from the class."})
+
+
+@main_bp.route("/classes/<int:class_id>/state", methods=["POST"])
+@login_required
+def class_run_state(class_id):
+    state = request.args.get("state")
+    class_ = Class.query.get_or_404(class_id)
+
+    if state == "running":
+        class_.running = True
+        class_.running_at = datetime.now(timezone.utc)
+        class_.stops_at = class_.running_at + timedelta(hours=3)
+    elif state == "stopped":
+        class_.running = False
+        class_.running_at = None
+        class_.stops_at = None
+    else:
+        return jsonify({"error": "Invalid state"}), 400
+
+    db.session.commit()
+    return jsonify({"success": "Class state updated"}), 200

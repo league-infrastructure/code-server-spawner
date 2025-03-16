@@ -52,6 +52,10 @@ routes:
 	@flask --app $(FAPP) routes
 
 # Make a migration
+
+init:
+	@flask --app $(FAPP) db init
+
 migrate:
 	@flask --app $(FAPP) db migrate -m'.'
 

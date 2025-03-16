@@ -2,13 +2,14 @@
 Database Models
 """
 
+from datetime import datetime, timedelta, timezone
 from enum import Enum
-from slugify import slugify
-from datetime import datetime, timezone, timedelta
 from hashlib import md5
+
 from flask import Flask
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
+from slugify import slugify
 from sqlalchemy import (
     Boolean,
     Column,
@@ -19,13 +20,16 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    create_engine,
+    event,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, relationship, validates
-from sqlalchemy_utils import PasswordType, database_exists, create_database
-from sqlalchemy import event, create_engine
+from sqlalchemy_utils import PasswordType, create_database, database_exists
 from tzlocal import get_localzone_name
+
 from .telemetry import TelemetryReport
 
 
@@ -164,7 +168,7 @@ class Class(db.Model):
     location = Column(String(255), nullable=True)
     timezone = Column(String(255), nullable=True)
     reference = Column(String(255), nullable=True)  # URL or other reference
-    start_date = Column(DateTime, nullable=False)
+    start_date = Column(DateTime, nullable=False)  # Time and date that the class begins.
     end_date = Column(DateTime, nullable=True)
     recurrence_rule = Column(String(255), nullable=True)
     image_id = Column(Integer, ForeignKey("host_images.id"), nullable=False)
@@ -173,11 +177,18 @@ class Class(db.Model):
 
     class_code = Column(String(40), nullable=True)
 
-    active = Column(Boolean, default=True, nullable=False)
-    hidden = Column(Boolean, default=False, nullable=False)
+    active = Column(Boolean, default=True, nullable=False)  # Can the class be started ( running )?
+    hidden = Column(Boolean, default=False, nullable=False)  # Is the class shown to students?
+    public = Column(Boolean, default=False, nullable=True)  # Is the class shown to other instructors?
+
+    running = Column(Boolean, default=False, nullable=False)
+    running_at = Column(DateTime, nullable=True)  # Time the class began allowing students to join.
+    stops_at = Column(DateTime, nullable=True)  # Time the class ends and students are no longer allowed to join.
 
     instructors = relationship("User", secondary="class_instructors", back_populates="classes_instructing")
     students = relationship("User", secondary="class_students", back_populates="classes_taking")
+
+    data = Column(JSON, nullable=True)  # JSON data for class configuration
 
     @classmethod
     def from_dict(cls, data):
@@ -217,6 +228,9 @@ class Class(db.Model):
             "class_code",
             "active",
             "hidden",
+            "running",
+            "running_at",
+            "stops_at",
         ]
         if self.start_date:
             self.start_date = self.start_date.isoformat()

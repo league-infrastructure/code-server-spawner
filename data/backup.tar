@@ -1,0 +1,607 @@
+--
+-- PostgreSQL database dump
+--
+
+-- Dumped from database version 17.2 (Debian 17.2-1.pgdg120+1)
+-- Dumped by pg_dump version 17.4 (Homebrew)
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: class_instructors; Type: TABLE; Schema: public; Owner: pguser
+--
+
+CREATE TABLE public.class_instructors (
+    class_id integer NOT NULL,
+    user_id integer NOT NULL
+);
+
+
+ALTER TABLE public.class_instructors OWNER TO pguser;
+
+--
+-- Name: class_students; Type: TABLE; Schema: public; Owner: pguser
+--
+
+CREATE TABLE public.class_students (
+    class_id integer NOT NULL,
+    user_id integer NOT NULL
+);
+
+
+ALTER TABLE public.class_students OWNER TO pguser;
+
+--
+-- Name: classes; Type: TABLE; Schema: public; Owner: pguser
+--
+
+CREATE TABLE public.classes (
+    id integer NOT NULL,
+    name character varying(100) NOT NULL,
+    description text,
+    term character varying(255),
+    location character varying(255),
+    timezone character varying(255),
+    reference character varying(255),
+    start_date timestamp without time zone NOT NULL,
+    end_date timestamp without time zone,
+    recurrence_rule character varying(255),
+    image_id integer NOT NULL,
+    start_script text,
+    class_code character varying(40),
+    active boolean NOT NULL,
+    hidden boolean NOT NULL
+);
+
+
+ALTER TABLE public.classes OWNER TO pguser;
+
+--
+-- Name: classes_id_seq; Type: SEQUENCE; Schema: public; Owner: pguser
+--
+
+CREATE SEQUENCE public.classes_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.classes_id_seq OWNER TO pguser;
+
+--
+-- Name: classes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pguser
+--
+
+ALTER SEQUENCE public.classes_id_seq OWNED BY public.classes.id;
+
+
+--
+-- Name: code_host; Type: TABLE; Schema: public; Owner: pguser
+--
+
+CREATE TABLE public.code_host (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    service_id character varying NOT NULL,
+    service_name character varying NOT NULL,
+    container_id character varying,
+    container_name character varying,
+    state character varying NOT NULL,
+    app_state character varying,
+    host_image_id integer,
+    class_id integer,
+    node_id character varying,
+    node_name character varying,
+    public_url character varying,
+    password character varying,
+    memory_usage integer,
+    last_stats timestamp without time zone,
+    last_heartbeat timestamp without time zone,
+    last_utilization timestamp without time zone,
+    utilization_1 double precision,
+    utilization_2 double precision,
+    data text,
+    labels text,
+    user_activity_rate double precision,
+    last_heartbeat_ago timestamp without time zone,
+    created_at timestamp without time zone NOT NULL,
+    updated_at timestamp without time zone NOT NULL
+);
+
+
+ALTER TABLE public.code_host OWNER TO pguser;
+
+--
+-- Name: code_host_id_seq; Type: SEQUENCE; Schema: public; Owner: pguser
+--
+
+CREATE SEQUENCE public.code_host_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.code_host_id_seq OWNER TO pguser;
+
+--
+-- Name: code_host_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pguser
+--
+
+ALTER SEQUENCE public.code_host_id_seq OWNED BY public.code_host.id;
+
+
+--
+-- Name: host_images; Type: TABLE; Schema: public; Owner: pguser
+--
+
+CREATE TABLE public.host_images (
+    id integer NOT NULL,
+    name character varying NOT NULL,
+    "desc" character varying,
+    hash character varying NOT NULL,
+    image_uri character varying NOT NULL,
+    repo_uri character varying,
+    repo_branch character varying,
+    repo_dir character varying,
+    syllabus_path character varying,
+    startup_script character varying,
+    is_public boolean NOT NULL,
+    creator_id integer,
+    created_at timestamp without time zone NOT NULL,
+    updated_at timestamp without time zone NOT NULL
+);
+
+
+ALTER TABLE public.host_images OWNER TO pguser;
+
+--
+-- Name: host_images_id_seq; Type: SEQUENCE; Schema: public; Owner: pguser
+--
+
+CREATE SEQUENCE public.host_images_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.host_images_id_seq OWNER TO pguser;
+
+--
+-- Name: host_images_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pguser
+--
+
+ALTER SEQUENCE public.host_images_id_seq OWNED BY public.host_images.id;
+
+
+--
+-- Name: sessions; Type: TABLE; Schema: public; Owner: pguser
+--
+
+CREATE TABLE public.sessions (
+    id integer NOT NULL,
+    session_id character varying(255),
+    data bytea,
+    expiry timestamp without time zone
+);
+
+
+ALTER TABLE public.sessions OWNER TO pguser;
+
+--
+-- Name: sessions_id_seq; Type: SEQUENCE; Schema: public; Owner: pguser
+--
+
+CREATE SEQUENCE public.sessions_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.sessions_id_seq OWNER TO pguser;
+
+--
+-- Name: sessions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pguser
+--
+
+ALTER SEQUENCE public.sessions_id_seq OWNED BY public.sessions.id;
+
+
+--
+-- Name: users; Type: TABLE; Schema: public; Owner: pguser
+--
+
+CREATE TABLE public.users (
+    id integer NOT NULL,
+    user_id character varying(200) NOT NULL,
+    username character varying(50),
+    email character varying(255),
+    password bytea,
+    timezone character varying(50),
+    oauth_provider character varying(50),
+    oauth_id character varying(255),
+    avatar_url character varying(500),
+    is_active boolean NOT NULL,
+    is_admin boolean NOT NULL,
+    is_student boolean NOT NULL,
+    is_instructor boolean NOT NULL,
+    display_name character varying(255),
+    birth_year integer,
+    created_at timestamp without time zone
+);
+
+
+ALTER TABLE public.users OWNER TO pguser;
+
+--
+-- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: pguser
+--
+
+CREATE SEQUENCE public.users_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.users_id_seq OWNER TO pguser;
+
+--
+-- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: pguser
+--
+
+ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
+
+
+--
+-- Name: classes id; Type: DEFAULT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.classes ALTER COLUMN id SET DEFAULT nextval('public.classes_id_seq'::regclass);
+
+
+--
+-- Name: code_host id; Type: DEFAULT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.code_host ALTER COLUMN id SET DEFAULT nextval('public.code_host_id_seq'::regclass);
+
+
+--
+-- Name: host_images id; Type: DEFAULT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.host_images ALTER COLUMN id SET DEFAULT nextval('public.host_images_id_seq'::regclass);
+
+
+--
+-- Name: sessions id; Type: DEFAULT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.sessions ALTER COLUMN id SET DEFAULT nextval('public.sessions_id_seq'::regclass);
+
+
+--
+-- Name: users id; Type: DEFAULT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
+
+
+--
+-- Data for Name: class_instructors; Type: TABLE DATA; Schema: public; Owner: pguser
+--
+
+COPY public.class_instructors (class_id, user_id) FROM stdin;
+2	2
+13	2
+\.
+
+
+--
+-- Data for Name: class_students; Type: TABLE DATA; Schema: public; Owner: pguser
+--
+
+COPY public.class_students (class_id, user_id) FROM stdin;
+2	5
+13	9
+\.
+
+
+--
+-- Data for Name: classes; Type: TABLE DATA; Schema: public; Owner: pguser
+--
+
+COPY public.classes (id, name, description, term, location, timezone, reference, start_date, end_date, recurrence_rule, image_id, start_script, class_code, active, hidden) FROM stdin;
+2	Games	Games	now	ONline	America/Los_Angeles	\N	2025-03-05 22:16:00	\N	\N	2	\N	97 efficient deer	t	f
+13	Python Apprentice	Learn Python  the League Way	SPring 2025	League Headquarters	America/Los_Angeles	\N	2025-03-08 06:51:07.951292	\N	\N	1	\N	swartz enjoys rice	t	f
+\.
+
+
+--
+-- Data for Name: code_host; Type: TABLE DATA; Schema: public; Owner: pguser
+--
+
+COPY public.code_host (id, user_id, service_id, service_name, container_id, container_name, state, app_state, host_image_id, class_id, node_id, node_name, public_url, password, memory_usage, last_stats, last_heartbeat, last_utilization, utilization_1, utilization_2, data, labels, user_activity_rate, last_heartbeat_ago, created_at, updated_at) FROM stdin;
+69	9	1w7qvih6a9y06qs9zmy0z2cfg	test-student	e3f04ba221ec8c7c7241bd07673ad3c8fd88cff7ff6cdadd7927d89bdacc9468	/test-student.1.m9hbosti3dhhi78msi8rgq1fo	running	ready	1	13	jtlr50hzc1v5kt3cvx83bcgo6	swarm3	https://test-student:5ymVpt_oYXqtBpwn@test-student.amazingprogrammers.org/	5ymVpt_oYXqtBpwn	\N	\N	\N	\N	\N	\N	\N	{"caddy": "test-student.amazingprogrammers.org", "caddy.0_route.handle": "/websockify*", "caddy.0_route.handle.reverse_proxy": "@ws {{upstreams 6080}}", "caddy.0_route.handle.reverse_proxy.transport": "http", "caddy.0_route.handle.reverse_proxy.transport.versions": "1.1", "caddy.1_route.handle": "/vnc/*", "caddy.1_route.handle_path": "/vnc/*", "caddy.1_route.handle_path.reverse_proxy": "{{upstreams 6080}}", "caddy.2_route.handle": "/*", "caddy.2_route.handle.reverse_proxy": "{{upstreams 80}}", "caddy.@ws.0_header": "Connection *Upgrade*", "caddy.@ws.1_header": "Upgrade websocket", "caddy.@ws.2_header": "Origin {http.request.header.Origin}", "caddy.basic_auth.test-student": "$2b$14$yrx7fos94NrzMS3c0Wv5TOimhGFTC/MExtZZgJHet8QkHP0KU8OFS", "jtl": "true", "jtl.codeserver": "true", "jtl.codeserver.class_id": "13", "jtl.codeserver.password": "5ymVpt_oYXqtBpwn", "jtl.codeserver.public_url": "https://test-student:5ymVpt_oYXqtBpwn@test-student.amazingprogrammers.org/", "jtl.codeserver.start_time": "2025-03-15T15:15:58.209497-07:00", "jtl.codeserver.username": "test-student"}	0	\N	2025-03-15 22:15:58.209497	2025-03-15 22:06:29.051152
+\.
+
+
+--
+-- Data for Name: host_images; Type: TABLE DATA; Schema: public; Owner: pguser
+--
+
+COPY public.host_images (id, name, "desc", hash, image_uri, repo_uri, repo_branch, repo_dir, syllabus_path, startup_script, is_public, creator_id, created_at, updated_at) FROM stdin;
+2	Python Games	Build classic video games while learning Object Oriented Programming in Python. 	4394f14e15c545e6f95045eb13c6e563	ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:v1.20250308.1	https://github.com/league-curriculum/Python-Games	\N	\N		\N	t	1	2025-03-05 22:15:09.799627	2025-03-08 16:56:15.177482
+1	Python Apprentice	An introduction to Python programming, aligned with the PCEP Python Exam.	6a29804c4b848442b61255ebe72d0b73	ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:v1.20250315.1	https://github.com/league-curriculum/Python-Apprentice	\N	\N	/workspace/Python-Apprentice/.jtl/syllabus.yaml	\N	t	1	2025-03-05 22:15:09.799627	2025-03-15 22:06:29.061089
+\.
+
+
+--
+-- Data for Name: sessions; Type: TABLE DATA; Schema: public; Owner: pguser
+--
+
+COPY public.sessions (id, session_id, data, expiry) FROM stdin;
+30	session:gEcmldqqiTDxOnBXCD_h7i7Cx0IOfD49W1eUplo69HI	\\x7b225f7065726d616e656e74223a747275652c2273657373696f6e5f6964223a2234393061646332382d303437662d346364372d623431392d393233663265313732336436222c225f6672657368223a66616c73657d	2025-03-15 23:57:55.151828
+31	session:M79bPHTo5mpJArbP8VVA_8lNXMWiZb7PSCOucFRigFo	\\x7b225f7065726d616e656e74223a747275652c2273657373696f6e5f6964223a2233636330633135622d383465382d346433322d616138642d656262313164633366323064222c225f6672657368223a747275652c22637372665f746f6b656e223a2235393666383633363730346639333631636132653239623333356633663863316235323265313039222c22676f6f676c655f6f617574685f746f6b656e223a7b226163636573735f746f6b656e223a22796132392e6130416558525070353652586a52725a766f753756354872344746426c7a5f6d51576c5236774557396d704b756d78575546625461492d7a30416261347779354539795a6a643941796b56787237623847332d51676a4f36613533643533534673795767736541426c4c52677556645267794d3873694a595f33364e56664877364a6e33616f32426e343265376d4a554b7546666a354563414750385a337356777830646168756576645f77614367594b4164515341524d534651484758324d693950426b324d555037634762375937557469694f777730313737222c22657870697265735f696e223a333539382e3936343239392c2273636f7065223a5b2268747470733a2f2f7777772e676f6f676c65617069732e636f6d2f617574682f75736572696e666f2e656d61696c222c226f70656e6964222c2268747470733a2f2f7777772e676f6f676c65617069732e636f6d2f617574682f75736572696e666f2e70726f66696c65225d2c22746f6b656e5f74797065223a22426561726572222c2269645f746f6b656e223a2265794a68624763694f694a53557a49314e694973496d74705a434936496a6b784e475a694f5749774f4463784f444269597a417a4d444d794f4451314d44426a4e5759314e44426a4e6d51305a6a566c4d6d59694c434a30655841694f694a4b5631516966512e65794a7063334d694f694a6859324e76645735306379356e6232396e62475575593239744969776959587077496a6f694d5441314f546b774e4441314e7a45794d53316f635851776447356c634852715a6a6b31644751784d327871624856735958453461584d355a326377646935686348427a4c6d6476623264735a58567a5a584a6a623235305a5735304c6d4e7662534973496d46315a434936496a45774e546b354d4451774e5463784d6a4574614846304d4852755a584230616d59354e58526b4d544e73616d7831624746784f476c7a4f57646e4d485975595842776379356e6232396e624756316332567959323975644756756443356a623230694c434a7a645749694f6949784d4445784d4455334e5449314d6a59334d4449304e5449354e5449694c434a6f5a434936496d707661573530614756735a57466e6457557562334a6e496977695a573168615777694f694a305a584e304c6e567a5a584a41616d3970626e526f5a57786c595764315a533576636d63694c434a6c62574670624639325a584a705a6d6c6c5a43493664484a315a537769595852666147467a61434936496b4a774f58524e5658426d556e4e7a58305247546c6b7a51324674545863694c434a70595851694f6a45334e4449774e7a63314d7a5573496d5634634349364d5463304d6a41344d54457a4e58302e70516a745134726d3578723948524d6a7a343468627a6236394b50434d515f43365952453371464652495f496679636f7846596365517636517a45684c3542427a524e6b6c655763593145556f49734c586d4a456577654975547a4730626f546a5661786c514f57543731754c764a6c68657a73765472445244384f3345313778745a4c6c76545772415a474d6f4f33527437305770567354324e596d3269334e5074507756566b58337a5179777a43474f745f67346833344c787a443767577339693566554e386d687776395438583079357775397a6e56716a43656d41545273724b4f6174787a357a695a5375557536795f306941524f694d34546d666d58333242454e587a6e3077464b75366567493076487a6f6953595579346f4d584a5f4e4d42716a735575494c484d345577366576323438706749564135644a786d72595a546b47614e6270487a613479356f76593451222c22657870697265735f6174223a313734323038313133342e3032363236347d2c225f757365725f6964223a2232222c225f6964223a223335653237356465376139616538613932353333363137386634666634336164643532383762343837306637363533613932303836366132376230356162303462393233316332386433383938316161323566326635636233653832323334376166313462316664363061373062656231396135373134343332326263363633227d	2025-03-16 22:25:35.479801
+28	session:O2fj46RFMMFXtP-zQ2UPPoO2-nVWgur0PakdFcj8cUI	\\x7b225f7065726d616e656e74223a747275652c2273657373696f6e5f6964223a2261306339633135302d633133372d343736662d383962352d633461356665356431613666222c225f6672657368223a66616c73652c22637372665f746f6b656e223a2233343966343466366634646162656161313564333262643161383136363761326336323364336334222c22676f6f676c655f6f617574685f7374617465223a2236444e4e553067563832374e506953756c634342644556376f6833493441227d	2025-03-15 23:06:22.63484
+27	session:yPvTV4t27-j2FbYfbAJHSD-E9T2sN2vS_nUh--fs8k8	\\x7b225f7065726d616e656e74223a747275652c2273657373696f6e5f6964223a2230343766323962382d663063372d343039372d393863622d383232323537326264363530222c225f6672657368223a747275652c22637372665f746f6b656e223a2239363264633839333033653766653238646661366235636239333636323234393036663731336532222c22676f6f676c655f6f617574685f746f6b656e223a7b226163636573735f746f6b656e223a22796132392e61304165585250703557536562457a71684149535769437754363151576350466f76424466364e6c697436734f36414f68636373516a47624e735078523152546339724c4c6a736e5a6632526c7571552d63584d6c71614c49346a6b326f5a64437251316178356f556472586c4c41433138412d3677725a52444b674e33464237496e5f6f5364322d32746c6a445f506f4e41535634484c706161506d34546e574b4d527779642d68593377614367594b41527753415245534651484758324d696b714a6750527a50524578576f796a6e2d503249384130313737222c22657870697265735f696e223a333539382e3936373633352c2273636f7065223a5b2268747470733a2f2f7777772e676f6f676c65617069732e636f6d2f617574682f75736572696e666f2e70726f66696c65222c2268747470733a2f2f7777772e676f6f676c65617069732e636f6d2f617574682f75736572696e666f2e656d61696c222c226f70656e6964225d2c22746f6b656e5f74797065223a22426561726572222c2269645f746f6b656e223a2265794a68624763694f694a53557a49314e694973496d74705a434936496a6b784e475a694f5749774f4463784f444269597a417a4d444d794f4451314d44426a4e5759314e44426a4e6d51305a6a566c4d6d59694c434a30655841694f694a4b5631516966512e65794a7063334d694f694a6859324e76645735306379356e6232396e62475575593239744969776959587077496a6f694d5441314f546b774e4441314e7a45794d53316f635851776447356c634852715a6a6b31644751784d327871624856735958453461584d355a326377646935686348427a4c6d6476623264735a58567a5a584a6a623235305a5735304c6d4e7662534973496d46315a434936496a45774e546b354d4451774e5463784d6a4574614846304d4852755a584230616d59354e58526b4d544e73616d7831624746784f476c7a4f57646e4d485975595842776379356e6232396e624756316332567959323975644756756443356a623230694c434a7a645749694f6949784d4445324d4449334d6a45334d5463344d6a59314f44637a4f4467694c434a6f5a434936496d707661573530614756735a57466e6457557562334a6e496977695a573168615777694f694a6c636d6c6a4c6d4a3163324a7662323141616d3970626e526f5a57786c595764315a533576636d63694c434a6c62574670624639325a584a705a6d6c6c5a43493664484a315a537769595852666147467a61434936496a55344d6d526f545731494d586c6c62546453536c424f526d4e69515763694c434a70595851694f6a45334e4445354f4441784e446b73496d5634634349364d5463304d546b344d7a63304f58302e63446d4c5268537368454e524f5259394f46326b346c74425157734258506341715955483062676c4d626d63654a43375f76686152684b3451595f457a3058363161766b536672705f334c2d4d34433052765876794a43594f4b305f4a54666751707a6f4353676e67533531594f366b7367307a65636762582d6c4336366732354d7339504f52564447696d6d5435466f4f47764d754c745543557a76664c696963706d30316c59742d445f6b67673577516d7172626c316a4b71774c5f364465707a737a654973316250652d5a7a4163655166772d76505a545948784d795075586d457344666b6d446154616375775377756b347a3858463631553849756b36555f752d785669526a595a6c494e5f4448437656724a56374147705a6f4a537a765f35756e41723570736c514b365a73425158564a5236727053334b703544306b2d4c6534775041505659565f3043683869663477222c22657870697265735f6174223a313734313938333734382e3830383637337d2c225f757365725f6964223a2234222c225f6964223a223335653237356465376139616538613932353333363137386634666634336164643532383762343837306637363533613932303836366132376230356162303462393233316332386433383938316161323566326635636233653832323334376166313462316664363061373062656231396135373134343332326263363633227d	2025-03-16 22:13:02.271908
+29	session:GTaN3YqBpArDJjED2TU_ZO93lYLUlJ_tIlgF6gL9LeE	\\x7b225f7065726d616e656e74223a747275652c22637372665f746f6b656e223a2239396138333164363861616633343062643065313335643962663231383935666161366530346636222c225f6672657368223a747275652c2273657373696f6e5f6964223a2236376432306138352d623230332d343733342d396235622d336133666332346561366331222c22676f6f676c655f6f617574685f746f6b656e223a7b226163636573735f746f6b656e223a22796132392e613041655852507035634755736a664c72534c6461357a6e6a4e63574d32444c4c3359457837325877314b6b31576e567a4666647852757947426138443058516c42387466484164616b675f3979414f475763525a6f746443503848537278465a3668307a555536745035556a51574d504e677372567a59685a44354267744c443742774364353139306a39496d495a56683069555a554a5f727049375370346862703557313671624e614367594b41635553415241534651484758324d6949706552514f32626e4d585341306375715949415a4130313735222c22657870697265735f696e223a333539382e3936383235322c2273636f7065223a5b226f70656e6964222c2268747470733a2f2f7777772e676f6f676c65617069732e636f6d2f617574682f75736572696e666f2e656d61696c222c2268747470733a2f2f7777772e676f6f676c65617069732e636f6d2f617574682f75736572696e666f2e70726f66696c65225d2c22746f6b656e5f74797065223a22426561726572222c2269645f746f6b656e223a2265794a68624763694f694a53557a49314e694973496d74705a434936496a6b784e475a694f5749774f4463784f444269597a417a4d444d794f4451314d44426a4e5759314e44426a4e6d51305a6a566c4d6d59694c434a30655841694f694a4b5631516966512e65794a7063334d694f694a6859324e76645735306379356e6232396e62475575593239744969776959587077496a6f694d5441314f546b774e4441314e7a45794d53316f635851776447356c634852715a6a6b31644751784d327871624856735958453461584d355a326377646935686348427a4c6d6476623264735a58567a5a584a6a623235305a5735304c6d4e7662534973496d46315a434936496a45774e546b354d4451774e5463784d6a4574614846304d4852755a584230616d59354e58526b4d544e73616d7831624746784f476c7a4f57646e4d485975595842776379356e6232396e624756316332567959323975644756756443356a623230694c434a7a645749694f6949784d5451324f5449324e7a51784d4467344e4449354e6a55774e5459694c434a6f5a434936496e4e306457526c626e527a4c6d707661573530614756735a57466e6457557562334a6e496977695a573168615777694f694a305a584e304c6e4e306457526c626e5241633352315a47567564484d75616d3970626e526f5a57786c595764315a533576636d63694c434a6c62574670624639325a584a705a6d6c6c5a43493664484a315a537769595852666147467a61434936496c64306133707257433131576c42356257497964474a54556c566b516d63694c434a70595851694f6a45334e4445354f54517a4d6a4173496d5634634349364d5463304d546b354e7a6b794d48302e6f4877347a5735755072653054344f6654714a567a6c5967725166666b725a6b4d6d6b586d527861696f776f72616e36427034325576594f2d52686a79794f386f68795255556c6d77564d78533454526672685170684a53546b45484374434b766a73336275574f6b717958506b44497a685a3838635a5a454d4f7842784a4d54365575646172643664684757726c35616e2d306236496b52654271356f39636663506d377834373343442d7067625579574378374674746e785139764c73506169416f354c746f3069795f65753435596c7532483173486c6f674d312d7a795a714f5374515a436d5332636f38334b4a763563796d59314f3368703359677431427638654e5039337771523859304e42527a457572387764754c414c4d534b553652545a37776d3949644a5230464a5a38656539717553375a4661354938456373696d41545968505f31686f537554716879417977222c22657870697265735f6174223a313734313939373931392e3630313638357d2c225f757365725f6964223a2239222c225f6964223a223335653237356465376139616538613932353333363137386634666634336164643532383762343837306637363533613932303836366132376230356162303462393233316332386433383938316161323566326635636233653832323334376166313462316664363061373062656231396135373134343332326263363633227d	2025-03-16 22:16:35.612729
+\.
+
+
+--
+-- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: pguser
+--
+
+COPY public.users (id, user_id, username, email, password, timezone, oauth_provider, oauth_id, avatar_url, is_active, is_admin, is_student, is_instructor, display_name, birth_year, created_at) FROM stdin;
+0	__root__	root	\N	\\x243262243132246d555847762e702f42713938624d6369692f45715775644a6754555049373955562f6841534c436e7938654c657265506676385547	America/Los_Angeles	\N	\N	\N	t	t	f	f	\N	\N	2025-03-05 22:15:11.464449
+1	__admin__	admin	\N	\\x243262243132244b586542445558534d6c4369683366427141375a4465356568436b734a5250763169444755656f667447424169354a7558735a3569	America/Los_Angeles	\N	\N	\N	t	t	t	t	Admin	1900	2025-03-05 22:15:12.237359
+2	google_101105752526702452952	test-user	test.user@jointheleague.org	\N	America/Los_Angeles	google	101105752526702452952	https://lh3.googleusercontent.com/a/ACg8ocJE2byoH89DLR37IvrFO_2gnQG1n0ImgfABAJ4jXiI6_hnF7g=s96-c	t	f	f	t	\N	\N	2025-03-05 22:15:30.744097
+3	db8c9fb7-520f-458c-9405-45ad20cdc047	bob	\N	\\x24326224313224506e50746a6149785537347876313033424b74626565566a46302f6c2f70727a6734534843563446774b766744372e746767356636	America/Los_Angeles	\N	\N	\N	t	f	t	f	\N	\N	2025-03-05 22:17:26.714745
+4	google_101602721717826587388	eric-busboom	eric.busboom@jointheleague.org	\N	America/Los_Angeles	google	101602721717826587388	https://lh3.googleusercontent.com/a/ACg8ocK26N7NIovrkZZ4I7b1_mvKB8UjTmsbD5eNPByt2PggT9ayfqA=s96-c	t	t	t	t	\N	\N	2025-03-05 22:19:19.109484
+5	6475370e-9f05-4749-bb03-9d907d1f53a5	billy	\N	\\x24326224313224344d6546716e7846564d796d55757250456856337765354a70795159344d69735a4d43704e733370535952706f2e51684e6b356b79	America/Los_Angeles	\N	\N	\N	t	f	t	f	\N	\N	2025-03-05 22:20:01.009036
+9	google_114692674108842965056	test-student	test.student@students.jointheleague.org	\N	America/Los_Angeles	google	114692674108842965056	https://lh3.googleusercontent.com/a/ACg8ocJ-lHnsKUDr34aycShXeW2YAeWaJgPFgSL6tMeUueRXhCaGLA=s96-c	t	f	t	f	\N	\N	2025-03-08 01:55:30.829268
+\.
+
+
+--
+-- Name: classes_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pguser
+--
+
+SELECT pg_catalog.setval('public.classes_id_seq', 13, true);
+
+
+--
+-- Name: code_host_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pguser
+--
+
+SELECT pg_catalog.setval('public.code_host_id_seq', 69, true);
+
+
+--
+-- Name: host_images_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pguser
+--
+
+SELECT pg_catalog.setval('public.host_images_id_seq', 2, true);
+
+
+--
+-- Name: sessions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pguser
+--
+
+SELECT pg_catalog.setval('public.sessions_id_seq', 31, true);
+
+
+--
+-- Name: users_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pguser
+--
+
+SELECT pg_catalog.setval('public.users_id_seq', 9, true);
+
+
+--
+-- Name: class_instructors class_instructors_pkey; Type: CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.class_instructors
+    ADD CONSTRAINT class_instructors_pkey PRIMARY KEY (class_id, user_id);
+
+
+--
+-- Name: class_students class_students_pkey; Type: CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.class_students
+    ADD CONSTRAINT class_students_pkey PRIMARY KEY (class_id, user_id);
+
+
+--
+-- Name: classes classes_pkey; Type: CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.classes
+    ADD CONSTRAINT classes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: code_host code_host_pkey; Type: CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.code_host
+    ADD CONSTRAINT code_host_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: code_host code_host_service_id_key; Type: CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.code_host
+    ADD CONSTRAINT code_host_service_id_key UNIQUE (service_id);
+
+
+--
+-- Name: host_images host_images_pkey; Type: CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.host_images
+    ADD CONSTRAINT host_images_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sessions sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.sessions
+    ADD CONSTRAINT sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sessions sessions_session_id_key; Type: CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.sessions
+    ADD CONSTRAINT sessions_session_id_key UNIQUE (session_id);
+
+
+--
+-- Name: users users_oauth_id_key; Type: CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_oauth_id_key UNIQUE (oauth_id);
+
+
+--
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: users users_username_key; Type: CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_username_key UNIQUE (username);
+
+
+--
+-- Name: ix_users_email; Type: INDEX; Schema: public; Owner: pguser
+--
+
+CREATE UNIQUE INDEX ix_users_email ON public.users USING btree (email);
+
+
+--
+-- Name: ix_users_user_id; Type: INDEX; Schema: public; Owner: pguser
+--
+
+CREATE INDEX ix_users_user_id ON public.users USING btree (user_id);
+
+
+--
+-- Name: class_instructors class_instructors_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.class_instructors
+    ADD CONSTRAINT class_instructors_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.classes(id);
+
+
+--
+-- Name: class_instructors class_instructors_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.class_instructors
+    ADD CONSTRAINT class_instructors_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: class_students class_students_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.class_students
+    ADD CONSTRAINT class_students_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.classes(id);
+
+
+--
+-- Name: class_students class_students_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.class_students
+    ADD CONSTRAINT class_students_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: classes classes_image_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.classes
+    ADD CONSTRAINT classes_image_id_fkey FOREIGN KEY (image_id) REFERENCES public.host_images(id);
+
+
+--
+-- Name: code_host code_host_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.code_host
+    ADD CONSTRAINT code_host_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.classes(id);
+
+
+--
+-- Name: code_host code_host_host_image_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.code_host
+    ADD CONSTRAINT code_host_host_image_id_fkey FOREIGN KEY (host_image_id) REFERENCES public.host_images(id);
+
+
+--
+-- Name: code_host code_host_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.code_host
+    ADD CONSTRAINT code_host_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: host_images host_images_creator_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: pguser
+--
+
+ALTER TABLE ONLY public.host_images
+    ADD CONSTRAINT host_images_creator_id_fkey FOREIGN KEY (creator_id) REFERENCES public.users(id);
+
+
+--
+-- PostgreSQL database dump complete
+--
+
