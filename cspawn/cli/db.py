@@ -1,7 +1,10 @@
 import click
+import subprocess
 from sqlalchemy import MetaData
 from cspawn.models import export_dict, import_dict, ensure_database_exists
 import json
+from urllib.parse import urlparse
+import os
 
 from .root import cli
 from .util import get_app, load_data, make_data
@@ -74,9 +77,7 @@ def sync(ctx):
 
 
 @db.command()
-@click.option(
-    "-d", "--demo", is_flag=True, help="Load demo data after recreating the database."
-)
+@click.option("-d", "--demo", is_flag=True, help="Load demo data after recreating the database.")
 @click.pass_context
 def recreate(ctx, demo):
     """Destroy and recreate all database tables."""
@@ -97,12 +98,10 @@ def recreate(ctx, demo):
 
 
 @db.command()
-@click.option(
-    "-f", "--file", help="Load demo data after recreating the database."
-)
+@click.option("-f", "--file", help="Load demo data after recreating the database.")
 @click.pass_context
 def export(ctx, file):
-    """ Export the database to JSON """
+    """Export the database to JSON"""
 
     app = get_app(ctx)
 
@@ -118,9 +117,7 @@ def export(ctx, file):
 
 
 @db.command(name="import")
-@click.option(
-    "-f", "--file", help="Load demo data after recreating the database."
-)
+@click.option("-f", "--file", help="Load demo data after recreating the database.")
 @click.pass_context
 def import_(ctx, file):
     """Import data from a JSON file into the database."""
@@ -137,13 +134,47 @@ def import_(ctx, file):
 
         # Update sequence IDs to the max of the id field in each table
         for table in app.db.metadata.tables.values():
-            if 'id' in table.columns:
+            if "id" in table.columns:
                 max_id = app.db.session.query(app.db.func.max(table.c.id)).scalar()
                 if max_id is not None:
                     sequence_name = f"{table.name}_id_seq"
                     with app.db.engine.connect() as connection:
                         connection.execute(
                             app.db.text(f"SELECT setval(:sequence_name, :max_id)"),
-                            {"sequence_name": sequence_name, "max_id": max_id}
+                            {"sequence_name": sequence_name, "max_id": max_id},
                         )
         print("Sequence IDs updated successfully.")
+
+
+@db.command(name="backup")
+@click.option("-f", "--file", default="-", help='Output location of the backup file, or "-" to output to stdout.')
+@click.pass_context
+def backup(ctx, file):
+    """Run pg_dump to backup the database."""
+    app = get_app(ctx)
+    with app.app_context():
+        db_url = urlparse(str(app.app_config["POSTGRES_URL"]))
+        command = [
+            "pg_dump",
+            f"--host={db_url.hostname}",
+            f"--port={db_url.port}",
+            f"--username={db_url.username}",
+            f"--dbname={db_url.path[1:]}",  # Remove leading slash
+        ]
+        if file != "-":
+            command.extend(["--file", file])
+
+        # Set the password in the environment
+        os.environ["PGPASSWORD"] = db_url.password
+
+        try:
+            subprocess.run(command, check=True)
+        except subprocess.CalledProcessError as e:
+            click.echo(f"Error running pg_dump: {e}", err=True)
+        finally:
+            # Remove the password from the environment
+            del os.environ["PGPASSWORD"]
+
+
+if __name__ == "__main__":
+    db()

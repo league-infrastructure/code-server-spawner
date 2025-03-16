@@ -112,9 +112,7 @@ def edit_image(image_id):
         db.session.commit()
         flash("Image updated successfully", "success")
         return redirect(url_for("admin.list_images"))
-    return render_template(
-        "admin/edit_image.html", image=image, has_code_hosts=has_code_hosts
-    )
+    return render_template("admin/edit_image.html", image=image, has_code_hosts=has_code_hosts)
 
 
 @admin_bp.route("/image/new", methods=["GET", "POST"])
@@ -250,66 +248,9 @@ def export_classes():
 @admin_bp.route("/classes/<class_id>/edit", methods=["GET", "POST"])
 @admin_required
 def edit_class(class_id):
-    from cspawn.models import HostImage
+    from cspawn.main.routes.classes import _edit_class
 
-    if not current_user.is_instructor:
-        return redirect(url_for("admin.classes"))
-
-    form_data = request.form
-
-    if class_id == "new":
-        if request.method == "POST":
-            # New class, and we are posting a form with the values.
-
-            image = HostImage.query.get(form_data.get("image_id"))
-            if not image:
-                flash("Invalid image selected.", "error")
-                return redirect(url_for("main.edit_class", class_id=class_id))
-
-            class_ = Class(
-                name=form_data.get("name"),
-                description=form_data.get("description"),
-                class_code=class_code(),
-                image_id=image.id,
-                start_date=form_data.get("start_date") or datetime.now().astimezone(),
-            )
-
-            instructor = User.query.get(current_user.id)
-
-            class_.instructors.append(instructor)
-            db.session.add(class_)
-        else:
-            # New class, first time viewing the form, so it is empty.
-            class_ = None
-
-    else:
-        # Existing class
-        class_ = Class.query.get(class_id)
-
-    if request.method == "POST":
-        # Existing class, posting changes.
-
-        image = HostImage.query.get(form_data.get("image_id"))
-        if not image:
-            flash("Invalid image selected.", "error")
-            return redirect(url_for("admin.edit_class", class_id=class_id))
-
-        class_.name = form_data.get("name") or image.name
-        class_.description = form_data.get("description") or image.desc
-        class_.start_date = form_data.get("start_date") or class_.start_date
-        class_.end_date = form_data.get("end_date") or class_.end_date
-        class_.image_id = image.id
-
-        db.session.commit()
-        return redirect(url_for("admin.classes"))
-
-    all_images = HostImage.query.filter(
-        (HostImage.is_public) | (HostImage.creator_id == current_user.id)
-    ).all()
-
-    return render_template(
-        "class_form.html", clazz=class_, all_images=all_images, **_context()
-    )
+    return _edit_class(class_id, "admin.classes")
 
 
 @admin_bp.route("/classes/<int:class_id>/delete")

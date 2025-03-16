@@ -33,6 +33,9 @@
                 <th>Class Code</th>
                 <th>Host Images</th>
                 <th>Instructors</th>
+                <th>Active</th>
+                <th>Public</th>
+                <th>Hidden</th>
                 <th>Actions</th>
             </tr>
         </thead>
@@ -52,6 +55,21 @@
                     {% for instructor in class.instructors %}
                     {{ instructor.name }}{% if not loop.last %}, {% endif %}
                     {% endfor %}
+                </td>
+                <td>
+                    {% if class.active %}
+                    ✓
+                    {% endif %}
+                </td>
+                <td>
+                    {% if class.public %}
+                    ✓
+                    {% endif %}
+                </td>
+                <td>
+                    {% if class.hidden %}
+                    ✓
+                    {% endif %}
                 </td>
                 <td>
                     <a href="{{url_for('admin.edit_class', class_id=class.id)}}" class="btn btn-sm btn-primary">Edit</a>
