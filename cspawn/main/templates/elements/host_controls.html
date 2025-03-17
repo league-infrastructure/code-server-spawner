@@ -1,38 +1,39 @@
-{% set hb = host_buttons(current_user, class_) %}
+{% set hb = which_host_buttons(class_.host_class_state(current_user, host)) %}
 
+{# this nonsense to avoid a linters conflict between jinja and js #}
+{% set host_id = host.id %}
+{% set open_host = "openHost(" ~ host.id ~ ")" %}
 
-{% if 'waiting' in hb %}
+{%- if 'waiting' in hb -%}
 <button class="btn btn-warning btn-table" disabled>Waiting for Instructor</button>
-{% endif %}
+{%- endif %}
 
-{% if 'open' in hb %}
-<a href="javascript:void(0);" onclick="openHost( {{host.id}} )" class="btn btn-primary btn-table" > Open</a>
-{% endif %}
+{%- if 'open' in hb -%}
+<a href="javascript:void(0);" onclick="{{open_host}}" class="btn btn-primary btn-table" > Open</a>
+{%- endif %}
 
-{% if 'stop' in hb %}
+{%- if 'stop' in hb -%}
 <a href="{{ url_for('main.stop_host', host_id=host.id, return_url=return_url) }}"
     class="btn btn-warning btn-table">Stop</a>
-{% endif %}
+{%- endif %}
 
-{% if 'other' in hb %}
+{%- if 'other' in hb -%}
 <small class="text-muted">
-    {% if host.class_id %}
+    {%- if host.class_id -%}
     <a href="{{url_for('main.detail_class', class_id=host.class_.id)}}">Host is for another class.</a>
-    {% else %}
+    {%- else -%}
     Host is for unknown class
-    {% endif %}
+    {%- endif -%}
 </small>
-{% endif %}
+{%- endif %}
 
-{% if 'start' in hb %}
+{%- if 'start' in hb -%}
 <a href="{{ url_for('main.start_class', class_id=class_.id, return_url=return_url) }}"
     class="btn btn-success btn-table ">Start</a>
-{% endif %}
+{%- endif %}
 
-{% if 'spin' in hb %}
+{%- if 'spin' in hb -%}
 <div id="host_view" class="w-100 p-0">
     <div class="spinner"></div>
 </div>
-{% endif %}
-
-
+{%- endif %}

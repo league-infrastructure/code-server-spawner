@@ -42,7 +42,7 @@
 {% block content %}
 <div class="container">
     <div class="row">
-        {% for class_ in current_user.classes_taking %}
+        {% for class_ in current_user.classes_taking if class_.active %}
         {% include "elements/class_card.html" %}
         {% endfor %}
     </div>
