@@ -2,11 +2,12 @@ from flask_login import current_user
 from datetime import datetime
 from flask_wtf import FlaskForm
 from wtforms import StringField, TextAreaField, DateTimeField, SelectField, BooleanField
-from wtforms.validators import DataRequired, Optional
-from cspawn.models import HostImage
+from wtforms.validators import DataRequired, Optional, ValidationError
+from cspawn.models import HostImage, Class, User
 from cspawn.util.names import class_code
 from wtforms import validators
 import pytz
+from zoneinfo import ZoneInfo
 
 
 class ConditionalDataRequired(validators.DataRequired):
@@ -34,15 +35,25 @@ class ClassForm(FlaskForm):
     hidden = BooleanField("Hidden", default=False, validators=[Optional()])
     public = BooleanField("Public", default=True, validators=[Optional()])
 
+    def validate_end_date(self, field):
+        if self.start_date.data and field.data and self.start_date.data >= field.data:
+            raise ValidationError("End date must be after start date")
+
     @classmethod
-    def from_model(cls, model):
+    def from_model(cls, model: Class):
         form = cls()
         for field in form._fields:
             if hasattr(model, field):
                 form._fields[field].data = getattr(model, field)
+
+        if form.start_date.data:
+            form.start_date.data = form.start_date.data.astimezone(ZoneInfo(model.timezone))
+        if form.end_date.data:
+            form.end_date.data = form.end_date.data.astimezone(ZoneInfo(model.timezone))
+
         return form
 
-    def to_model(self, model):
+    def to_model(self, model: Class, user: User):
         for field in self._fields:
             if hasattr(model, field):
                 setattr(model, field, self._fields[field].data)
@@ -53,10 +64,15 @@ class ClassForm(FlaskForm):
             model.description = model.description or image.desc
 
         if not model.timezone:
-            model.timezone = current_user.timezone
+            model.timezone = user.timezone
+
+        tz = ZoneInfo(model.timezone)
 
         if not model.start_date:
-            model.start_date = datetime.now(pytz.timezone(model.timezone))
+            model.start_date = datetime.now(tz)
 
-        if model.end_date:
-            model.end_date = model.end_date.astimezone(model.timezone)
+        if model.start_date and model.start_date.tzinfo is None:
+            model.start_date = model.start_date.replace(tzinfo=tz)
+
+        if model.end_date and model.end_date.tzinfo is None:
+            model.end_date = model.end_date.replace(tzinfo=tz)

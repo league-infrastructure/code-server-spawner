@@ -95,7 +95,9 @@
                 {% if class_.running %}
                 <button id="stop-class" class="btn btn-danger btn-sm">Stop Class</button>
                 {% else %}
-                <button id="start-class" class="btn btn-success btn-sm">Start Class</button>
+                
+                <button id="start-class" class="btn btn-success btn-sm" {% if not class_.can_start %}disabled {% endif %}>Start Class</button>
+               
                 {% endif %}
             </div>
             <div class="right-buttons">
@@ -355,6 +357,12 @@
         // Initial button state update
         updateActionButtons();
     });
+
+
+    // Activate Bootstrap tooltips
+    $(function () {
+        $('[data-toggle="tooltip"]').tooltip()
+    })
 </script>
 {% include "elements/polling_script.html" %}
 {% endblock %}

@@ -1,4 +1,5 @@
 {% extends "base/page.html" %}
+{% from "macros/forms.html" import render_field, render_checkbox, render_datetime_field %}
 
 {% block content %}
 <div class="container mt-4" style="max-width: 900px; margin: auto;">
@@ -7,69 +8,36 @@
        
         {{ form.hidden_tag() }}
 
-        <div class="form-group">
-            {{ form.name.label(class="form-label") }}
-            {{ form.name(class="form-control") }}
-        </div>
-        <div class="form-group">
-            {{ form.description.label(class="form-label") }}
-            {{ form.description(class="form-control") }}
-        </div>
-        <div class="form-group">
-            {{ form.class_code.label(class="form-label") }}
-            {{ form.class_code(class="form-control") }}
-        </div>
+        {{ render_field(form.name) }}
+        {{ render_field(form.description) }}
+        {{ render_field(form.class_code) }}
         <div class="row">
             <div class="col-md-6">
-                <div class="form-group">
-                    {{ form.location.label(class="form-label") }}
-                    {{ form.location(class="form-control") }}
-                </div>
+                {{ render_field(form.location) }}
             </div>
             <div class="col-md-6">
-                <div class="form-group">
-                    {{ form.term.label(class="form-label") }}
-                    {{ form.term(class="form-control") }}
-                </div>
+                {{ render_field(form.term) }}
             </div>
         </div>
-        <div class="form-group">
-            {{ form.image_id.label(class="form-label") }}
-            {{ form.image_id(class="form-control") }}
-        </div>
+        {{ render_field(form.image_id) }}
         <div class="row">
             <div class="col-md-6">
-                <div class="form-group">
-                    {{ form.start_date.label(class="form-label") }}
-                    {{ form.start_date(class="form-control", type="datetime-local") }}
-                </div>
+                {{ render_datetime_field(form.start_date) }}
             </div>
             <div class="col-md-6">
-                <div class="form-group">
-                    {{ form.end_date.label(class="form-label") }}
-                    {{ form.end_date(class="form-control", type="datetime-local") }}
-                </div>
+                {{ render_datetime_field(form.end_date) }}
             </div>
         </div>
         <div class="row mt-3">
             <div class="col-md-4">
-                <div class="form-check">
-                    {{ form.active.label(class="form-check-label") }}
-                    {{ form.active(class="form-check-input") }}
-                </div>
+                {{ render_checkbox(form.active) }}
             </div>
             <div class="col-md-4">
-                <div class="form-check">
-                    {{ form.hidden.label(class="form-check-label") }}
-                    {{ form.hidden(class="form-check-input") }}
-                </div>
+                {{ render_checkbox(form.hidden) }}
             </div>
             {% if current_user.is_admin %}
             <div class="col-md-4">
-                <div class="form-check">
-                    {{ form.public.label(class="form-check-label") }}
-                    {{ form.public(class="form-check-input") }}
-                </div>
+                {{ render_checkbox(form.public) }}
             </div>
             {% endif %}
         </div>

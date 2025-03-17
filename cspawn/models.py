@@ -28,6 +28,7 @@ from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, relationship, validates
 from sqlalchemy_utils import PasswordType, create_database, database_exists
+from traitlets import default
 from tzlocal import get_localzone_name
 
 from .telemetry import TelemetryReport
@@ -61,6 +62,7 @@ class User(UserMixin, db.Model):
     is_admin = Column(Boolean, default=False, nullable=False)
     is_student = Column(Boolean, default=False, nullable=False)
     is_instructor = Column(Boolean, default=False, nullable=False)
+    is_anonymous = Column(Boolean, default=False, nullable=False)
 
     display_name = Column(String(255), nullable=True)
     birth_year = Column(Integer, nullable=True)
@@ -108,14 +110,7 @@ class User(UserMixin, db.Model):
         if existing_user:
             return existing_user
 
-        root_user = cls(
-            id=0,
-            user_id="__root__",
-            username="root",
-            password=password,
-            is_admin=True,
-            is_active=True,
-        )
+        root_user = cls(id=0, user_id="__root__", username="root", password=password, is_admin=True, is_active=True)
         db.session.add(root_user)
         db.session.commit()
         return root_user
@@ -168,14 +163,14 @@ class Class(db.Model):
     location = Column(String(255), nullable=True)
     timezone = Column(String(255), nullable=True)
     reference = Column(String(255), nullable=True)  # URL or other reference
-    start_date = Column(DateTime, nullable=False)  # Time and date that the class begins.
-    end_date = Column(DateTime, nullable=True)
+    start_date = Column(DateTime(timezone=True), nullable=False)  # Time and date that the class begins.
+    end_date = Column(DateTime(timezone=True), nullable=True)
     recurrence_rule = Column(String(255), nullable=True)
     image_id = Column(Integer, ForeignKey("host_images.id"), nullable=False)
     image = relationship("HostImage", back_populates="classes")
     start_script = Column(Text, nullable=True)
 
-    class_code = Column(String(40), nullable=True)
+    class_code = Column(String(40), nullable=True, unique=True)
 
     active = Column(Boolean, default=True, nullable=False)  # Can the class be started ( running )?
     hidden = Column(Boolean, default=False, nullable=False)  # Is the class shown to students?
@@ -189,6 +184,43 @@ class Class(db.Model):
     students = relationship("User", secondary="class_students", back_populates="classes_taking")
 
     data = Column(JSON, nullable=True)  # JSON data for class configuration
+
+    def update(self):
+        """Update markers and flags for the class"""
+        t = datetime.now(timezone.utc)
+
+        if t < self.start_date or t > self.end_date:
+            self.active = False
+            self.running = False
+            self.running_at = None
+            self.stops_at = None
+        else:
+            self.active = True
+
+    @hybrid_property
+    def can_start(self) -> bool:
+        """Can the class be started?"""
+
+        now = datetime.now(timezone.utc)
+        return (
+            now >= self.start_date
+            and (self.end_date is None or now <= self.end_date)
+            and self.active
+            and not self.running
+        )
+
+    @hybrid_property
+    def is_current(self) -> bool:
+        """Is the class open for students to join?"""
+
+        now = datetime.now(timezone.utc)
+
+        return (
+            self.active
+            and not self.hidden
+            and now >= self.start_date
+            and (self.end_date is None or now <= self.end_date)
+        )
 
     @classmethod
     def from_dict(cls, data):
@@ -310,10 +342,7 @@ class CodeHost(db.Model):
 
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
-        DateTime,
-        default=datetime.now(timezone.utc),
-        onupdate=datetime.now(timezone.utc),
-        nullable=False,
+        DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc), nullable=False
     )
 
     @staticmethod
@@ -457,10 +486,7 @@ class HostImage(db.Model):
 
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
-        DateTime,
-        default=datetime.now(timezone.utc),
-        onupdate=datetime.now(timezone.utc),
-        nullable=False,
+        DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc), nullable=False
     )
 
     @staticmethod
