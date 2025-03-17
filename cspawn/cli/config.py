@@ -2,6 +2,7 @@ import click
 
 from cspawn.cli.root import cli
 from cspawn.cli.util import get_config, get_app
+from cspawn.__version__ import __version__ as cspawn_version
 
 
 @cli.group()
@@ -17,6 +18,7 @@ def show(ctx):
 
     config = get_config()
 
+    print("Version:", cspawn_version)
     print("Configuration:")
     for e in config["__CONFIG_PATH"]:
         print(" " * 4, e)

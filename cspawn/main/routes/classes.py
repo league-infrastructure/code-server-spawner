@@ -49,8 +49,9 @@ def add_class():
 
 
 @main_bp.route("/class/<int:class_id>/start")
-@instructor_required
-def start_class(class_id) -> str:
+@login_required
+def start_class_host(class_id) -> str:
+    """Start a host for the current user for a class"""
     return_url = request.args.get("return_url", url_for("main.index"))
 
     class_ = Class.query.get(class_id)
