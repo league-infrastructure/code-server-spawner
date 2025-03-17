@@ -48,4 +48,40 @@
             });
     }
 
+    // Polling script to check if the class buttons need to be updated. We will poll more frequently if there are 
+    // classes in the waiting state. 
+    function pollClassButtonStates() {
+        const url = `{{ url_for('main.classes_button_states') }}`;
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                let reload = false;
+                let waitingCount = 0;
+                for (const [classId, classData] of Object.entries(data)) {
+                    const card = document.getElementById(`class-card-${classId}`);
+                    if (card) {
+                        if (card.getAttribute('data-button-state') !== classData.state) {
+                            reload = true;
+                            break;
+                        }
+                        if (classData.state === 'waiting') {
+                            waitingCount++;
+                        }
+                    }
+                }
+                if (reload) {
+                    location.reload();
+                } else {
+                    const timeout = waitingCount > 0 ? 10000 : 30000;
+                    setTimeout(pollClassButtonStates, timeout);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                setTimeout(pollClassButtonStates, 10000);
+            });
+    }
+
+    pollClassButtonStates();
+
 </script>

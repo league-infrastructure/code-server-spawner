@@ -250,6 +250,26 @@ class Class(db.Model):
 
         return class_instance
 
+    def host_class_state(self, user: User, host: "CodeHost") -> str:
+        """Return the state of the host for the given class. Use which_host_buttons
+        to turn this state into a list of buttons to display to the user."""
+
+        if not host:
+            if self.running:
+                return "stopped"  # There is no host running
+            else:
+                return "waiting"  # Waiting for class to start
+
+        elif host and self.id == host.class_id:
+            if host.app_state == "ready":
+                # There is a host running, and it is for this class
+                return "running"
+            else:
+                return "starting"
+        else:
+            # There is a host running, but it is not for this class"
+            return "other"
+
     def to_dict(self):
         fields = [
             "id",

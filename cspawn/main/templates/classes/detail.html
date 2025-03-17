@@ -46,6 +46,16 @@
         word-break: break-all;
     }
 
+    .large-url {
+        font-size: 60px;
+        font-weight: bold;
+        margin: 10px 10px;
+        letter-spacing: 2px;
+        color: blue;
+
+        word-break: break-all;
+    }
+
     .copy-icon {
         cursor: pointer;
         margin-left: 10px;
@@ -211,8 +221,9 @@
 <div id="codeModal" class="code-modal">
     <div class="code-modal-content">
         <span class="code-modal-close">&times;</span>
-        <h3>Class Code</h3>
-        <div class="large-class-code">{{ class_.class_code }}</div>
+        <h3>Join Your Class</h3>
+        <div class="large-url"> URL: code.jointheleague.org </div>
+        <div class="large-class-code">Code: {{ class_.class_code }}</div>
     </div>
 </div>
 

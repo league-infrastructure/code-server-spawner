@@ -1,8 +1,7 @@
 from datetime import datetime, timedelta, timezone
-import re
+from typing import Tuple, cast
 
-
-from sqlalchemy import UniqueConstraint
+from flask_migrate import current
 from sqlalchemy.exc import IntegrityError
 from cspawn.main import main_bp
 from cspawn.models import Class, CodeHost, User, db
@@ -18,6 +17,7 @@ from sqlalchemy.orm import joinedload
 from cspawn.init import cast_app
 from psycopg2.errors import UniqueViolation
 
+
 ca = cast_app(current_app)
 
 
@@ -31,8 +31,12 @@ def add_class():
     class_ = Class.query.filter_by(class_code=class_code).first()
 
     if class_:
-        current_user.classes_taking.append(class_)
-        db.session.commit()
+        if class_ in current_user.classes_taking:
+            flash("You are already enrolled in this class.", "info")
+        else:
+            current_user.classes_taking.append(class_)
+            db.session.commit()
+
     else:
         flash("Unknown class code.", "error")
 
@@ -45,7 +49,7 @@ def add_class():
 
 
 @main_bp.route("/class/<int:class_id>/start")
-@login_required
+@instructor_required
 def start_class(class_id) -> str:
     return_url = request.args.get("return_url", url_for("main.index"))
 
@@ -91,28 +95,36 @@ def start_class(class_id) -> str:
 
 
 @main_bp.route("/class/<int:class_id>/show")
-@login_required
+@instructor_required
 def show_class(class_id):
     class_ = Class.query.get_or_404(class_id)
     return render_template("classes/show.html", class_=class_, **context)
 
 
-def host_buttons(user, class_):
-    from cspawn.util.host import host_class_state, which_host_buttons
+def which_host_buttons(state: str) -> Tuple[str]:
+    """Return the buttons that should be displayed for a given class/host state."""
+    if state == "stopped":
+        return ("start",)
+    elif state == "running":
+        return ("open", "stop")
+    elif state == "starting":
+        return ("spin",)
+    elif state == "other":
+        return ("stop", "other")
+    elif state == "waiting":
+        return ("waiting",)
+    else:
+        return []
 
-    return which_host_buttons(host_class_state(current_user, class_))
 
-
-context["host_buttons"] = host_buttons
+context["which_host_buttons"] = which_host_buttons
 
 
 @main_bp.route("/class/<int:class_id>/details")
-@login_required
+@instructor_required
 def detail_class(class_id):
     class_ = Class.query.get_or_404(class_id)
     host = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
-
-    print("Host buttons:", host_buttons)
 
     return render_template(
         "classes/detail.html",
@@ -124,7 +136,7 @@ def detail_class(class_id):
 
 
 @main_bp.route("/classes/<int:class_id>/delete")
-@login_required
+@instructor_required
 def delete_class(class_id):
     if not current_user.is_instructor:
         return redirect(url_for("main.classes"))
@@ -204,7 +216,7 @@ def _edit_class(class_id, return_page):
             db.session.add(class_)
             try:
                 db.session.commit()
-            except (UniqueViolation, IntegrityError) as e:
+            except (UniqueViolation, IntegrityError):
                 db.session.rollback()
                 # Guess it is b/c of the class code
                 flash("Class code must be unique", "error")
@@ -248,7 +260,7 @@ def copy_class(class_id):
 
 
 @main_bp.route("/classes/students/remove", methods=["POST"])
-@login_required
+@instructor_required
 def remove_students():
     data = request.get_json()
     student_ids = data.get("student_ids", [])
@@ -275,7 +287,7 @@ def remove_students():
 
 
 @main_bp.route("/classes/<int:class_id>/state", methods=["POST"])
-@login_required
+@instructor_required
 def class_run_state(class_id):
     state = request.args.get("state")
     class_ = Class.query.get_or_404(class_id)
@@ -300,3 +312,34 @@ def class_run_state(class_id):
 
     db.session.commit()
     return jsonify({"success": "Class state updated"}), 200
+
+
+@main_bp.route("/classes/<int:class_id>/is_started", methods=["GET"])
+@login_required
+def class_is_started(class_id):
+    class_ = Class.query.get_or_404(class_id)
+    return jsonify({"is_running": class_.running})
+
+
+@main_bp.route("/classes/are_started", methods=["GET"])
+@login_required
+def classes_are_started(class_id):
+    classes = [class_ for class_ in current_user.classes_taking if class_.can_start]
+    class_ids = [class_.id for class_ in classes]
+    return jsonify({"class_ids": class_ids})
+
+
+@main_bp.route("/classes/button_states", methods=["GET"])
+@login_required
+def classes_button_states():
+    classes = [class_ for class_ in current_user.classes_taking if class_.active]
+
+    host: CodeHost = CodeHost.query.filter_by(user_id=current_user.id).first()
+
+    d = {}
+    for class_ in classes:
+        class_ = cast(Class, class_)
+        state = class_.host_class_state(current_user, host)
+        d[class_.id] = {"state": state, "buttons": which_host_buttons(state)}
+
+    return jsonify(d)
