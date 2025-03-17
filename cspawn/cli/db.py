@@ -176,5 +176,34 @@ def backup(ctx, file):
             del os.environ["PGPASSWORD"]
 
 
+@click.option("-f", "--file", default="-", help='Output location of the backup file, or "-" to output to stdout.')
+@click.pass_context
+def restore(ctx, file):
+    """Run pg_restore to restore the database from a backup file."""
+    app = get_app(ctx)
+    with app.app_context():
+        db_url = urlparse(str(app.app_config["POSTGRES_URL"]))
+        command = [
+            "pg_restore",
+            f"--host={db_url.hostname}",
+            f"--port={db_url.port}",
+            f"--username={db_url.username}",
+            f"--dbname={db_url.path[1:]}",  # Remove leading slash
+        ]
+        if file != "-":
+            command.extend(["--file", file])
+
+        # Set the password in the environment
+        os.environ["PGPASSWORD"] = db_url.password
+
+        try:
+            subprocess.run(command, check=True)
+        except subprocess.CalledProcessError as e:
+            click.echo(f"Error running pg_restore: {e}", err=True)
+        finally:
+            # Remove the password from the environment
+            del os.environ["PGPASSWORD"]
+
+
 if __name__ == "__main__":
     db()

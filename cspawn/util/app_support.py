@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from xml.dom import NotFoundErr
 
 from flask_session import Session
 from flask_pymongo import PyMongo
@@ -30,9 +31,7 @@ def is_running_under_gunicorn():
     """Return true if the app is running under Gunicorn,
     which implies it is in production"""
 
-    return "gunicorn" in os.environ.get(
-        "SERVER_SOFTWARE", ""
-    ) or "gunicorn" in os.environ.get("GUNICORN_CMD_ARGS", "")
+    return "gunicorn" in os.environ.get("SERVER_SOFTWARE", "") or "gunicorn" in os.environ.get("GUNICORN_CMD_ARGS", "")
 
 
 def get_payload(request) -> dict:
@@ -68,28 +67,8 @@ def init_logger(app, log_level=None):
         app.logger.debug("Logger initialized for flask")
 
 
-def configure_config_tree(
-    start_dir=None, jtl_app_dir=None, jtl_deployment=None
-) -> Dict[str, Any]:
+def configure_config_tree(config_dir: str | Path, deploy: str) -> Dict[str, Any]:
     # Determine if we're running in production or development
-
-    jtl_app_dir = os.getenv("JTL_APP_DIR", jtl_app_dir)
-
-    if jtl_app_dir and Path(jtl_app_dir).is_dir():
-        config_dir = Path(jtl_app_dir)
-    elif is_running_under_gunicorn() and Path("/app").is_dir():
-        config_dir = Path("/app")
-    else:
-        config_dir = Path(start_dir) if start_dir else Path().cwd()
-
-    jtl_deploy = os.getenv("JTL_DEPLOYMENT", jtl_deployment)
-
-    if jtl_deploy:
-        deploy = jtl_deploy
-    elif is_running_under_gunicorn():
-        deploy = "prod"
-    else:
-        deploy = "devel"
 
     if deploy == "devel":
         os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
@@ -98,9 +77,7 @@ def configure_config_tree(
 
     # Resolve the path to the secrets file
     if "SECRETS_FILE_NAME" in config:
-        config["SECRETS_FILE"] = (
-            Path(config["__CONFIG_PATH"]).parent / config["SECRETS_FILE_NAME"]
-        ).resolve()
+        config["SECRETS_FILE"] = (Path(config["__CONFIG_PATH"]).parent / config["SECRETS_FILE_NAME"]).resolve()
 
     return config
 
@@ -149,9 +126,7 @@ def setup_sessions(app, devel=False, session_expire_time=60 * 60 * 24 * 1):
     else:
         # Production settings
         app.config["SESSION_COOKIE_SECURE"] = True  # Require HTTPS for cookies
-        app.config["SESSION_COOKIE_SAMESITE"] = (
-            "None"  # Allow cross-site cookies if needed
-        )
+        app.config["SESSION_COOKIE_SAMESITE"] = "None"  # Allow cross-site cookies if needed
 
     Session(app)  # Initialize the session
 
