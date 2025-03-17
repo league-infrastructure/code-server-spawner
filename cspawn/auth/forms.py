@@ -39,7 +39,7 @@ class GoogleRegistrationForm(FlaskForm):
 
 class LoginForm(FlaskForm):
     username = StringField("Username", validators=[DataRequired()])
-    password = PasswordField("Password / Class Code", validators=[DataRequired()])
+    password = PasswordField("Password", validators=[DataRequired()])
     submit = SubmitField("Sign In")
 
     def validate_username(self, username):

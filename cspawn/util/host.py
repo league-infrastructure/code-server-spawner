@@ -1,3 +1,4 @@
+from math import e
 from cspawn.models import User, Class, CodeHost
 from typing import Tuple
 
@@ -9,12 +10,11 @@ def host_class_state(user: User, class_: Class) -> str:
 
     host = CodeHost.query.filter_by(user_id=user.id).first()  # extant code host
 
-    class_image = class_.image_id
-    host_image = host.host_image_id if host else None
-
     if not host:
-        # There is no host running
-        return "stopped"
+        if class_.running:
+            return "stopped"  # There is no host running
+        else:
+            return "waiting"  # Waiting for class to start
 
     elif host and class_.id == host.class_id:
         if host.app_state == "ready":
@@ -36,5 +36,7 @@ def which_host_buttons(state: str) -> Tuple[str]:
         return ("spin",)
     elif state == "other":
         return ("stop", "other")
+    elif state == "waiting":
+        return ("waiting",)
     else:
         return []

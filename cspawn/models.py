@@ -28,7 +28,7 @@ from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, relationship, validates
 from sqlalchemy_utils import PasswordType, create_database, database_exists
-from traitlets import default
+
 from tzlocal import get_localzone_name
 
 from .telemetry import TelemetryReport
@@ -208,6 +208,13 @@ class Class(db.Model):
             and self.active
             and not self.running
         )
+
+    @hybrid_property
+    def can_register(self) -> bool:
+        """Can students register for the class?"""
+
+        now = datetime.now(timezone.utc)
+        return now >= self.start_date and (self.end_date is None or now <= self.end_date) and self.active
 
     @hybrid_property
     def is_current(self) -> bool:
