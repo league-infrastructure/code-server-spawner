@@ -24,7 +24,7 @@ setup:
 
 # Docker 
 
-build:
+build: push
 	docker compose -f docker-stack.yaml build  --no-cache --build-arg VERSION=$(VERSION)
 	docker tag codeserv codeserv:$(VERSION)
 
