@@ -1,5 +1,9 @@
 from datetime import datetime, timedelta, timezone
 import re
+
+
+from sqlalchemy import UniqueConstraint
+from sqlalchemy.exc import IntegrityError
 from cspawn.main import main_bp
 from cspawn.models import Class, CodeHost, User, db
 from cspawn.forms import ClassForm
@@ -12,6 +16,7 @@ from cspawn.util.names import class_code
 
 from sqlalchemy.orm import joinedload
 from cspawn.init import cast_app
+from psycopg2.errors import UniqueViolation
 
 ca = cast_app(current_app)
 
@@ -42,8 +47,6 @@ def add_class():
 @main_bp.route("/class/<int:class_id>/start")
 @login_required
 def start_class(class_id) -> str:
-    from cspawn.models import HostImage
-
     return_url = request.args.get("return_url", url_for("main.index"))
 
     class_ = Class.query.get(class_id)
@@ -160,6 +163,9 @@ def edit_class(class_id):
 def _edit_class(class_id, return_page):
     from cspawn.models import HostImage
 
+    ctx = context.copy()
+    ctx["return_page"] = return_page
+
     if not current_user.is_instructor:
         return redirect(url_for(return_page))
 
@@ -192,24 +198,31 @@ def _edit_class(class_id, return_page):
     if request.method == "POST":
         reload = not form.name.data
 
-        form.to_model(class_)
+        form.to_model(class_, current_user)
 
         if form.validate():
             db.session.add(class_)
-            db.session.commit()
+            try:
+                db.session.commit()
+            except (UniqueViolation, IntegrityError) as e:
+                db.session.rollback()
+                # Guess it is b/c of the class code
+                flash("Class code must be unique", "error")
+                form.class_code.errors.append("Class code must be unique. Generated a new one.")
+                form.class_code.data = class_code()
+
+                return render_template("classes/edit.html", clazz=class_, form=form, **ctx)
             if reload:
                 reload_form = ClassForm.from_model(class_)
-                reload.image_id.choices = form.image_id.choices
-                return render_template(
-                    "classes/edit.html", clazz=class_, form=reload_form, return_page=return_page, **context
-                )
+                reload_form.image_id.choices = form.image_id.choices
+                return render_template("classes/edit.html", clazz=class_, form=reload_form, **ctx)
             else:
                 return redirect(url_for(return_page, class_id=class_.id))
         else:
             ca.logger.info("Form did not validate: %s", form.errors)
-            flash("Form did not validate", "error")
+            flash(f"Form errors: {','.join(form.errors)}", "error")
 
-    return render_template("classes/edit.html", clazz=class_, form=form, return_page=return_page, **context)
+    return render_template("classes/edit.html", clazz=class_, form=form, **ctx)
 
 
 @main_bp.route("/classes/<class_id>/copy", methods=["GET"])
@@ -223,6 +236,10 @@ def copy_class(class_id):
     clone.class_code = class_code()
     clone.students = []
     clone.instructors = [current_user]
+    clone.hidden = False
+    clone.running = False
+    clone.running_at = None
+    clone.stops_at = None
 
     db.session.add(clone)
     db.session.commit()
@@ -264,6 +281,13 @@ def class_run_state(class_id):
     class_ = Class.query.get_or_404(class_id)
 
     if state == "running":
+        if class_.start_date and datetime.now(timezone.utc) < class_.start_date:
+            flash("Can't start class before start date", "error")
+            return jsonify({"error": "Can't start class before start date"}), 400
+        elif class_.end_date and datetime.now(timezone.utc) > class_.end_date:
+            flash("Can't start class after end date", "error")
+            return jsonify({"error": "Can't start class after end date"}), 400
+
         class_.running = True
         class_.running_at = datetime.now(timezone.utc)
         class_.stops_at = class_.running_at + timedelta(hours=3)

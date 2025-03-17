@@ -3,8 +3,7 @@ Routes for logging in, registering, and managing users.
 """
 
 import uuid
-from flask import (current_app, flash, redirect, render_template, request,
-                   session, url_for)
+from flask import current_app, flash, redirect, render_template, request, session, url_for
 from flask_dance.contrib.google import google
 from flask_login import current_user, login_required, login_user, logout_user
 from oauthlib.oauth2.rfc6749.errors import TokenExpiredError
@@ -40,8 +39,16 @@ def login():
         user = User.query.filter_by(username=form.username.data).first()
         login_user(user)
         return redirect(url_for("main.index"))
+    else:
+        print("!!!", form.errors)
+        if form.password.errors:
+            class_ = Class.query.filter_by(class_code=form.password.data).first()
+            if class_:
+                flash("The password matches a class code. Please use a different password.", "error")
+            else:
+                flash("Invalid username or password.", "error")
 
-    return render_template("login.html", form=form, **_context())
+        return render_template("login.html", form=form, **_context())
 
 
 @auth_bp.route("/login/google", methods=["POST", "GET"])
@@ -79,11 +86,11 @@ def google_login():
         set_role_from_email(current_app, user)
         user.username = find_username(user)
 
-    if session.get('reg_class_code'):
-        class_code = session['reg_class_code']
+    if session.get("reg_class_code"):
+        class_code = session["reg_class_code"]
         class_ = Class.query.filter_by(class_code=class_code).first()
         user.classes_taking.append(class_)
-        del session['reg_class_code']
+        del session["reg_class_code"]
 
     db.session.add(user)
     db.session.commit()
@@ -95,12 +102,8 @@ def google_login():
     return redirect(url_for("main.index"))
 
 
-def register_user(form):
-    """Handle user registration for username/password """
-    username = form.username.data
-    password = form.password.data
-    class_code = form.class_code.data.strip()
-
+def register_user_up(username, password, class_code):
+    """Register a user with username and password."""
     user = User(
         user_id=str(uuid.uuid4()),
         username=username,
@@ -135,7 +138,7 @@ def register_google():
     form = GoogleRegistrationForm()
 
     if form.validate_on_submit():
-        session['reg_class_code'] = form.class_code.data.strip()
+        session["reg_class_code"] = form.class_code.data.strip()
         return redirect(url_for("google.login"))
 
     return render_template("register_google.html", form=form, **_context())
@@ -146,7 +149,7 @@ def register_up():
     """Handle user registration."""
     form = UPRegistrationForm()
     if form.validate_on_submit():
-        return register_user(form)
+        return register_user_up(form.username.data, form.password.data, form.class_code.data)
     return render_template("register_up.html", form=form, **_context())
 
 

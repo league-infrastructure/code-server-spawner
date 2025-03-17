@@ -31,9 +31,7 @@ from .util.app_support import (
     setup_mongo,
 )
 
-default_context = {
-    "version": version,
-}
+default_context = {"version": version}
 
 GOOGLE_LOGIN_SCOPES = [
     "https://www.googleapis.com/auth/userinfo.profile",
@@ -75,15 +73,11 @@ def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> 
     init_logger(app, log_level=log_level)
 
     app_dir, db_dir = configure_app_dir(app)
-    app.logger.debug(
-        f"App dir: {app_dir} DB dir: {db_dir}. CONFIGS: {app.app_config['__CONFIG_PATH']}"
-    )
+    app.logger.debug(f"App dir: {app_dir} DB dir: {db_dir}. CONFIGS: {app.app_config['__CONFIG_PATH']}")
 
     # Blueprints
 
-    app.wsgi_app = ProxyFix(
-        app.wsgi_app, x_proto=1
-    )  # So goggle oauth will use https behind proxy
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1)  # So goggle oauth will use https behind proxy
 
     google_bp = make_google_blueprint(
         scope=GOOGLE_LOGIN_SCOPES,
@@ -117,6 +111,7 @@ def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> 
 
     app.db = db
     app.db.init_app(app)
+    app.migrate = Migrate(app, db)
 
     try:
         setup_database(app)
@@ -124,15 +119,12 @@ def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> 
 
         app.csm = CodeServerManager(app)
 
-        app.migrate = Migrate(app, db)
     except (OperationalError, ProgrammingError) as e:
-        app.logger.debug(f"Database error: {e}")
+        app.logger.error(f"Database error: {e}")
         app.logger.error("Error configuraing databse; No Database.")
 
         if is_running_under_gunicorn():
-            app.logger.critical(
-                "Fatal error: running under gunicorn without a database."
-            )
+            app.logger.critical("Fatal error: running under gunicorn without a database.")
             raise e
 
     setup_mongo(app)
