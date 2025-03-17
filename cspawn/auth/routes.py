@@ -35,20 +35,27 @@ def login():
 
     form = LoginForm()
 
+    # Normal login
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data).first()
         login_user(user)
         return redirect(url_for("main.index"))
-    else:
-        print("!!!", form.errors)
-        if form.password.errors:
-            class_ = Class.query.filter_by(class_code=form.password.data).first()
-            if class_:
-                flash("The password matches a class code. Please use a different password.", "error")
-            else:
-                flash("Invalid username or password.", "error")
 
-        return render_template("login.html", form=form, **_context())
+    # Maybe this is a registration with a class code?
+    username = form.username.data
+    class_code = form.password.data
+
+    class_ = Class.query.filter_by(class_code=class_code).first()
+
+    if class_ and class_.can_register:
+        user = User.query.filter_by(username=username).first()
+        if user:
+            flash("Username is taken", "danger")
+            return render_template("login.html", form=form, **_context())
+
+        return register_user_up(username, class_code, class_code)
+
+    return render_template("login.html", form=form, **_context())
 
 
 @auth_bp.route("/login/google", methods=["POST", "GET"])

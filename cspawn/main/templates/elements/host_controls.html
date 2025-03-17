@@ -1,6 +1,12 @@
 {% set hb = host_buttons(current_user, class_) %}
+
+
+{% if 'waiting' in hb %}
+<button class="btn btn-warning btn-table" disabled>Waiting for Instructor</button>
+{% endif %}
+
 {% if 'open' in hb %}
-<a href="javascript:void(0);" onclick="openHost( {{host.id}} )" class="btn btn-primary btn-table"> Open</a>
+<a href="javascript:void(0);" onclick="openHost( {{host.id}} )" class="btn btn-primary btn-table" > Open</a>
 {% endif %}
 
 {% if 'stop' in hb %}
