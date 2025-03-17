@@ -99,25 +99,17 @@ def get_config_dirs(cwd=Path.cwd(), root=Path("/"), home=Path().home()) -> List[
     jtl_config_dir = os.getenv("JTL_CONFIG_DIR")
 
     cwd = Path(cwd)
-    root = Path(root)
+    root = Path(root) if root else Path("/")
     home = Path(home)
 
     return (
         [Path(jtl_config_dir)]
         if jtl_config_dir
-        else []
-        + [
-            home.joinpath(".jtl"),
-            root / "app/config",
-            root / "config",
-            cwd,
-        ]
+        else [] + [home.joinpath(".jtl"), root / "app/config", root / "config", cwd, cwd / "config"]
     )
 
 
-def get_config_files(
-    dirs: List[Path], config_name="config", deploy: str = "devel"
-) -> List[Path]:
+def get_config_files(dirs: List[Path], config_name="config", deploy: str = "devel") -> List[Path]:
     """ """
 
     config_name += ".env"
@@ -130,20 +122,15 @@ def get_config_files(
     cdir = first_config()
 
     if not cdir:
-        raise FileNotFoundError(f"No config files found in ${dirs}")
+        raise FileNotFoundError(f"No config files found for config_name={config_name}  deploy={deploy} in {dirs}")
 
-    f = [
-        (cdir / config_name),
-        cdir / f"{deploy}.env",
-        cdir / "secrets/secret.env",
-        cdir / f"secrets/{deploy}.env",
-    ]
+    f = [(cdir / config_name), cdir / f"{deploy}.env", cdir / "secrets/secret.env", cdir / f"secrets/{deploy}.env"]
 
     return [p for p in f if p.exists()]
 
 
 def get_config(
-    root: str | Path = None,
+    root: str | Path = "/",
     dirs: List[str] | List[Path] = None,
     file: str | Path | List[str] | List[Path] = None,
     deploy: str = "devel",
@@ -163,9 +150,7 @@ def get_config(
     config = {}
     loaded = []
 
-    cf = get_config_files(
-        dirs or get_config_dirs(root=root), config_name=file, deploy=deploy
-    )
+    cf = get_config_files(dirs or get_config_dirs(root=root), config_name=file, deploy=deploy)
 
     for f in cf:
         if f.exists():

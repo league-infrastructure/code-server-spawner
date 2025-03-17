@@ -52,7 +52,22 @@ def cast_app(app: Flask) -> App:
     return cast(App, app)
 
 
-def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> App:
+def resolve_deployment(deployment: str) -> str:
+    import os
+
+    if deployment is not None:
+        return deployment
+
+    if jtl_deploy := os.getenv("JTL_DEPLOYMENT"):
+        return jtl_deploy
+
+    if is_running_under_gunicorn():
+        return "prod"
+
+    return "devel"
+
+
+def init_app(config_dir=None, deployment=None, log_level=None) -> App:
     """Initialize Flask application"""
 
     from .models import db
@@ -62,10 +77,12 @@ def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> 
 
     app = cast(App, Flask(__name__))
 
+    deployment = resolve_deployment(deployment)
+
     # Register the filter with Flask or Jinja2
     app.jinja_env.filters["human_time"] = human_time_format
 
-    config = configure_config_tree(config_dir, jtl_deployment=deployment)
+    config = configure_config_tree(config_dir, deploy=deployment)
     app.secret_key = config["SECRET_KEY"]
     app.app_config = config
 
@@ -103,10 +120,7 @@ def init_app(config_dir=None, log_level=None, sqlfile=None, deployment=None) -> 
 
     # Configure PostgreSQL database
 
-    if sqlfile is not None:
-        app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{sqlfile}"
-    else:
-        app.config["SQLALCHEMY_DATABASE_URI"] = app.app_config["POSTGRES_URL"]
+    app.config["SQLALCHEMY_DATABASE_URI"] = app.app_config["DATABASE_URI"]
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     app.db = db

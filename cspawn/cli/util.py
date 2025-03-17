@@ -2,15 +2,14 @@ import logging
 from functools import lru_cache
 from pathlib import Path
 
+import click
 from faker import Faker
 
-from cspawn.models import CodeHost
-from cspawn.util.config import find_parent_dir
 from cspawn.docker.csmanager import logger as ctrl_logger
-from cspawn.models import HostImage
 from cspawn.init import init_app
-from cspawn.models import *
+from cspawn.models import CodeHost, HostImage, User, db
 from cspawn.util.app_support import configure_config_tree
+from cspawn.util.config import find_parent_dir
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,6 @@ def create_demo_users(app):
 
 
 def create_demo_images(app):
-
     host_images = [
         {
             "name": "Python Apprentice",
@@ -88,9 +86,7 @@ def create_demo_images(app):
 
         existing_image = HostImage.query.filter_by(hash=host_image.hash).first()
         if existing_image:
-            logger.info(
-                f"HostImage with hash {host_image.hash} already exists. Skipping."
-            )
+            logger.info(f"HostImage with hash {host_image.hash} already exists. Skipping.")
             continue
 
         db.session.add(host_image)
@@ -116,17 +112,13 @@ def create_demo_code_hosts(app):
         users = db.session.query(User).all()
 
         if not host_images:
-            print(
-                "No HostImage records found. Please ensure they exist before creating CodeHost records."
-            )
+            print("No HostImage records found. Please ensure they exist before creating CodeHost records.")
             return
 
         code_hosts = []
 
         for i in range(5):
-            host_image = host_images[
-                i % len(host_images)
-            ]  # Cycle through HostImage records
+            host_image = host_images[i % len(host_images)]  # Cycle through HostImage records
             user = users[i % len(users)]
             code_host = CodeHost(
                 service_id=fake.uuid4(),
@@ -144,18 +136,13 @@ def create_demo_code_hosts(app):
 
 
 def make_data(app):
-
-    faker = Faker()
-
     with app.app_context():
-
         create_demo_users(app)
         create_demo_images(app)
         create_demo_code_hosts(app)
 
 
 def load_data(app):
-
     import json
 
     import cspawn
@@ -194,7 +181,6 @@ def load_data(app):
 
 
 def get_logging_level(ctx):
-
     v = ctx.obj["v"]
 
     log_level = None
@@ -212,9 +198,9 @@ def get_logging_level(ctx):
 
 @lru_cache
 def get_app(ctx):
-
     log_level = get_logging_level(ctx)
-    return init_app(config_dir=find_parent_dir(), log_level=log_level)
+
+    return init_app(config_dir=find_parent_dir(), log_level=log_level, deployment=ctx.obj["deploy"])
 
 
 @lru_cache
@@ -226,14 +212,13 @@ def get_logger(ctx):
     return logger
 
 
-@lru_cache
-def get_config():
+@click.pass_context
+def get_config(ctx):
+    deploy = ctx.obj["deploy"]
 
-    c = configure_config_tree(find_parent_dir())
+    c = configure_config_tree(find_parent_dir(), deploy=deploy)
 
     if len(c["__CONFIG_PATH"]) == 0:
-        raise Exception(
-            "No configuration files found. Maybe you are in the wrong directory?"
-        )
+        raise Exception("No configuration files found. Maybe you are in the wrong directory?")
 
     return c
