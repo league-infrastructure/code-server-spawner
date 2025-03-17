@@ -1,6 +1,7 @@
 import click
 
 from cspawn.cli.util import get_logger
+from cspawn.init import resolve_deployment
 
 
 @click.group()
@@ -14,6 +15,6 @@ def cli(ctx, v, deploy, config_file):
     ctx.obj = {}
     ctx.obj["v"] = v
     ctx.obj["config_file"] = config_file
-    ctx.obj["deploy"] = deploy
+    ctx.obj["deploy"] = resolve_deployment(deploy)
 
     get_logger(ctx)
