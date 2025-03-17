@@ -66,8 +66,8 @@ RUN python -m pip install /app
 RUN mkdir /root/.ssh
 RUN chmod 700 /root/.ssh
 
-RUN cp  /app/node-config/id_rsa /root/.ssh/id_rsa
-RUN cp  /app/node-config/id_rsa.pub /root/.ssh/id_rsa.pub
+RUN cp  /app/config/secrets/id_rsa /root/.ssh/id_rsa
+RUN cp  /app/config/secrets/id_rsa.pub /root/.ssh/id_rsa.pub
 RUN cp /app/config/known_hosts /root/.ssh/known_hosts
 
 RUN chmod 600 ~/.ssh/id_rsa                                                                       
