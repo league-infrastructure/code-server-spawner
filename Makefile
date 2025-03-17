@@ -25,7 +25,7 @@ setup:
 # Docker 
 
 build:
-	docker compose -f docker-stack.yaml build  --build-arg VERSION=$(VERSION)
+	docker compose -f docker-stack.yaml build  --no-cache --build-arg VERSION=$(VERSION)
 	docker tag codeserv codeserv:$(VERSION)
 
 up:
@@ -36,6 +36,10 @@ down:
 
 shell:
 	docker compose -f docker-stack.yaml   run --rm codeserv /bin/bash
+
+logs:
+	docker service   logs --tail "1000" -f codeserv_codeserv
+
 
 dbinfo:
 	 docker compose -f docker-stack.yaml   run --rm codeserv cspawnctl db info

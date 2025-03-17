@@ -2,15 +2,13 @@
 
 import uuid
 from functools import wraps
-from typing import cast
 
-from flask import abort, current_app, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import abort, current_app, redirect, render_template, request, session, url_for
 from flask_login import current_user
 
 from cspawn.__version__ import __version__ as version
 
 from cspawn.main import main_bp
-from cspawn.models import Class, db
 
 
 context = {"version": version, "current_user": current_user}
