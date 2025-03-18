@@ -1,6 +1,6 @@
 services:
   cs-spawner:
-    image: codeserv
+    image: codeserv:${VERSION}
     container_name: codeserv
     build:
       context: .
