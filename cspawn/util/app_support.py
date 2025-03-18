@@ -70,14 +70,13 @@ def init_logger(app, log_level=None):
 def configure_config_tree(config_dir: str | Path, deploy: str) -> Dict[str, Any]:
     # Determine if we're running in production or development
 
-    if deploy == "devel":
-        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
-
     config = get_config(config_dir, deploy=deploy)
 
     # Resolve the path to the secrets file
     if "SECRETS_FILE_NAME" in config:
         config["SECRETS_FILE"] = (Path(config["__CONFIG_PATH"]).parent / config["SECRETS_FILE_NAME"]).resolve()
+
+    os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = config.get("OAUTHLIB_INSECURE_TRANSPORT", "")
 
     return config
 
@@ -141,6 +140,7 @@ def setup_database(app):
 def setup_mongo(app):
     # Configure MongoDB
     app.config["MONGO_URI"] = app.app_config["MONGO_URI"]
+    app.config["MONGO_DBNAME"] = "codeserv"
     app.mongo = PyMongo(app)
 
 

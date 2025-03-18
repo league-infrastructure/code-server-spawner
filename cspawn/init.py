@@ -17,7 +17,8 @@ from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from werkzeug.middleware.proxy_fix import ProxyFix
-
+import signal
+import sys
 from cspawn.__version__ import __version__ as version
 
 
@@ -30,6 +31,7 @@ from .util.app_support import (
     setup_sessions,
     setup_mongo,
 )
+
 
 default_context = {"version": version}
 
@@ -154,5 +156,13 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
         from cspawn.models import User
 
         return User.query.get(user_id)
+
+    def handle_shutdown(*args):
+        print("Shutting down gracefully...")
+        db.session.remove()
+        db.engine.dispose()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, handle_shutdown)
 
     return app
