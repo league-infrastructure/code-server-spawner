@@ -34,7 +34,7 @@ def info(ctx):
     with app.app_context():
         print("Postgres: ", str(app.db.engine.url))
 
-        print("Mongo: ", str(app.mongo.cx))
+        print("Mongo: ", str(app.mongo.client.cx))
 
 
 @db.command()

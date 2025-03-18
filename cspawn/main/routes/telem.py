@@ -15,12 +15,11 @@ def telem():
         try:
             telemetry = TelemetryReport(**telemetry_data)
 
-            current_app.mongo.db.telem.insert_one(request.get_json())
-
-            ch = CodeHost.query.filter_by(service_name=telemetry.username).first()
+            ch: CodeHost = CodeHost.query.filter_by(service_name=telemetry.username).first()
 
             if ch:
                 ch.update_telemetry(telemetry)
+
                 db.session.commit()
 
         except ValidationError:

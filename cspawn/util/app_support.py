@@ -1,10 +1,12 @@
 import logging
 import os
 from datetime import datetime
+from collections import namedtuple
+
 from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
-from xml.dom import NotFoundErr
+
 
 from flask_session import Session
 from flask_pymongo import PyMongo
@@ -140,8 +142,30 @@ def setup_database(app):
 def setup_mongo(app):
     # Configure MongoDB
     app.config["MONGO_URI"] = app.app_config["MONGO_URI"]
-    app.config["MONGO_DBNAME"] = "codeserv"
-    app.mongo = PyMongo(app)
+    # app.config["MONGO_DBNAME"] = "codeserv"
+
+    mongo = PyMongo(app)
+
+    db_name = "codeserv"
+    if db_name not in mongo.cx.list_database_names():
+        app.logger.info(f"Creating database '{db_name}'")
+
+    collections = ["telem"]
+
+    for collection in collections:
+        if collection not in mongo.cx[db_name].list_collection_names():
+            app.logger.info(f"Creating collection '{collection}' in database '{db_name}'")
+            mongo.cx[db_name].create_collection(collection)
+
+    # Create a named tuple to hold MongoDB references
+    MongoReferences = namedtuple("MongoReferences", ["client", "codeserv"] + collections)
+
+    # Assign the MongoDB client and database references to the app
+    app.mongo = MongoReferences(
+        client=mongo.cx,
+        codeserv=mongo.cx[db_name],
+        **{collection: mongo.cx[db_name][collection] for collection in collections},
+    )
 
 
 def insert_query_arg(url, key, value):
