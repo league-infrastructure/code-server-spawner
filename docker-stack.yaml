@@ -1,6 +1,6 @@
 services:
   codeserv:
-    image: codeserv:${VERSION}
+    image: codeserv
     container_name: codeserv
     build:
       context: .

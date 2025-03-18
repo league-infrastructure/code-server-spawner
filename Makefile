@@ -9,10 +9,10 @@ ver:
 	@echo $(VERSION)
 
 compile:
+	echo "__version__ = '$(VERSION)'" > cspawn/__version__.py
 	uv pip compile --refresh pyproject.toml -o requirements.txt
 
 push: compile
-	echo "__version__ = '$(VERSION)'" > cspawn/__version__.py
 	git commit --allow-empty -a -m "Release version $(VERSION)"
 	git push
 	git tag v$(VERSION) 
@@ -24,18 +24,21 @@ setup:
 
 # Docker 
 
-build: push
-	docker compose -f docker-stack.yaml build  --no-cache --build-arg VERSION=$(VERSION)
+build: compile
+	docker compose -f docker-stack.yaml build  --no-cache
 	docker tag codeserv codeserv:$(VERSION)
 
 up:
-	VERSION=$(VERSION) docker stack deploy --detach=false -c docker-stack.yaml codeserv 
+	docker stack deploy --detach=false -c docker-stack.yaml codeserv 
 
 down:
 	docker stack rm codeserv
 
 shell:
 	docker compose -f docker-stack.yaml   run --rm codeserv /bin/bash
+
+flask:
+	docker compose -f docker-stack.yaml   run --rm codeserv flask -A cspawn.app:app shell 
 
 logs:
 	docker service   logs --tail "1000" -f codeserv_codeserv
