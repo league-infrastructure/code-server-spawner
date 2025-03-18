@@ -29,7 +29,7 @@ build: push
 	docker tag codeserv codeserv:$(VERSION)
 
 up:
-	docker stack deploy --detach=false -c docker-stack.yaml codeserv
+	VERSION=$(VERSION) docker stack deploy --detach=false -c docker-stack.yaml codeserv 
 
 down:
 	docker stack rm codeserv
