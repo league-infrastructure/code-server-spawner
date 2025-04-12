@@ -196,7 +196,7 @@
                                 {% if student.code_hosts %}
                                 {% for host in student.code_hosts %}
                                 {% if host.state %}
-                                {{ host.state }} |  {{ (host.memory_usage/1024/1024)| round() }}  | {{ host.modified_ago }} | {{ host.user_activity_rate | round(3)  }}
+                                {{ host.state }} |  {{ (host.memory_usage/1024/1024)| round() if host.memory_usage else 'N/A' }}  | {{ host.modified_ago }} | {{ host.user_activity_rate | round(3)  }}
                                 {% endif %}
                                 {% endfor %}
                                 {% else %}
