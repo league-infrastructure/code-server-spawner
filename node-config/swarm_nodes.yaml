@@ -59,13 +59,6 @@
         key: "{{ lookup('file', '../config/secrets/id_rsa.pub') }}"
       become: true
 
-    - name: Remove SSH key for eric@braeburn from authorized_keys
-      authorized_key:
-        user: root
-        state: absent
-        key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDgUx8Dh1bedevPzCKuSXTgDaV2F7E5KyRX5r2GwKZfJCgWUHIuj9K1ApTxAUppcLfe49OSTGCPvknJjkx+GxYWNXhJveaKVMSNVCgNIHBm5I7Wx/xd6rO33U7cYlWJKIpC7AONfsfiG8Ix+7aj5AnMyuEhljHbAnjvnVEhj5sET373VV3s0EhSgo1IOPuCnavqTY3hOwVd6U6mrbPpLbK7c+CIhtQIuYH3vxBFY6lclx7Y0fbPD8L4wTd/FPb6BhV2Fj2ibgq3F6tsWTImNCQs02EKSPD9vyWhFcSCVlonNDI5NCnkXYOgO04bhivOOAvOqBxPLQpD4EjKWVJ2uTmOS+R0YYNv+Bf7lpZJ+AZz6iU+lC2++omUiFYQhK4+7dUWsnqcRQbD6GDe/fPkgTkBvv/HLgz8ge8PaRHMg6PiBTdJDku8ZgFeZ3JrY6JqaJ/iBKs+TAx/mRSbx4JwA/w8IBTjWf3+eWzpT436PHDXdtSIEaJCcT2qki52nBBhSOM= eric@braeburn"
-      become: true
-
     - name: Configure SSH to disable strict host key checking
       lineinfile:
         path: /root/.ssh/config
@@ -77,3 +70,42 @@
             UserKnownHostsFile /dev/null
             LogLevel QUIET
       become: true
+
+    - name: Configure 8GB of swap
+      block:
+        - name: Check if swap file exists
+          stat:
+            path: /swapfile
+          register: swapfile_stat
+
+        - name: Create a swap file if it does not exist
+          command: fallocate -l 8G /swapfile
+          args:
+            creates: /swapfile
+          when: not swapfile_stat.stat.exists
+
+        - name: Set correct permissions on swap file
+          file:
+            path: /swapfile
+            state: file
+            mode: "0600"
+          when: not swapfile_stat.stat.exists
+
+        - name: Set up the swap file
+          command: mkswap /swapfile
+          when: not swapfile_stat.stat.exists
+
+        - name: Check if swap is already enabled
+          command: swapon --show
+          register: swapon_status
+          changed_when: false
+
+        - name: Enable the swap file
+          command: swapon /swapfile
+          when: "'/swapfile' not in swapon_status.stdout"
+
+        - name: Ensure swap is enabled on reboot
+          lineinfile:
+            path: /etc/fstab
+            state: present
+            line: "/swapfile none swap sw 0 0"
