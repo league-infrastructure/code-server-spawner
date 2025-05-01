@@ -30,7 +30,7 @@ ENV TZ=America/Los_Angeles
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Copy the crontab file into the appropriate location
-COPY crontab /etc/crontab
+COPY docker/crontab /etc/crontab
 RUN crontab /etc/crontab
 
 RUN mkdir -p /app
@@ -80,4 +80,4 @@ EXPOSE 8000
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
 # Run the application.
-CMD ["/usr/bin/supervisord", "-c", "/app/supervisord.conf"]
+CMD ["/usr/bin/supervisord", "-c", "/app/docker/supervisord.conf"]
