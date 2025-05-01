@@ -3,9 +3,8 @@ services:
     image: codeserv
     container_name: codeserv
     build:
-      context: .
-      dockerfile: Dockerfile
-
+      context: ..
+      dockerfile: docker/Dockerfile
 
     deploy:
       replicas: 1

@@ -3,8 +3,8 @@ services:
     image: codeserv:${VERSION}
     container_name: codeserv
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
 
     # These labels set up the domain name in the Caddy proxy
     labels:
