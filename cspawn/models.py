@@ -445,9 +445,7 @@ class CodeHost(db.Model):
         data["last_utilization"] = (
             datetime.fromisoformat(data["last_utilization"]) if data.get("last_utilization") else None
         )
-        data["last_heartbeat_ago"] = (
-            datetime.fromisoformat(data["last_heartbeat_ago"]) if data.get("last_heartbeat_ago") else None
-        )
+
         data["created_at"] = (
             datetime.fromisoformat(data["created_at"]) if data.get("created_at") else datetime.now(timezone.utc)
         )
@@ -468,6 +466,10 @@ class CodeHost(db.Model):
 
         self.last_heartbeat = telemetry.timestamp  # TIme of
         self.last_utilization = max_last_modified
+
+        self.last_heartbeat_ago = (
+            (datetime.now(timezone.utc) - self.last_heartbeat).total_seconds() if self.last_heartbeat else None
+        )
 
         self.memory_usage = telemetry.sysMemory
         self.user_activity_rate = telemetry.average5m

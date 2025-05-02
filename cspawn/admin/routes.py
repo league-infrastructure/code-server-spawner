@@ -1,14 +1,12 @@
 import json
 from datetime import datetime
-
-from flask import current_app, flash, redirect, render_template, request, url_for, abort
 from functools import wraps
-from flask_login import current_user, login_required
 
-from cspawn.models import HostImage
-from cspawn.models import Class, CodeHost, User, db
-from cspawn.util.names import class_code
+from flask import current_app, flash, redirect, render_template, request, url_for
+from flask_login import current_user
+
 from cspawn.init import cast_app
+from cspawn.models import Class, CodeHost, HostImage, User, db
 
 from . import admin_bp
 
@@ -41,6 +39,9 @@ def index():
 @admin_required
 def list_code_hosts():
     code_hosts = CodeHost.query.all()
+    from pprint import pprint
+
+    pprint(code_hosts[0].to_dict())
     return render_template("admin/code_hosts.html", code_hosts=code_hosts)
 
 
@@ -183,9 +184,7 @@ def import_images():
                 image_data = json.load(file)
                 for image in image_data:
                     if not HostImage.query.filter_by(
-                        image_uri=image["image_uri"],
-                        repo_uri=image["repo_uri"],
-                        creator_id=image["creator_id"],
+                        image_uri=image["image_uri"], repo_uri=image["repo_uri"], creator_id=image["creator_id"]
                     ).first():
                         new_image = HostImage(
                             name=image["name"],
