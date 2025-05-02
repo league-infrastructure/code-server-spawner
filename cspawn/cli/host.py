@@ -5,7 +5,7 @@ import click
 from cspawn.models import CodeHost
 
 from .root import cli
-from .util import get_app
+from .util import get_app, get_logger
 from docker.errors import NotFound
 
 
@@ -21,6 +21,8 @@ def ls(ctx):
     """List all of the Docker containers in the system."""
     from tabulate import tabulate
 
+    logger = get_logger(ctx)
+
     app = get_app(ctx)
 
     with app.app_context():
@@ -28,6 +30,9 @@ def ls(ctx):
         for s in app.csm.list():
             s.sync_to_db()
             ch = CodeHost.query.filter_by(service_name=s.name).first()
+            if not ch:
+                logger.warning(f"CodeHost not found for {s.name}")
+                continue
             rows.append(
                 {
                     "service": ch.service_name,
@@ -111,22 +116,24 @@ def find(ctx, query):
 @click.pass_context
 @click.option("--purge", is_flag=True, help="Delete all probe records.")
 def purge(ctx, purge):
-    """Delete all proble records"""
+    """Delete all mia hosts"""
     app = get_app(ctx)
 
-    confirmation = input("Are you sure? Type 'yes' to proceed: ")
-    if confirmation.lower() != "yes":
-        print("Operation cancelled.")
-        return
+    with app.app_context():
+        app.csm.sync(check_ready=True)
 
-    for s in app.csm.list():
-        s.remove()
+        for ch in CodeHost.query.all():
+            if ch.is_mia:
+                print(ch.service_name + ": ", end=" ")
+                if not purge:
+                    print("MIA")
+                else:
+                    print("Purge", end=" ")
+                    app.db.session.delete(ch)
+                    print(f"; Deleted {ch.service_name}")
 
-    print("All services removed successfully.")
-
-    app.csm.collect_containers()
-
-    print("Cleaned database.")
+        if purge:
+            app.db.session.commit()
 
 
 @host.command()
@@ -139,12 +146,7 @@ def sync(ctx):
 
 
 @host.command()
-@click.option(
-    "-N",
-    "--dry-run",
-    is_flag=True,
-    help="Show what would be done, without making any changes.",
-)
+@click.option("-N", "--dry-run", is_flag=True, help="Show what would be done, without making any changes.")
 @click.pass_context
 def reap(ctx, dry_run: bool):
     """Remove containers that are MIA or are quiescent."""

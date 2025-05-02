@@ -125,7 +125,11 @@ class CSMService(Service):
             db.session.commit()
         else:
             db.session.add(m)
-            db.session.commit()
+            try:
+                db.session.commit()
+            except Exception as e:
+                logger.error("Error committing CodeHost record: %s", e)
+                db.session.rollback()
 
         return ch
 
@@ -297,13 +301,7 @@ def define_cs_container(
 class CodeServerManager(ServicesManager):
     service_class = CSMService
 
-    def __init__(
-        self,
-        app: Any,
-        network: List[str] = None,
-        env: Dict[str, str] = None,
-        labels: Dict[str, str] = None,
-    ):
+    def __init__(self, app: Any, network: List[str] = None, env: Dict[str, str] = None, labels: Dict[str, str] = None):
         """
         Initialize the CodeServerManager.
 
@@ -358,11 +356,7 @@ class CodeServerManager(ServicesManager):
             exit_status = stdout.channel.recv_exit_status()
 
             if exit_status != 0:
-                logger.error(
-                    "Failed to create directory %s on remote host: %s",
-                    user_dir,
-                    stderr.read().decode(),
-                )
+                logger.error("Failed to create directory %s on remote host: %s", user_dir, stderr.read().decode())
 
             ssh.close()
 

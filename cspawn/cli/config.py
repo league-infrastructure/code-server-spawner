@@ -30,7 +30,10 @@ def show(ctx):
     with app.app_context():
         print("    Postgres: ", str(app.db.engine.url))
 
-        print("    Mongo:    ", str(app.mongo.cx))
+        try:
+            print("    Mongo:    ", str(app.mongo.cx))
+        except Exception as e:
+            pass
 
 
 @config.command()
