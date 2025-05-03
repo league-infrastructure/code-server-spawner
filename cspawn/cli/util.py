@@ -27,12 +27,6 @@ def create_demo_users(app):
     users = [
         {
             "user_id": faker.bothify(text="?????"),
-            "username": "EricAdmin",
-            "email": "eric.busboom@jointheleague.org",
-            "password": "password",
-        },
-        {
-            "user_id": faker.bothify(text="?????"),
             "username": "BobStaff",
             "email": "bob.staff@jointheleague.org",
             "password": "password",
@@ -86,7 +80,7 @@ def create_demo_images(app):
 
         existing_image = ClassProto.query.filter_by(hash=host_image.hash).first()
         if existing_image:
-            logger.info(f"HostImage with hash {host_image.hash} already exists. Skipping.")
+            logger.info(f"ClassProto with hash {host_image.hash} already exists. Skipping.")
             continue
 
         db.session.add(host_image)
@@ -98,27 +92,27 @@ def create_demo_images(app):
 
 def create_demo_code_hosts(app):
     """
-    Create CodeHost records with fake data and associate them with HostImage records.
+    Create CodeHost records with fake data and associate them with ClassProto records.
 
     :param session: SQLAlchemy Session object.
     :param num_records: Number of CodeHost records to create.
     """
     fake = Faker()
     with app.app_context():
-        # Fetch all HostImage records
+        # Fetch all ClassProto records
         host_images = db.session.query(ClassProto).all()
 
         # Fetch all User records
         users = db.session.query(User).all()
 
         if not host_images:
-            print("No HostImage records found. Please ensure they exist before creating CodeHost records.")
+            print("No ClassProto records found. Please ensure they exist before creating CodeHost records.")
             return
 
         code_hosts = []
 
         for i in range(5):
-            host_image = host_images[i % len(host_images)]  # Cycle through HostImage records
+            host_image = host_images[i % len(host_images)]  # Cycle through ClassProto records
             user = users[i % len(users)]
             code_host = CodeHost(
                 service_id=fake.uuid4(),
@@ -136,10 +130,7 @@ def create_demo_code_hosts(app):
 
 
 def make_data(app):
-    with app.app_context():
-        create_demo_users(app)
-        create_demo_images(app)
-        create_demo_code_hosts(app)
+    pass
 
 
 def load_data(app):

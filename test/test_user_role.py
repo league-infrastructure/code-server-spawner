@@ -8,7 +8,7 @@ from faker import Faker
 from cspawn.models import ClassProto
 from cspawn.models import CodeHost, ClassProto, User
 
-from cspawn.util.test_fixture import *
+from cspawn.util.test_fixture import make_data
 
 
 class TestUserRole(unittest.TestCase):

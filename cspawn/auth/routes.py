@@ -81,6 +81,7 @@ def google_login():
     user_id = "google_" + user_info["id"]
 
     user = User.query.filter_by(user_id=user_id).first()
+
     if user is None:
         user = User(
             username="not_set",  # wll set later, after User constructed.

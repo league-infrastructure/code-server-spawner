@@ -29,7 +29,7 @@ class ClassForm(FlaskForm):
     class_code = StringField("Class Code", default=class_code, validators=[DataRequired()])
     start_date = DateTimeField("Start Date", format="%Y-%m-%dT%H:%M", validators=[Optional()])
     end_date = DateTimeField("End Date", format="%Y-%m-%dT%H:%M", validators=[Optional()])
-    image_id = SelectField("Image", coerce=int, validators=[Optional()])
+    proto_id = SelectField("Prototype", coerce=int, validators=[Optional()])
 
     active = BooleanField("Active", default=True, validators=[Optional()])
     hidden = BooleanField("Hidden", default=False, validators=[Optional()])
@@ -59,7 +59,7 @@ class ClassForm(FlaskForm):
                 setattr(model, field, self._fields[field].data)
 
         if not self.name.data or not self.description.data:
-            image = ClassProto.query.get(self.image_id.data)
+            image = ClassProto.query.get(self.proto_id.data)
             model.name = model.name or image.name
             model.description = model.description or image.desc
 

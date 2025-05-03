@@ -60,9 +60,9 @@ def start_class(class_id) -> str:
         flash("Class not found", "error")
         return redirect(return_url)
 
-    image = class_.image
+    proto = class_.proto
 
-    assert class_.image_id == image.id
+    assert class_.proto_id == proto.id
 
     # Look for an existing CodeHost for the current user
     extant_host = CodeHost.query.filter_by(user_id=current_user.id).first()
@@ -75,7 +75,7 @@ def start_class(class_id) -> str:
     s = ca.csm.get_by_username(current_user.username)
 
     if not s:
-        s, ch = ca.csm.new_cs(user=current_user, image=image, class_=class_)
+        s, ch = ca.csm.new_cs(user=current_user, image=proto, class_=class_)
 
         if s:
             flash(f"Host {s.name} started successfully", "success")
@@ -83,7 +83,7 @@ def start_class(class_id) -> str:
             flash("Failed to start host", "error")
 
         if ch and ch.class_id is None:
-            assert ch.host_image_id == image.id
+            assert ch.host_image_id == proto.id
             ch.class_id = class_id
             db.session.add(ch)
             db.session.commit()
@@ -207,9 +207,9 @@ def _edit_class(class_id, return_page):
         else:
             form = ClassForm()
 
-    all_images = ClassProto.query.filter(ClassProto.is_public | (ClassProto.creator_id == current_user.id)).all()
+    all_protos = ClassProto.query.filter(ClassProto.is_public | (ClassProto.creator_id == current_user.id)).all()
 
-    form.image_id.choices = [(0, "")] + [(image.id, image.name) for image in all_images]
+    form.proto_id.choices = [(0, "")] + [(proto.id, proto.name) for proto in all_protos]
 
     if request.method == "POST":
         reload = not form.name.data
@@ -220,17 +220,20 @@ def _edit_class(class_id, return_page):
             db.session.add(class_)
             try:
                 db.session.commit()
-            except (UniqueViolation, IntegrityError):
+            except (UniqueViolation, IntegrityError) as e:
                 db.session.rollback()
-                # Guess it is b/c of the class code
-                flash("Class code must be unique", "error")
-                form.class_code.errors.append("Class code must be unique. Generated a new one.")
-                form.class_code.data = class_code()
+                if "classes_class_code_key" in str(e.orig):
+                    # Guess it is b/c of the class code
+                    flash("Class code must be unique", "error")
+                    form.class_code.errors.append("Class code must be unique. Generated a new one.")
+                    form.class_code.data = class_code()
 
-                return render_template("classes/edit.html", clazz=class_, form=form, **ctx)
+                    return render_template("classes/edit.html", clazz=class_, form=form, **ctx)
+                else:
+                    raise
             if reload:
                 reload_form = ClassForm.from_model(class_)
-                reload_form.image_id.choices = form.image_id.choices
+                reload_form.proto_id.choices = form.proto_id.choices
                 return render_template("classes/edit.html", clazz=class_, form=reload_form, **ctx)
             else:
                 return redirect(url_for(return_page, class_id=class_.id))

@@ -166,8 +166,8 @@ class Class(db.Model):
     start_date = Column(DateTime(timezone=True), nullable=False)  # Time and date that the class begins.
     end_date = Column(DateTime(timezone=True), nullable=True)
     recurrence_rule = Column(String(255), nullable=True)
-    image_id = Column(Integer, ForeignKey("host_images.id"), nullable=False)
-    image = relationship("HostImage", back_populates="classes")
+    proto_id = Column(Integer, ForeignKey("class_proto.id"), nullable=False)
+    proto = relationship("ClassProto", back_populates="classes")
     start_script = Column(Text, nullable=True)
 
     class_code = Column(String(40), nullable=True, unique=True)
@@ -343,8 +343,8 @@ class CodeHost(db.Model):
     state = Column(String, default="unknown", nullable=False)  # Docker state
     app_state = Column(String, default="unknown", nullable=True)  # Application state
 
-    host_image_id = Column(Integer, ForeignKey("host_images.id"), nullable=True)
-    host_image = relationship("HostImage", backref="code_hosts")
+    host_image_id = Column(Integer, ForeignKey("class_proto.id"), nullable=True)
+    host_image = relationship("ClassProto", backref="code_hosts")
 
     class_id = Column(Integer, ForeignKey("classes.id"), nullable=True)
     class_ = relationship("Class", backref="code_hosts")
@@ -496,7 +496,7 @@ class CodeHost(db.Model):
 class ClassProto(db.Model):
     """A template for a class. It describes the image and repo to use for a class."""
 
-    __tablename__ = "host_images"
+    __tablename__ = "class_proto"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
@@ -514,7 +514,7 @@ class ClassProto(db.Model):
     is_public = Column(Boolean, default=False, nullable=False)
 
     creator_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    creator = relationship("User", backref="host_images")
+    creator = relationship("User", backref="class_proto")
 
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
@@ -538,7 +538,7 @@ class ClassProto(db.Model):
             target.creator_id,
         )
 
-    classes = relationship("Class", back_populates="image")
+    classes = relationship("Class", back_populates="proto")
 
     def to_dict(self):
         return {
