@@ -174,7 +174,7 @@ def edit_class(class_id):
 
 
 def _edit_class(class_id, return_page):
-    from cspawn.models import HostImage
+    from cspawn.models import ClassProto
 
     ctx = context.copy()
     ctx["return_page"] = return_page
@@ -187,7 +187,10 @@ def _edit_class(class_id, return_page):
     if action == "delete":
         return delete_class(class_id)
     elif action == "cancel":
-        return redirect(url_for(return_page, class_id=class_id))
+        if class_id == "new":
+            return redirect(url_for("main.index"))
+        else:
+            return redirect(url_for(return_page, class_id=class_id))
 
     if class_id == "new":
         form = ClassForm()
@@ -204,7 +207,7 @@ def _edit_class(class_id, return_page):
         else:
             form = ClassForm()
 
-    all_images = HostImage.query.filter(HostImage.is_public | (HostImage.creator_id == current_user.id)).all()
+    all_images = ClassProto.query.filter(ClassProto.is_public | (ClassProto.creator_id == current_user.id)).all()
 
     form.image_id.choices = [(0, "")] + [(image.id, image.name) for image in all_images]
 

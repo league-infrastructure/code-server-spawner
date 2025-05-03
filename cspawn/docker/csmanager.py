@@ -18,7 +18,7 @@ from cspawn.docker.proc import Service
 from cspawn.models import CodeHost, User, HostState, db
 from cspawn.util.auth import basic_auth_hash, random_string
 
-from ..models import HostImage, Class
+from ..models import ClassProto, Class
 
 logger = logging.getLogger("cspawn.docker")  # noqa: F811
 
@@ -367,7 +367,7 @@ class CodeServerManager(ServicesManager):
 
         return user_dir
 
-    def new_cs(self, user: User, image: HostImage, class_: Class):
+    def new_cs(self, user: User, image: ClassProto, class_: Class):
         """
         Create a new Code Server instance.
 
@@ -382,7 +382,7 @@ class CodeServerManager(ServicesManager):
         """
         username = user.username
 
-        assert isinstance(image, HostImage)
+        assert isinstance(image, ClassProto)
 
         container_def = define_cs_container(
             config=self.config,

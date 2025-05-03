@@ -7,7 +7,7 @@ from faker import Faker
 
 from cspawn.docker.csmanager import logger as ctrl_logger
 from cspawn.init import init_app
-from cspawn.models import CodeHost, HostImage, User, db
+from cspawn.models import CodeHost, ClassProto, User, db
 from cspawn.util.app_support import configure_config_tree
 from cspawn.util.config import find_parent_dir
 
@@ -80,11 +80,11 @@ def create_demo_images(app):
     ]
 
     for image in host_images:
-        host_image = HostImage(**image)
+        host_image = ClassProto(**image)
 
-        HostImage.set_hash(None, None, host_image)
+        ClassProto.set_hash(None, None, host_image)
 
-        existing_image = HostImage.query.filter_by(hash=host_image.hash).first()
+        existing_image = ClassProto.query.filter_by(hash=host_image.hash).first()
         if existing_image:
             logger.info(f"HostImage with hash {host_image.hash} already exists. Skipping.")
             continue
@@ -93,7 +93,7 @@ def create_demo_images(app):
 
     db.session.commit()
 
-    assert len(HostImage.query.all()) >= 2
+    assert len(ClassProto.query.all()) >= 2
 
 
 def create_demo_code_hosts(app):
@@ -106,7 +106,7 @@ def create_demo_code_hosts(app):
     fake = Faker()
     with app.app_context():
         # Fetch all HostImage records
-        host_images = db.session.query(HostImage).all()
+        host_images = db.session.query(ClassProto).all()
 
         # Fetch all User records
         users = db.session.query(User).all()
@@ -174,7 +174,7 @@ def load_data(app):
             images_data = json.load(f)
 
         for image_data in images_data:
-            image = HostImage(**image_data)
+            image = ClassProto(**image_data)
             db.session.add(image)
 
         db.session.commit()

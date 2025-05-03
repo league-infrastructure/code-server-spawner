@@ -2,7 +2,47 @@
 
 {% block title %}Admin Dashboard - League Code Server{% endblock %}
 
+{% block header %}
+<div class="text-center">
+    <h1 class="mb-4">Admin Dashboard</h1>
+</div>
+{% endblock %}
 
 {% block content %}
-<p> nice admin!</p>
+<div class="container mt-4">
+    <div class="row g-4">
+        <div class="col-md-3">
+            <div class="card text-center shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">Total Code Hosts</h5>
+                    <p class="display-4 fw-bold text-primary">{{ num_code_hosts }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">Running Hosts</h5>
+                    <p class="display-4 fw-bold text-success">{{ num_running_hosts }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">Users</h5>
+                    <p class="display-4 fw-bold text-info">{{ num_users }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">Classes</h5>
+                    <p class="display-4 fw-bold text-warning">{{ num_classes }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
