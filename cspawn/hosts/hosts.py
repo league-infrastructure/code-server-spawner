@@ -2,19 +2,11 @@ import time
 from typing import cast
 
 import docker
-from flask import (
-    current_app,
-    flash,
-    jsonify,
-    redirect,
-    render_template,
-    request,
-    url_for,
-)
+from flask import current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from cspawn.util.apptypes import App
-from cspawn.models import HostImage
+from cspawn.models import ClassProto
 from cspawn.hosts import hosts_bp
 from cspawn.models import CodeHost, db
 from cspawn.docker.csmanager import CSMService
@@ -27,7 +19,6 @@ ca = cast(App, current_app)
 @hosts_bp.route("/")
 @login_required
 def index() -> str:
-
     ch = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
 
     s: CSMService = ca.csm.get(ch.service_id) if ch else None
@@ -35,7 +26,7 @@ def index() -> str:
     if s:
         ch: CodeHost = s.sync_to_db(check_ready=True)  # update the host record
 
-    host_images = HostImage.query.all()
+    host_images = ClassProto.query.all()
 
     # If we have a code host, it is the only one shown on the list.
     if ch:
@@ -51,9 +42,10 @@ def index() -> str:
 @login_required
 def start_host() -> str:
     image_id = request.args.get("image_id")
-    image = HostImage.query.get(image_id)
+    image = ClassProto.query.get(image_id)
 
     import logging
+
     logger = logging.getLogger("cspawn.docker")
     logger.setLevel(logging.DEBUG)
 
@@ -71,12 +63,7 @@ def start_host() -> str:
     s = ca.csm.get_by_username(current_user.username)
 
     if not s:
-        s = ca.csm.new_cs(
-            user=current_user,
-            image=image.image_uri,
-            repo=image.repo_uri,
-            syllabus=image.syllabus_path,
-        )
+        s = ca.csm.new_cs(user=current_user, image=image.image_uri, repo=image.repo_uri, syllabus=image.syllabus_path)
 
         flash(f"Host {s.name} started successfully", "success")
     else:
@@ -102,10 +89,7 @@ def stop_host() -> str:
         return redirect(url_for("hosts.index"))
 
     if host_id and str(ch.id) != str(host_id):
-        flash(
-            f"Host stop disallowed (host id mismatch {host_id} != {ch.id})",
-            "error",
-        )
+        flash(f"Host stop disallowed (host id mismatch {host_id} != {ch.id})", "error")
         return redirect(url_for("hosts.index"))
 
     s = ca.csm.get(ch.service_id)
@@ -149,7 +133,6 @@ def is_ready() -> jsonify:
 @hosts_bp.route("/service/<chost_id>/open", methods=["GET"])
 @login_required
 def open_codehost(chost_id: str) -> str:
-
     ch = CodeHost.query.filter_by(id=chost_id).first()
 
     if not ch:

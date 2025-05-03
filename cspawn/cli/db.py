@@ -87,7 +87,7 @@ def recreate(ctx, demo):
         drop_db(app)
         print("Database tables destroyed successfully.")
 
-        db.create_all()
+        app.db.create_all()
         print("Database tables created successfully.")
 
         load_data(app)

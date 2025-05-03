@@ -1,12 +1,13 @@
 import json
 from datetime import datetime
 from functools import wraps
+from operator import is_
 
 from flask import current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from cspawn.init import cast_app
-from cspawn.models import Class, CodeHost, HostImage, User, db
+from cspawn.models import Class, CodeHost, ClassProto, User, db
 
 from . import admin_bp
 
@@ -22,9 +23,16 @@ def _context():
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not current_user.is_admin:
-            return redirect(url_for("main.index"))
-        return f(*args, **kwargs)
+        try:
+            if current_user.is_admin:
+                return f(*args, **kwargs)
+
+        except AttributeError:
+            # Handle the case where current_user does not have is_admin attribute,
+            # which may happen if the user is not authenticated
+            pass
+
+        return redirect(url_for("main.index"))
 
     return decorated_function
 
@@ -32,16 +40,28 @@ def admin_required(f):
 @admin_bp.route("/")
 @admin_required
 def index():
-    return render_template("admin/index.html", **_context())
+    # Gather dashboard stats
+    num_code_hosts = CodeHost.query.count()
+    num_running_hosts = CodeHost.query.filter_by(state="running").count()
+    num_users = User.query.count()
+    num_classes = Class.query.count()
+    context = _context()
+    context.update(
+        {
+            "num_code_hosts": num_code_hosts,
+            "num_running_hosts": num_running_hosts,
+            "num_users": num_users,
+            "num_classes": num_classes,
+        }
+    )
+    return render_template("admin/index.html", **context)
 
 
 @admin_bp.route("/hosts")
 @admin_required
 def list_code_hosts():
     code_hosts = CodeHost.query.all()
-    from pprint import pprint
 
-    pprint(code_hosts[0].to_dict())
     return render_template("admin/code_hosts.html", code_hosts=code_hosts)
 
 
@@ -90,7 +110,7 @@ def view_host(host_id):
 @admin_bp.route("/images")
 @admin_required
 def list_images():
-    images = HostImage.query.all()
+    images = ClassProto.query.all()
     image_data = []
     for image in images:
         code_host_count = CodeHost.query.filter_by(host_image_id=image.id).count()
@@ -101,7 +121,7 @@ def list_images():
 @admin_bp.route("/image/<int:image_id>", methods=["GET", "POST"])
 @admin_required
 def edit_image(image_id):
-    image = HostImage.query.get_or_404(image_id)
+    image = ClassProto.query.get_or_404(image_id)
     has_code_hosts = CodeHost.query.filter_by(host_image_id=image_id).count() > 0
     if request.method == "POST":
         image.name = request.form["name"]
@@ -120,7 +140,7 @@ def edit_image(image_id):
 @admin_required
 def new_image():
     if request.method == "POST":
-        new_image = HostImage(
+        new_image = ClassProto(
             name=request.form["name"],
             image_uri=request.form["image_uri"],
             repo_uri=request.form["repo_uri"],
@@ -137,7 +157,7 @@ def new_image():
 @admin_bp.route("/image/<int:image_id>/delete", methods=["POST"])
 @admin_required
 def delete_image(image_id):
-    image = HostImage.query.get_or_404(image_id)
+    image = ClassProto.query.get_or_404(image_id)
     db.session.delete(image)
     db.session.commit()
     flash("Image deleted successfully", "success")
@@ -147,7 +167,7 @@ def delete_image(image_id):
 @admin_bp.route("/images/export", methods=["GET"])
 @admin_required
 def export_images():
-    images = HostImage.query.all()
+    images = ClassProto.query.all()
     image_data = [
         {
             "name": image.name,
@@ -183,10 +203,10 @@ def import_images():
             try:
                 image_data = json.load(file)
                 for image in image_data:
-                    if not HostImage.query.filter_by(
+                    if not ClassProto.query.filter_by(
                         image_uri=image["image_uri"], repo_uri=image["repo_uri"], creator_id=image["creator_id"]
                     ).first():
-                        new_image = HostImage(
+                        new_image = ClassProto(
                             name=image["name"],
                             image_uri=image["image_uri"],
                             repo_uri=image["repo_uri"],

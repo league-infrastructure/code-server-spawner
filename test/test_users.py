@@ -7,7 +7,7 @@ import pytest
 from faker import Faker
 import json
 
-from cspawn.models import HostImage
+from cspawn.models import ClassProto
 from cspawn.init import db
 from cspawn.models import *
 from cspawn.models import User
@@ -28,9 +28,7 @@ warnings.filterwarnings("ignore", module="passlib.handlers.bcrypt")
 
 
 class TestHosts(CSUnitTest):
-
     def setUp(self):
-
         super().setUp()
         print("\n" + ("#" * 80))
 
@@ -65,24 +63,9 @@ class TestHosts(CSUnitTest):
                 db.session.delete(user)
             db.session.commit()
 
-            bob = User(
-                user_id=self.fake.uuid4(),
-                username="bob",
-                email="bob@example.com",
-                password="password",
-            )
-            larry = User(
-                user_id=self.fake.uuid4(),
-                username="larry",
-                email="larry@example.com",
-                password="password",
-            )
-            sally = User(
-                user_id=self.fake.uuid4(),
-                username="sally",
-                email="sally@example.com",
-                password="password",
-            )
+            bob = User(user_id=self.fake.uuid4(), username="bob", email="bob@example.com", password="password")
+            larry = User(user_id=self.fake.uuid4(), username="larry", email="larry@example.com", password="password")
+            sally = User(user_id=self.fake.uuid4(), username="sally", email="sally@example.com", password="password")
 
             db.session.add(bob)
             db.session.add(larry)
@@ -98,7 +81,6 @@ class TestHosts(CSUnitTest):
             # assert user is not None
 
     def test_create_demo_users(self):
-
         self.create_demo_users()
         self.create_demo_images()
 

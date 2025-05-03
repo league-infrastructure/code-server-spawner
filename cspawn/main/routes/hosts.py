@@ -1,19 +1,11 @@
 import json
 from typing import cast
 
-from flask import (
-    current_app,
-    flash,
-    jsonify,
-    redirect,
-    render_template,
-    request,
-    url_for,
-)
+from flask import current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from cspawn.main import main_bp
-from cspawn.models import CodeHost, HostImage, db
+from cspawn.models import CodeHost, ClassProto, db
 from cspawn.init import cast_app
 
 ca = cast_app(current_app)
@@ -31,7 +23,7 @@ def hosts() -> str:
     if s:
         ch: CodeHost = s.sync_to_db(check_ready=True)  # update the host record
 
-    host_images = HostImage.query.all()
+    host_images = ClassProto.query.all()
 
     # If we have a code host, it is the only one shown on the list.
     if ch:
@@ -51,7 +43,7 @@ def start_host() -> str:
     ca = cast_app(current_app)
 
     image_id = request.args.get("image_id")
-    image = HostImage.query.get(image_id)
+    image = ClassProto.query.get(image_id)
 
     if not image:
         flash("Image not found", "error")
@@ -67,12 +59,7 @@ def start_host() -> str:
     s = ca.csm.get_by_username(current_user.username)
 
     if not s:
-        s = ca.csm.new_cs(
-            user=current_user,
-            image=image.image_uri,
-            repo=image.repo_uri,
-            syllabus=image.syllabus_path,
-        )
+        s = ca.csm.new_cs(user=current_user, image=image.image_uri, repo=image.repo_uri, syllabus=image.syllabus_path)
 
         flash(f"Host {s.name} started successfully", "success")
     else:

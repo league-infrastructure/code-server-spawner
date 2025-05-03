@@ -493,7 +493,9 @@ class CodeHost(db.Model):
         return f"<CodeHost(id={self.id}, user_id={self.user_id}, service_id={self.service_id})>"
 
 
-class HostImage(db.Model):
+class ClassProto(db.Model):
+    """A template for a class. It describes the image and repo to use for a class."""
+
     __tablename__ = "host_images"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -567,8 +569,8 @@ class HostImage(db.Model):
         return cls(**data)
 
 
-event.listen(HostImage, "before_insert", HostImage.set_hash)
-event.listen(HostImage, "before_update", HostImage.set_hash)
+event.listen(ClassProto, "before_insert", ClassProto.set_hash)
+event.listen(ClassProto, "before_update", ClassProto.set_hash)
 
 
 def ensure_database_exists(app: Flask):
@@ -581,7 +583,7 @@ def ensure_database_exists(app: Flask):
 def export_dict():
     users = [u.to_dict() for u in User.query.all()]
     classes = [c.to_dict() for c in Class.query.all()]
-    images = [i.to_dict() for i in HostImage.query.all()]
+    images = [i.to_dict() for i in ClassProto.query.all()]
     hosts = [h.to_dict() for h in CodeHost.query.all()]
 
     return {"users": users, "images": images, "classes": classes, "hosts": hosts}
@@ -597,7 +599,7 @@ def import_dict(data):
     db.session.commit()
 
     for image_data in data["images"]:
-        image = HostImage.from_dict(image_data)
+        image = ClassProto.from_dict(image_data)
         db.session.add(image)
 
     db.session.commit()
