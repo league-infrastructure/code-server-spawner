@@ -10,6 +10,12 @@ from .root import cli
 from .util import get_app, load_data, make_data
 
 
+def test_not_production(app):
+    assert not os.environ.get("PRODUCTION"), "Should not run in production!"
+    uri = app.config["SQLALCHEMY_DATABASE_URI"]
+    assert "localhost" in uri or uri.startswith("sqlite://"), f"Unexpected DB URI: {uri}"
+
+
 def drop_db(app):
     db = app.db
     e = db.engine
@@ -78,12 +84,18 @@ def sync(ctx):
 
 @db.command()
 @click.option("-d", "--demo", is_flag=True, help="Load demo data after recreating the database.")
+@click.option("-p", "--allow-production", is_flag=True, help="Allow running this command in production.")
 @click.pass_context
-def recreate(ctx, demo):
+def recreate(ctx, demo, allow_production):
     """Destroy and recreate all database tables."""
     app = get_app(ctx)
 
     with app.app_context():
+        print("Postgres: ", str(app.db.engine.url))
+
+        if not allow_production:
+            test_not_production(app)
+
         drop_db(app)
         print("Database tables destroyed successfully.")
 

@@ -79,10 +79,7 @@ def index():
     if current_user.is_authenticated:
         host = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
 
-        if current_user.is_admin:
-            return render_template("index/admin.html", host={}, **context)
-
-        elif current_user.is_instructor:
+        if current_user.is_instructor or current_user.is_admin:
             if host and host.app_state != "running":
                 pass
 
@@ -103,9 +100,12 @@ def index():
             else:
                 classes = []
 
-            return render_template(
-                "index/instructor.html", host=host, classes=classes, return_url=url_for("main.index"), **context
-            )
+            if current_user.is_admin:
+                page = "index/admin.html"
+            else:
+                page = "index/instructor.html"
+
+            return render_template(page, host=host, classes=classes, return_url=url_for("main.index"), **context)
 
         elif current_user.is_student:
             return render_template("index/student.html", host=host, return_url=url_for("main.index"), **context)

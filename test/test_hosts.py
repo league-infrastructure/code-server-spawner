@@ -1,20 +1,11 @@
-import logging
 import unittest
-import warnings
-from pathlib import Path
 
-import pytest
-from faker import Faker
 import json
 
 from cspawn.models import ClassProto
-from cspawn.init import db
-from cspawn.models import *
 from cspawn.models import User
 
-from cspawn.models import CodeHost
-from cspawn.models import ClassProto
-from cspawn.util.test_fixture import *
+from cspawn.util.test_fixture import CSUnitTest
 
 
 class TestHosts(CSUnitTest):
