@@ -5,7 +5,7 @@
 
 {% block header %}
 <div class="text-center">
-    <h1 class="mb-4">Classess</h1>
+    <h1 class="mb-4">Classes</h1>
 </div>
 {% endblock %}
 
@@ -31,7 +31,7 @@
                 <th>Description</th>
                 <th>Start Date</th>
                 <th>Class Code</th>
-                <th>Host Images</th>
+                <th>Prototype</th>
                 <th>Instructors</th>
                 <th>Active</th>
                 <th>Public</th>
@@ -47,9 +47,7 @@
                 <td>{{ class.start_date.strftime('%Y-%m-%d') }}</td>
                 <td>{{ class.class_code }}</td>
                 <td>
-                    {% for host_image in class.host_images %}
-                    {{ host_image.name }}{% if not loop.last %}, {% endif %}
-                    {% endfor %}
+                    {{ class.proto.name }}
                 </td>
                 <td>
                     {% for instructor in class.instructors %}
