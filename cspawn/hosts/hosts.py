@@ -31,7 +31,7 @@ def index() -> str:
     # If we have a code host, it is the only one shown on the list.
     if ch:
         for i, host_image in enumerate(host_images):
-            if host_image.id == ch.host_image_id:
+            if host_image.id == ch.proto_id:
                 host_images = [host_image]
                 break
 
@@ -41,8 +41,8 @@ def index() -> str:
 @hosts_bp.route("/start")
 @login_required
 def start_host() -> str:
-    image_id = request.args.get("image_id")
-    image = ClassProto.query.get(image_id)
+    proto_id = request.args.get("proto_id")
+    image = ClassProto.query.get(proto_id)
 
     import logging
 

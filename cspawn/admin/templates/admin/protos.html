@@ -3,7 +3,7 @@
 
 {% block header %}
 <div class="text-center">
-    <h1 class="mb-4">Host Images</h1>
+    <h1 class="mb-4">Host Protos</h1>
 </div>
 {% endblock %}
 
@@ -12,13 +12,13 @@
 <div class="container mt-4">
     <ul class="nav nav-pills mb-3">
         <li class="nav-item">
-            <a class="nav-link active" href="{{ url_for('admin.new_image') }}">Create</a>
+            <a class="nav-link active" href="{{ url_for('admin.new_proto') }}">Create</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('admin.export_images') }}">Export</a>
+            <a class="nav-link" href="{{ url_for('admin.export_protos') }}">Export</a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('admin.import_images') }}">Import</a>
+            <a class="nav-link" href="{{ url_for('admin.import_protos') }}">Import</a>
         </li>
     </ul>
     <table class="table table-striped">
@@ -35,27 +35,27 @@
             </tr>
         </thead>
         <tbody>
-            {% for data in image_data %}
+            {% for data in protos %}
             <tr>
-                <td><input type="checkbox" name="select_image" value="{{ data.image.id }}"></td>
-                <td>{{ data.image.name }}</td>
-                <td>{{ data.image.image_uri }}</td>
-                <td>{{ data.image.repo_uri }}</td>
+                <td><input type="checkbox" name="select_proto" value="{{ data.proto.id }}"></td>
+                <td>{{ data.proto.name }}</td>
+                <td>{{ data.proto.image_uri }}</td>
+                <td>{{ data.proto.repo_uri }}</td>
                 <td>
-                    {% if data.image.is_public %}
+                    {% if data.proto.is_public %}
                     <span class="text-success">&#10004;</span>
                     {% else %}
                     <span class="text-danger">&#10008;</span>
                     {% endif %}
                 </td>
-                <td>{{ data.image.creator.username if data.image.creator else 'N/A' }}</td>
+                <td>{{ data.proto.creator.username if data.proto.creator else 'N/A' }}</td>
                 <td>{{ data.code_host_count }}</td>
                 <td>
-                    <a href="{{ url_for('admin.edit_image', image_id=data.image.id) }}"
+                    <a href="{{ url_for('admin.edit_proto', proto_id=data.proto.id) }}"
                         class="btn btn-sm btn-warning">Edit</a>
 
                     {% if data.code_host_count == 0 %}
-                    <form action="{{ url_for('admin.delete_image', image_id=data.image.id) }}" method="post"
+                    <form action="{{ url_for('admin.delete_proto', proto_id=data.proto.id) }}" method="post"
                         style="display:inline;">
                         <button type="submit" class="btn btn-sm btn-danger">Delete</button>
                     </form>

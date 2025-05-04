@@ -383,7 +383,7 @@ class CodeServerManager(ServicesManager):
 
         return user_dir
 
-    def new_cs(self, user: User, image: ClassProto, class_: Class):
+    def new_cs(self, user: User, proto: ClassProto, class_: Class):
         """
         Create a new Code Server instance.
 
@@ -398,16 +398,16 @@ class CodeServerManager(ServicesManager):
         """
         username = user.username
 
-        assert isinstance(image, ClassProto)
+        assert isinstance(proto, ClassProto)
 
         container_def = define_cs_container(
             config=self.config,
             username=username,
             class_=class_,
-            image=image.image_uri,
+            image=proto.image_uri,
             hostname_template=self.config.HOSTNAME_TEMPLATE,
-            repo=image.repo_uri,
-            syllabus=image.syllabus_path,
+            repo=proto.repo_uri,
+            syllabus=proto.syllabus_path,
         )
 
         existing_ch = CodeHost.query.filter_by(service_name=username).first()
@@ -442,7 +442,7 @@ class CodeServerManager(ServicesManager):
 
         logger.debug("Committing model")
         ch: CodeHost = s.to_model(no_container=True)
-        ch.host_image_id = image.id
+        ch.proto_id = proto.id
 
         db.session.add(ch)
         db.session.commit()

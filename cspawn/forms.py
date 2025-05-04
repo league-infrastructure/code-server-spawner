@@ -59,9 +59,9 @@ class ClassForm(FlaskForm):
                 setattr(model, field, self._fields[field].data)
 
         if not self.name.data or not self.description.data:
-            image = ClassProto.query.get(self.proto_id.data)
-            model.name = model.name or image.name
-            model.description = model.description or image.desc
+            proto = ClassProto.query.get(self.proto_id.data)
+            model.name = model.name or proto.name
+            model.description = model.description or proto.desc
 
         if not model.timezone:
             model.timezone = user.timezone
