@@ -94,7 +94,7 @@ def start_class(class_id) -> str:
     s = ca.csm.get_by_username(current_user.username)
 
     if not s:
-        s, ch = ca.csm.new_cs(user=current_user, image=proto, class_=class_)
+        s, ch = ca.csm.new_cs(user=current_user, proto=proto, class_=class_)
 
         if s:
             flash(f"Host {s.name} started successfully", "success")
@@ -102,7 +102,7 @@ def start_class(class_id) -> str:
             flash("Failed to start host", "error")
 
         if ch and ch.class_id is None:
-            assert ch.host_image_id == proto.id
+            assert ch.proto_id == proto.id
             ch.class_id = class_id
             db.session.add(ch)
             db.session.commit()

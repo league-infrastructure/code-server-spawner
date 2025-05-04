@@ -343,8 +343,8 @@ class CodeHost(db.Model):
     state = Column(String, default="unknown", nullable=False)  # Docker state
     app_state = Column(String, default="unknown", nullable=True)  # Application state
 
-    host_image_id = Column(Integer, ForeignKey("class_proto.id"), nullable=True)
-    host_image = relationship("ClassProto", backref="code_hosts")
+    proto_id = Column(Integer, ForeignKey("class_proto.id"), nullable=True)
+    class_proto = relationship("ClassProto", backref="code_hosts")
 
     class_id = Column(Integer, ForeignKey("classes.id"), nullable=True)
     class_ = relationship("Class", backref="code_hosts")
@@ -416,7 +416,7 @@ class CodeHost(db.Model):
             "container_name": self.container_name,
             "state": self.state,
             "app_state": self.app_state,
-            "host_image_id": self.host_image_id,
+            "proto_id": self.proto_id,
             "class_id": self.class_id,
             "node_id": self.node_id,
             "node_name": self.node_name,
@@ -576,10 +576,10 @@ def ensure_database_exists(app: Flask):
 def export_dict():
     users = [u.to_dict() for u in User.query.all()]
     classes = [c.to_dict() for c in Class.query.all()]
-    images = [i.to_dict() for i in ClassProto.query.all()]
+    protos = [i.to_dict() for i in ClassProto.query.all()]
     hosts = [h.to_dict() for h in CodeHost.query.all()]
 
-    return {"users": users, "images": images, "classes": classes, "hosts": hosts}
+    return {"users": users, "proto": protos, "classes": classes, "hosts": hosts}
 
 
 def import_dict(data):
@@ -591,9 +591,9 @@ def import_dict(data):
 
     db.session.commit()
 
-    for image_data in data["images"]:
-        image = ClassProto.from_dict(image_data)
-        db.session.add(image)
+    for proto in data["protos"]:
+        proto = ClassProto.from_dict(proto)
+        db.session.add(proto)
 
     db.session.commit()
 

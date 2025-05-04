@@ -1,0 +1,40 @@
+{% extends "admin/base.html" %}
+
+{% block header %}
+<div class="text-center">
+    <h1 class="mb-4">{{ 'Edit' if proto else 'New' }} Proto</h1>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <form action="{{ url_for('admin.edit_proto', proto_id=proto.id) if proto else url_for('admin.new_proto') }}" method="post">
+        <div class="mb-3">
+            <label for="name" class="form-label">Name</label>
+            <input type="text" class="form-control" id="name" name="name" value="{{ proto.name if proto else '' }}" required>
+        </div>
+        <div class="mb-3">
+            <label for="description" class="form-label">Description</label>
+            <textarea class="form-control" id="description" name="description" rows="3">{{ proto.desc if proto and proto.desc else '' }}</textarea>
+        </div>
+        <div class="mb-3">
+            <label for="image_uri" class="form-label">Docker Image URI</label>
+            <input type="text" class="form-control" id="image_uri" name="image_uri" value="{{ proto.image_uri if proto else '' }}" required>
+        </div>
+        <div class="mb-3">
+            <label for="repo_uri" class="form-label">Git Repository URI</label>
+            <input type="text" class="form-control" id="repo_uri" name="repo_uri" value="{{ proto.repo_uri if proto else '' }}">
+        </div>
+        <div class="mb-3">
+            <label for="syllabus_path" class="form-label">Syllabus Path</label>
+            <input type="text" class="form-control" id="syllabus_path" name="syllabus_path" value="{{ proto.syllabus_path if proto and proto.syllabus_path else '' }}">
+        </div>
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="is_public" name="is_public" {% if proto and proto.is_public %}checked{% endif %}>
+            <label class="form-check-label" for="is_public">Public</label>
+        </div>
+        <button type="submit" class="btn btn-primary">Save</button>
+        <a href="{{ url_for('admin.list_protos') }}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+{% endblock %}

@@ -121,7 +121,7 @@ def create_demo_code_hosts(app):
                 container_id=fake.uuid4(),
                 container_name=fake.domain_word(),
                 state="unknown",  # Default state
-                host_image_id=host_image.id,
+                proto_id=host_image.id,
             )
             code_hosts.append(code_host)
 

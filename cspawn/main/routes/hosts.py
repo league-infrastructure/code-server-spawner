@@ -16,6 +16,8 @@ ca = cast_app(current_app)
 def hosts() -> str:
     from cspawn.docker.csmanager import CSMService
 
+    raise NotImplementedError("Maybe not used anymore")
+
     ch = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
 
     s: CSMService = ca.csm.get(ch.service_id) if ch else None
@@ -28,24 +30,26 @@ def hosts() -> str:
     # If we have a code host, it is the only one shown on the list.
     if ch:
         for i, host_image in enumerate(host_images):
-            if host_image.id == ch.host_image_id:
+            if host_image.id == ch.proto_id:
                 host_images = [host_image]
                 break
 
     return render_template("hosts/image_host_list.html", host=ch, host_images=host_images)
 
 
-@main_bp.route("/host/start")
+@main_bp.route("/hosts/start")
 @login_required
 def start_host() -> str:
     from cspawn.init import cast_app
 
+    raise NotImplementedError("Maybe not used anymore")
+
     ca = cast_app(current_app)
 
-    image_id = request.args.get("image_id")
-    image = ClassProto.query.get(image_id)
+    proto_id = request.args.get("proto_id")
+    proto = ClassProto.query.get(proto_id)
 
-    if not image:
+    if not proto:
         flash("Image not found", "error")
         return redirect(url_for("hosts.index"))
     # Look for an existing CodeHost for the current user
@@ -59,7 +63,7 @@ def start_host() -> str:
     s = ca.csm.get_by_username(current_user.username)
 
     if not s:
-        s = ca.csm.new_cs(user=current_user, image=image.image_uri, repo=image.repo_uri, syllabus=image.syllabus_path)
+        s = ca.csm.new_cs(user=current_user, proto=proto.image_uri, repo=proto.repo_uri, syllabus=proto.syllabus_path)
 
         flash(f"Host {s.name} started successfully", "success")
     else:
