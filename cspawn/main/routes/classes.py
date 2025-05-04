@@ -16,6 +16,7 @@ from cspawn.util.names import class_code
 from sqlalchemy.orm import joinedload
 from cspawn.init import cast_app
 from psycopg2.errors import UniqueViolation
+import json
 
 
 ca = cast_app(current_app)
@@ -46,6 +47,24 @@ def add_class():
         return redirect(url_for("main.index"))
     else:
         abort(403)
+
+
+@main_bp.route("/classes/list", methods=["GET"])
+@login_required
+def classes_list():
+    """Return a JSON list of classes the user is taking and instructing."""
+
+    # Get the current user from the database with fresh data
+    user = User.query.get(current_user.id)
+
+    # Create dictionary with classes the user is taking and instructing
+    class_data = {
+        "taking": [class_.to_dict() for class_ in user.classes_taking],
+        "instructing": [class_.to_dict() for class_ in user.classes_instructing],
+    }
+
+    # Return the data as JSON
+    return jsonify(class_data)
 
 
 @main_bp.route("/class/<int:class_id>/start")
@@ -176,11 +195,15 @@ def edit_class(class_id):
 def _edit_class(class_id, return_page):
     from cspawn.models import ClassProto
 
+    ca.logger.debug(f"Editing class {class_id}")
     ctx = context.copy()
     ctx["return_page"] = return_page
 
     if not current_user.is_instructor:
         return redirect(url_for(return_page))
+
+    if request.method == "POST":
+        ca.logger.debug(f"Form data: {json.dumps(request.form.to_dict(), indent=4)}")
 
     action = request.form.get("action", None)
 
@@ -196,8 +219,11 @@ def _edit_class(class_id, return_page):
         form = ClassForm()
         class_ = Class()
         if request.method == "POST":
-            instructor = User.query.get(current_user.id)
-            class_.instructors.append(instructor)
+            # Use no_autoflush to prevent premature flushing before required fields are set
+            with db.session.no_autoflush:
+                instructor = User.query.get(current_user.id)
+                db.session.add(class_)
+                class_.instructors.append(instructor)
 
     else:
         # Editing existing
@@ -207,19 +233,28 @@ def _edit_class(class_id, return_page):
         else:
             form = ClassForm()
 
-    all_protos = ClassProto.query.filter(ClassProto.is_public | (ClassProto.creator_id == current_user.id)).all()
+    # Using no_autoflush for the query to prevent automatic flush with incomplete class object
+    with db.session.no_autoflush:
+        all_protos = ClassProto.query.filter(ClassProto.is_public | (ClassProto.creator_id == current_user.id)).all()
 
     form.proto_id.choices = [(0, "")] + [(proto.id, proto.name) for proto in all_protos]
 
     if request.method == "POST":
         reload = not form.name.data
 
-        form.to_model(class_, current_user)
+        # Validate form first before trying to save to model
+        if form.validate_on_submit():
+            form.to_model(class_, current_user)
 
-        if form.validate():
+            # Make sure required fields are set before committing
+            if not class_.name:
+                form.name.errors.append("Name is required.")
+                return render_template("classes/edit.html", clazz=class_, form=form, **ctx)
+
             db.session.add(class_)
             try:
                 db.session.commit()
+                ca.logger.debug(f"Class {class_.name} saved")
             except (UniqueViolation, IntegrityError) as e:
                 db.session.rollback()
                 if "classes_class_code_key" in str(e.orig):

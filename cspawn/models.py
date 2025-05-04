@@ -282,7 +282,7 @@ class Class(db.Model):
             "start_date",
             "end_date",
             "recurrence_rule",
-            "image_id",
+            "proto_id",
             "start_script",
             "class_code",
             "active",
@@ -365,8 +365,6 @@ class CodeHost(db.Model):
     data = Column(Text, nullable=True)
     labels = Column(Text, nullable=True)
 
-    last_heartbeat_ago = Column(DateTime, nullable=True)
-
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
         DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc), nullable=False
@@ -433,7 +431,6 @@ class CodeHost(db.Model):
             "data": self.data,
             "labels": self.labels,
             "user_activity_rate": self.user_activity_rate,
-            "last_heartbeat_ago": self.last_heartbeat_ago.isoformat() if self.last_heartbeat_ago else None,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
@@ -466,10 +463,6 @@ class CodeHost(db.Model):
 
         self.last_heartbeat = telemetry.timestamp  # TIme of
         self.last_utilization = max_last_modified
-
-        self.last_heartbeat_ago = (
-            (datetime.now(timezone.utc) - self.last_heartbeat).total_seconds() if self.last_heartbeat else None
-        )
 
         self.memory_usage = telemetry.sysMemory
         self.user_activity_rate = telemetry.average5m

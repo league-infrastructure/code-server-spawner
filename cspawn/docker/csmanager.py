@@ -157,13 +157,29 @@ class CSMService(Service):
                 logger.error("CodeHost.to_model(): No container found for service %s", self.name)
                 c = None
 
+        # Get class_id from labels and validate it exists in database
+        class_id = self.labels.get("jtl.codeserver.class_id")
+        if class_id and class_id != "-1":
+            try:
+                class_id = int(class_id)
+                # Check if the class exists in the database
+                class_exists = db.session.query(db.exists().where(Class.id == class_id)).scalar()
+                if not class_exists:
+                    logger.error(f"Class with ID {class_id} does not exist, setting to None")
+                    class_id = None
+            except (ValueError, TypeError):
+                logger.error(f"Invalid class_id in labels: {class_id}, setting to None")
+                class_id = None
+        else:
+            class_id = None
+
         return CodeHost(
             user_id=user.id,
             service_id=self.id,
             service_name=self.name,
             container_id=c.id if c else None,
             container_name=c.name if c else None,
-            class_id=int(self.labels.get("jtl.codeserver.class_id", -1)),
+            class_id=class_id,
             state=self.status,
             node_id=c.node.id if c else None,
             node_name=c.node.attrs["Description"]["Hostname"] if c else None,
