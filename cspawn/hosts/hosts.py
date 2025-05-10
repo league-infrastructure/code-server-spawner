@@ -26,16 +26,16 @@ def index() -> str:
     if s:
         ch: CodeHost = s.sync_to_db(check_ready=True)  # update the host record
 
-    host_images = ClassProto.query.all()
+    host_protos = ClassProto.query.all()
 
     # If we have a code host, it is the only one shown on the list.
     if ch:
-        for i, host_image in enumerate(host_images):
-            if host_image.id == ch.proto_id:
-                host_images = [host_image]
+        for i, host_proto in enumerate(host_protos):
+            if host_proto.id == ch.proto_id:
+                host_protos = [host_proto]
                 break
 
-    return render_template("hosts/image_host_list.html", host=ch, host_images=host_images)
+    return render_template("hosts/proto_host_list.html", host=ch, host_protos=host_protos)
 
 
 @hosts_bp.route("/start")

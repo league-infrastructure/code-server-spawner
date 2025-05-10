@@ -8,7 +8,7 @@ import random
 from faker import Faker
 from sqlalchemy import MetaData
 
-from cspawn.cli.util import create_demo_users, create_demo_images
+from cspawn.cli.util import create_demo_users, create_demo_protos
 from cspawn.models import db, User
 
 
@@ -26,11 +26,7 @@ class CSUnitTest(unittest.TestCase):
 
         warnings.filterwarnings("ignore")
 
-        self.app = init_app(
-            config_dir=self.config_dir,
-            log_level=logging.ERROR,
-            sqlfile=self.this_dir / "test.db",
-        )
+        self.app = init_app(config_dir=self.config_dir, log_level=logging.ERROR, sqlfile=self.this_dir / "test.db")
 
         self.fake = Faker()
 
@@ -48,10 +44,10 @@ class CSUnitTest(unittest.TestCase):
             db.create_all()
             create_demo_users(self.app)
 
-    def create_demo_images(self):
+    def create_demo_protos(self):
         with self.app.app_context():
             db.create_all()
-            create_demo_images(self.app)
+            create_demo_protos(self.app)
 
 
 @pytest.fixture
