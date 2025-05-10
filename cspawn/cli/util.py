@@ -55,8 +55,8 @@ def create_demo_users(app):
     assert len(User.query.all()) >= 3
 
 
-def create_demo_images(app):
-    host_images = [
+def create_demo_protos(app):
+    host_protos = [
         {
             "name": "Python Apprentice",
             "image_uri": "ghcr.io/league-infrastructure/league-infrastructure/docker-codeserver-python:v0.5.4",
@@ -73,17 +73,17 @@ def create_demo_images(app):
         },
     ]
 
-    for image in host_images:
-        host_image = ClassProto(**image)
+    for proto in host_protos:
+        host_proto = ClassProto(**proto)
 
-        ClassProto.set_hash(None, None, host_image)
+        ClassProto.set_hash(None, None, host_proto)
 
-        existing_image = ClassProto.query.filter_by(hash=host_image.hash).first()
-        if existing_image:
-            logger.info(f"ClassProto with hash {host_image.hash} already exists. Skipping.")
+        existing_proto = ClassProto.query.filter_by(hash=host_proto.hash).first()
+        if existing_proto:
+            logger.info(f"ClassProto with hash {host_proto.hash} already exists. Skipping.")
             continue
 
-        db.session.add(host_image)
+        db.session.add(host_proto)
 
     db.session.commit()
 

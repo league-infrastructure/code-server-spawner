@@ -487,7 +487,7 @@ class CodeHost(db.Model):
 
 
 class ClassProto(db.Model):
-    """A template for a class. It describes the image and repo to use for a class."""
+    """A template for a class. It describes the proto and repo to use for a class."""
 
     __tablename__ = "class_proto"
 
