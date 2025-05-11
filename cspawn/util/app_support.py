@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from flask_session import Session
 from flask_pymongo import PyMongo
+from sqlalchemy.exc import ProgrammingError
 
 from cspawn.util.config import get_config
 
@@ -136,7 +137,13 @@ def setup_database(app):
     from cspawn.models import User
 
     with app.app_context():
-        app.root_user = User.create_root_user(app)
+
+        
+        try:
+            app.root_user = User.create_root_user(app)
+        except ProgrammingError as e:
+            app.logger.error(f"Error creating root user")
+            
 
 
 def setup_mongo(app):

@@ -142,8 +142,9 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
         if is_running_under_gunicorn():
             app.logger.critical("Fatal error: running under gunicorn without a database.")
             raise e
+        raise e
 
-    setup_mongo(app)
+    #setup_mongo(app)
 
     @app.teardown_appcontext
     def close_db(exception):

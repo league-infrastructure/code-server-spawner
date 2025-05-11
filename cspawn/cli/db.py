@@ -40,7 +40,10 @@ def info(ctx):
     with app.app_context():
         print("Postgres: ", str(app.db.engine.url))
 
-        print("Mongo: ", str(app.mongo.client.cx))
+        try:
+            print("Mongo: ", str(app.mongo.client.cx))
+        except AttributeError:
+            print("Mongo: No MongoDB client found.")
 
 
 @db.command()
