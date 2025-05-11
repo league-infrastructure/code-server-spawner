@@ -22,7 +22,7 @@ class TelemetryReport(BaseModel):
     processMemory: int
     reportingRate: int
     fileStats: Dict[str, FileStat]
-    completions: List[int]
+    completions: List[int|str]
     image: str
     repo: str
     syllabus: str

@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+
+import socket
 import docker
 from docker import DockerClient
 import paramiko
@@ -22,6 +24,14 @@ from ..models import ClassProto, Class
 
 logger = logging.getLogger("cspawn.docker")  # noqa: F811
 
+
+def find_unused_port():
+    """Find an unused port on the local machine."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))  # OS assigns an available port
+        addr, port = s.getsockname()
+        return port
+    
 
 class CSMService(Service):
     """
@@ -229,8 +239,7 @@ def define_cs_container(
 
     hashed_pw = basic_auth_hash(password)
 
-    hostname = hostname_template.format(username=container_name)
-
+    
     if repo:
         clone_dir = os.path.basename(repo)
         if clone_dir.endswith(".git"):
@@ -239,8 +248,35 @@ def define_cs_container(
     else:
         workspace_folder = "/workspace"
 
-    public_url = f"https://{username}:{password}@{hostname}/"
-    public_url_no_auth = f"https://{hostname}/"
+
+        # This part sets up a port redirection for development, where we don't have
+    # a reverse proxy in front of the container.
+
+   
+
+    if hostname_template:
+        hostname = hostname_template.format(username=container_name)
+        public_url = f"https://{username}:{password}@{hostname}/"
+        public_url_no_auth = f"https://{hostname}/"
+        vnc_url = public_url_no_auth + "vnc/?scale=true",
+        ports = None
+        
+    else:
+        # Running in development mode 
+        app_port = find_unused_port()
+        vnc_port = app_port + 1 # this wil sometimes fail 
+        hostname = f"localhost"
+        public_url = f"http://{username}:{password}@{hostname}:{app_port}/"
+        public_url_no_auth = f"http://{hostname}:{app_port}/"
+
+        vnc_url = f"http://{hostname}:{vnc_port}/?scale=true"
+
+        internal_port = config.CODESERVER_PORT
+        internal_vnc_port = 6080
+        ports = [f"{app_port}:{internal_port}", f"{vnc_port}:{internal_vnc_port}"]
+
+       
+
 
     _env_vars = {
         "WORKSPACE_FOLDER": workspace_folder,
@@ -248,7 +284,7 @@ def define_cs_container(
         "DISPLAY": ":0",
         "JTL_USERNAME": username,
         "JTL_CLASS_ID": str(class_.id) if class_ else None,
-        "JTL_VNC_URL": public_url_no_auth + "vnc/?scale=true",
+        "JTL_VNC_URL": vnc_url,
         "JTL_PUBLIC_URL": public_url,
         "JTL_SYLLABUS": syllabus,
         "JTL_IMAGE_URI": image,
@@ -291,27 +327,23 @@ def define_cs_container(
         f"caddy.basic_auth.{username}": hashed_pw,
     }
 
-    # This part sets up a port redirection for development, where we don't have
-    # a reverse proxy in front of the container.
 
-    internal_port = "8080"
 
-    if port is True:
-        ports = [internal_port]
-    elif port is not None and port is not False:
-        ports = [f"{port}:{internal_port}"]
-    else:
-        ports = None
-
-    return {
+    d =  {
         "name": container_name,
         "image": image,
         "labels": labels,
         "environment": env_vars,
         "ports": ports,
-        "network": ["caddy", "jtlctl"],
-        "mounts": [f"{str(Path(config.USER_DIRS) / slugify(username))}:/workspace"],
+        "network": ["caddy", "jtlctl"]
+       
     }
+
+    if config.USER_DIRS:
+        d["mounts"] = [f"{str(Path(config.USER_DIRS) / slugify(username))}:/workspace"]
+
+    return d   
+
 
 
 class CodeServerManager(ServicesManager):
@@ -327,11 +359,18 @@ class CodeServerManager(ServicesManager):
 
         self.config = app.app_config
 
+        # Save this for convenience. You'd think that we could get this later from the 
+        # client ( self.client.api.base_url), but the docker client constructor will
+        # change it, so "unix:"" -> "htt+docker://localhost"
+        self.docker_uri = self.config.DOCKER_URI
+
         def _hostname_f(node_name):
             return app.app_config["NODE_HOSTNAME_TEMPLATE"].format(nodename=node_name)
 
-        super().__init__(
-            DockerClient(base_url=self.config.DOCKER_URI),
+        c = DockerClient(base_url=self.docker_uri)
+
+        super().__init__( 
+            c,
             env=env,
             network=network,
             labels=labels,
@@ -377,9 +416,13 @@ class CodeServerManager(ServicesManager):
             ssh.close()
 
         else:
-            logger.info("Creating directory %s on local machine", user_dir)
-            os.makedirs(user_dir, exist_ok=True)
-            os.system(f"chown -R {user_id}:{user_id} {user_dir}")
+            try:
+                
+                os.makedirs(user_dir, exist_ok=True)
+                os.system(f"chown -R {user_id}:{user_id} {user_dir}")
+                logger.info("Creating directory %s on local machine", user_dir)
+            except OSError as e:
+                logger.error("Failed to create directory %s on local machine: %s", user_dir, e)
 
         return user_dir
 
