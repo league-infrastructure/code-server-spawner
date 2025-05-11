@@ -15,10 +15,10 @@
     <p><strong>First Container ID:</strong> {{ service.attrs['ID'] }}</p>
     <p><strong>Public URL:</strong> <a href="{{ code_host.public_url }}" target="_blank">{{ code_host.public_url }}</a>
     </p>
-    <p><strong>Repo:</strong> <a href="{{ code_host.host_image.repo_uri }}" target="_blank">{{
-            code_host.host_image.repo_uri }}</a></p>
-    <p><strong>Image:</strong> <a href="{{ code_host.host_image.image_uri }}" target="_blank">{{
-            code_host.host_image.image_uri }}</a></p>
+    <p><strong>Repo:</strong> <a href="{{ code_host.class_proto.repo_uri }}" target="_blank">{{
+            code_host.class_proto.repo_uri }}</a></p>
+    <p><strong>Image:</strong> <a href="{{ code_host.class_proto.image_uri }}" target="_blank">{{
+            code_host.class_proto.image_uri }}</a></p>
     <p><strong>Syllabus:</strong> {{ code_host.syllabus }}</p>
     <h3>Labels</h3>
     <ul>

@@ -210,6 +210,8 @@ class ServicesManager(DockerManager):
         Initialize the services manager.
         :param client: Docker client instance.
         """
+
+
         super().__init__(client, env, network, labels)
 
         self.hostname_f = hostname_f or (lambda x: x)
@@ -218,9 +220,15 @@ class ServicesManager(DockerManager):
         """Return a ContainersManager for a specific node."""
         import docker
 
-        node_host = self.hostname_f(node_name)
+        all_nodes = self.client.nodes.list()
 
-        return ContainersManager(docker.DockerClient(base_url=f"ssh://root@{node_host}"))
+        if len(all_nodes) == 1:
+             # Only one node in the swarm, so we can use the local client
+            return ContainersManager(self.client)
+            
+        else:
+            node_host = self.hostname_f(node_name)
+            return ContainersManager(docker.DockerClient(base_url=f"ssh://root@{node_host}"))
 
     @property
     def nodes(self):
@@ -255,6 +263,18 @@ class ServicesManager(DockerManager):
         """
 
         if "ports" in kwargs:
+            # Ports are not supported in Docker Swarm mode
+            from docker.types import EndpointSpec
+            ports = {}
+            for port in kwargs["ports"]:
+                if ":" in port:
+                    # Split the port mapping into host and container ports
+                    host_port, container_port = port.split(":")
+                    ports[int(host_port)] = int(container_port)
+
+            endpoint_spec = EndpointSpec(   ports=ports)
+            
+            kwargs["endpoint_spec"] = endpoint_spec
             del kwargs["ports"]
 
         network = self.combine_lists(self.network, network)

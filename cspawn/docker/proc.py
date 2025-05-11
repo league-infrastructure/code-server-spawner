@@ -155,6 +155,21 @@ class Service(ProcessBase):
 
             container_id = c["Status"]["ContainerStatus"]["ContainerID"]
 
+            if not container_id:
+                logger.warning(
+                    f"Container ID not found for task {c['ID']} in service {self.name}"
+                )
+
+                if c['Status']['State'] in ('failed', 'rejected'):
+                    logger.error(
+                        f"Task {c['ID']} in service {self.name} has {c['Status']['State'] }. " +
+                        f"Container ID: {container_id}" +
+                        c['Status']['Err'] if 'Err' in c['Status'] else ''
+
+                    )
+                continue
+
+
             try:
                 n_manager = self.manager._node_manager(node_name)
             except NoValidConnectionsError as e:

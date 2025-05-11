@@ -7,7 +7,7 @@ from cspawn.models import CodeHost, db
 
 @main_bp.route("/telem", methods=["GET", "POST"])
 def telem():
-    """Recieve telemetry data and write it into the code host record"""
+    """Receive telemetry data and write it into the code host record"""
 
     if request.method == "POST":
         telemetry_data = request.get_json()
@@ -22,7 +22,8 @@ def telem():
 
                 db.session.commit()
 
-        except ValidationError:
+        except ValidationError as e:
+            current_app.logger.error(f"Validation error occurred: {e}")
             return jsonify("Error")
 
     return jsonify("OK")
