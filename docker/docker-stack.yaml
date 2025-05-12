@@ -16,7 +16,7 @@ services:
           - node.role == manager
    
     environment:
-      JTL_DEPLOYMENT: "dockerdev"
+      JTL_DEPLOYMENT: "prod"
 
     volumes:
       - app-data:/app/data
@@ -26,7 +26,6 @@ services:
     # Expose Flask app on host port 8090
     ports:
       - "5000:8000"
-
 
 
     networks: # Must exist to recieve traffic from Caddy
