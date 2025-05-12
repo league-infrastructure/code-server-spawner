@@ -393,10 +393,16 @@ class CodeHost(db.Model):
 
     @hybrid_property
     def is_quiescent(self) -> bool:
+        """Is the host still being used? True if the last heartbeat is more than 20 minutes ago, 
+        or the last file modification is more than 15 minutes ago."""
+
         return self.heart_beat_ago > 20 or self.modified_ago > 15
 
     @hybrid_property
     def is_mia(self) -> bool:
+        """Is the host missing in action? True if the host record doesn't have
+        a container id, or similar """
+        
         return self.app_state == HostState.MIA.value or self.state == HostState.MIA.value
 
     def update_from_ci(self, ci):

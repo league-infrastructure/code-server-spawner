@@ -1,6 +1,6 @@
 services:
   cs-spawner:
-    image: codeserv:${VERSION}
+    image: codeserv
     container_name: codeserv
     build:
       context: ..
@@ -12,7 +12,7 @@ services:
       caddy.reverse_proxy: "{{upstreams 8000}}"
 
     environment:
-      key: value
+      JTL_DEPLOYMENT: "prod"
 
     volumes:
       - app-data:/app/data
