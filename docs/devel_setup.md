@@ -10,8 +10,8 @@ Create a single node docker swarm with `docker swarm init`
 Create a network:
 
 ``` bash 
-docker network create --driver=overlay caddy
-docker network create --driver=overlay jtlctl
+docker network create --driver overlay --attachable caddy
+docker network create --driver overlay --attachable jtlctl
 ```
 
 # Database

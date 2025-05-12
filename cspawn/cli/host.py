@@ -1,6 +1,7 @@
 import time
 from bson import Code
 import click
+from typing import cast
 
 from cspawn.models import CodeHost
 
@@ -147,6 +148,7 @@ def sync(ctx):
 
 @host.command()
 @click.option("-N", "--dry-run", is_flag=True, help="Show what would be done, without making any changes.")
+
 @click.pass_context
 def reap(ctx, dry_run: bool):
     """Remove containers that are MIA or are quiescent."""
@@ -158,6 +160,8 @@ def reap(ctx, dry_run: bool):
         app.csm.sync(check_ready=True)
 
         for ch in CodeHost.query.all():
+            ch = cast(CodeHost, ch)
+
             if ch.is_mia or ch.is_quiescent:
                 s = app.csm.get(ch)
                 print(ch.service_name + ": ", end=" ")
@@ -173,7 +177,12 @@ def reap(ctx, dry_run: bool):
                     app.db.session.delete(ch)
                     print(f"; Stopped and deleted {ch.service_name}")
                 else:
-                    print(f"; Would stop and delete {ch.service_name}")
+                    if ch.is_mia:
+                        reason = f"MIA"
+                    if ch.is_quiescent:
+                        reason = "Quiescent"
+                        
+                    print(f"; Would stop and delete {ch.service_name}: {reason}")
 
         if not dry_run:
             app.db.session.commit()
