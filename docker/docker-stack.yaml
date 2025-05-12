@@ -1,7 +1,7 @@
 services:
   codeserv:
-    image: codeserv
-    container_name: codeserv
+    image: codespawn
+
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -16,7 +16,7 @@ services:
           - node.role == manager
    
     environment:
-      JTL_DEPLOYMENT: "prod"
+      JTL_DEPLOYMENT: "dockerdev"
 
     volumes:
       - app-data:/app/data
@@ -24,8 +24,10 @@ services:
       - /mnt/student_repos:/mnt/student_repos
 
     # Expose Flask app on host port 8090
-    # ports:
-    #  - "8090:8000"
+    ports:
+      - "5000:8000"
+
+
 
     networks: # Must exist to recieve traffic from Caddy
       - caddy

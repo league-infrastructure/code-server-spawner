@@ -2,8 +2,10 @@ PATH=/bin:/usr/bin:/usr/local/bin:/app
 # The `/proc/1/fd/1 2>/proc/1/fd/2` sends both stdout and stderr to the
 # stdout and stderr of the first process, which will output to the docker log
 
- # Minutely
+# Minutely
 * * * * * curl -m 5 -X GET http://localhost:8000/cron/minutely >/proc/1/fd/1 2>/proc/1/fd/2
+
+*/5 * * * * cspawnctl host reap  >/proc/1/fd/1 2>/proc/1/fd/2
 
 # Hourly
 0 * * * * curl -m 5 -X GET http://localhost:8000/cron/hourly >/proc/1/fd/1 2>/proc/1/fd/2
