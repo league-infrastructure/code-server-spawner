@@ -1,7 +1,7 @@
 .PHONY: create drop recreate help
 
 # Default PostgreSQL connection parameters matching .env file
-POSTGRES_CONTAINER := docker-postgres-pgadmin-postgres-1
+POSTGRES_CONTAINER := postgres
 POSTGRES_USER := pguser
 POSTGRES_DB := pguser_db
 
