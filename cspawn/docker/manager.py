@@ -263,18 +263,27 @@ class ServicesManager(DockerManager):
         """
 
         if "ports" in kwargs:
-            # Ports are not supported in Docker Swarm mode
-            from docker.types import EndpointSpec
-            ports = {}
-            for port in kwargs["ports"]:
-                if ":" in port:
-                    # Split the port mapping into host and container ports
-                    host_port, container_port = port.split(":")
-                    ports[int(host_port)] = int(container_port)
-
-            endpoint_spec = EndpointSpec(   ports=ports)
             
-            kwargs["endpoint_spec"] = endpoint_spec
+            logger.info(f"ServicesManager.run: ports: {kwargs['ports']}")
+            if isinstance(kwargs["ports"], list):
+                # Ports are not supported in Docker Swarm mode
+                from docker.types import EndpointSpec
+                ports = {}
+
+                try:
+                    for port in kwargs["ports"]:
+                        if ":" in port:
+                            # Split the port mapping into host and container ports
+                            host_port, container_port = port.split(":")
+                            ports[int(host_port)] = int(container_port)
+
+                    endpoint_spec = EndpointSpec(   ports=ports)
+                    
+                    kwargs["endpoint_spec"] = endpoint_spec
+                except TypeError:
+                    logger.error("Invalid port mapping format: {kwargs['ports']}")
+                    
+
             del kwargs["ports"]
 
         network = self.combine_lists(self.network, network)

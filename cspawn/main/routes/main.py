@@ -14,22 +14,6 @@ from cspawn.main import main_bp
 context = {"version": version, "current_user": current_user}
 
 
-def ensure_session():
-    if "cron" in request.path or "telem" in request.path:
-        return
-
-    if "session_id" not in session:
-        session["session_id"] = str(uuid.uuid4())
-        current_app.logger.info(f"New session created with ID: {session['session_id']} for {request.path}")
-    else:
-        pass
-
-
-@main_bp.before_request
-def before_request():
-    ensure_session()
-
-    # app.load_user(current_app)
 
 
 def instructor_required(f):

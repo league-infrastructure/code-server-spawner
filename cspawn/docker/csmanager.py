@@ -25,14 +25,8 @@ from ..models import ClassProto, Class
 logger = logging.getLogger("cspawn.docker")  # noqa: F811
 
 
-def find_unused_port():
-    """Find an unused port on the local machine."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))  # OS assigns an available port
-        addr, port = s.getsockname()
-        return port
-    
 
+    
 class CSMService(Service):
     """
     A service class for managing Code Server instances.
@@ -200,6 +194,32 @@ class CSMService(Service):
         )
 
 
+def hostname_type(hostname):
+    """Determines if a hostname is a public or local name or ip address."""
+
+    if ":" in hostname:
+        hostname, port = hostname.split(":", 1)
+    else:
+        port = None
+
+    # If the hostname is an unroutable IP address ( it starts with 10.0, 192.168 or 172. ), it is local
+    if hostname.startswith("10.") or hostname.startswith("192.168.") or hostname.startswith("172."):
+        return "local"
+    
+    # If it ends with .local, it is local
+    if hostname.endswith(".local"):
+        return "local"
+    
+    #  if it does not have a dot in it at all, it is local
+    if "." not in hostname:
+        return "local"
+    
+    return "public"
+
+
+   
+
+
 def define_cs_container(
     config,
     username,
@@ -211,6 +231,7 @@ def define_cs_container(
     env_vars=None,
     port=None,
     password=None,
+    available_ports=None,
 ):
     """
     Define the container configuration for a Code Server instance.
@@ -249,31 +270,32 @@ def define_cs_container(
         workspace_folder = "/workspace"
 
 
-        # This part sets up a port redirection for development, where we don't have
+    # This part sets up a port redirection for development, where we don't have
     # a reverse proxy in front of the container.
 
-   
+    hostname = hostname_template.format(username=container_name, port=available_ports[0])
 
-    if hostname_template:
-        hostname = hostname_template.format(username=container_name)
+    if hostname_type(hostname) == "public":
+        
         public_url = f"https://{username}:{password}@{hostname}/"
         public_url_no_auth = f"https://{hostname}/"
         vnc_url = public_url_no_auth + "vnc/?scale=true",
         ports = None
         
     else:
-        # Running in development mode 
-        app_port = find_unused_port()
-        vnc_port = app_port + 1 # this wil sometimes fail 
-        hostname = f"localhost"
-        public_url = f"http://{username}:{password}@{hostname}:{app_port}/"
-        public_url_no_auth = f"http://{hostname}:{app_port}/"
+        # Running in development mode, so we
+       
+        
+      
+        public_url = f"http://{username}:{password}@{hostname}/"
+        public_url_no_auth = f"http://{hostname}/"
 
-        vnc_url = f"http://{hostname}:{vnc_port}/?scale=true"
+        vnc_hostname = hostname_template.format(username=container_name, port=available_ports[1])
+        vnc_url = f"http://{vnc_hostname}/?scale=true"
 
         internal_port = config.CODESERVER_PORT
         internal_vnc_port = 6080
-        ports = [f"{app_port}:{internal_port}", f"{vnc_port}:{internal_vnc_port}"]
+        ports = [f"{available_ports[0]}:{internal_port}", f"{available_ports[1]}:{internal_vnc_port}"]
 
        
 
@@ -377,6 +399,29 @@ class CodeServerManager(ServicesManager):
             hostname_f=_hostname_f,
         )
 
+    def get_unused_port(self, n=1, extra_ports=[]):
+        import random
+        """Find an unused port in the range 25000-30000."""
+
+        if n == 1:
+            public_urls = {urlparse(ch.public_url).port for ch in CodeHost.query.all() if ch.public_url}
+            public_urls.update(extra_ports)
+
+            while True:
+                port = random.randint(25000, 30000)
+                if port not in public_urls:
+                    return port
+                
+        else:
+            ports = []
+            while len(ports) < n:
+                port = self.get_unused_port(extra_ports=ports)
+                if port not in ports:
+                    ports.append(port)
+            
+            return ports
+    
+
     def make_user_dir(self, username):
         """
         Create a user directory.
@@ -451,6 +496,7 @@ class CodeServerManager(ServicesManager):
             hostname_template=self.config.HOSTNAME_TEMPLATE,
             repo=proto.repo_uri,
             syllabus=proto.syllabus_path,
+            available_ports=self.get_unused_port(2),
         )
 
         existing_ch = CodeHost.query.filter_by(service_name=username).first()
