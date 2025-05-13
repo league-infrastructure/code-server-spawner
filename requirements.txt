@@ -74,9 +74,7 @@ font-awesome-flask==0.1.4
 gevent==24.11.1
     # via cspawn (pyproject.toml)
 greenlet==3.1.1
-    # via
-    #   gevent
-    #   sqlalchemy
+    # via gevent
 gunicorn==23.0.0
     # via cspawn (pyproject.toml)
 humanize==4.11.0

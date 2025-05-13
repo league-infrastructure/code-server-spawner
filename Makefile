@@ -27,7 +27,7 @@ DOCKER_STACK_FILE := docker/docker-stack.yaml
 DOCKER_COMPOSE_FILE := docker/docker-compose.yaml
 
 build: compile
-	docker compose -f $(DOCKER_STACK_FILE) build 
+	docker compose -f $(DOCKER_STACK_FILE) build --no-cache
 	docker tag codeserv codeserv:$(VERSION)
 
 up:

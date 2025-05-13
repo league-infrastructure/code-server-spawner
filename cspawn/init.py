@@ -2,14 +2,14 @@
 Initialize the Application
 """
 
-from .docker.csmanager import CodeServerManager
-from .util.app_support import is_running_under_gunicorn
-
+import logging
+import signal
+import sys
+import uuid
 from typing import cast
 
-from flask import Flask, g
+from flask import Flask, current_app, g, request, session
 from flask_bootstrap import Bootstrap5
-from flask_dance.consumer.storage.sqla import SQLAlchemyStorage
 from flask_dance.contrib.google import make_google_blueprint
 from flask_font_awesome import FontAwesome
 from flask_login import LoginManager
@@ -17,21 +17,15 @@ from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from werkzeug.middleware.proxy_fix import ProxyFix
-import signal
-import sys
+
 from cspawn.__version__ import __version__ as version
+from cspawn.docker.csmanager import CodeServerManager
+from cspawn.util.app_support import (configure_app_dir, configure_config_tree,
+                                     human_time_format, init_logger,
+                                     is_running_under_gunicorn, setup_database,
+                                     setup_sessions)
 
-
-from .util.app_support import (
-    configure_app_dir,
-    configure_config_tree,
-    human_time_format,
-    init_logger,
-    setup_database,
-    setup_sessions,
-    setup_mongo,
-)
-
+logging.getLogger("flask_dance.consumer.oauth2").setLevel(logging.DEBUG)
 
 default_context = {"version": version}
 
@@ -68,14 +62,30 @@ def resolve_deployment(deployment: str) -> str:
 
     return "devel"
 
+def ensure_session():
+
+
+    if (request.endpoint and 'static' in request.endpoint) or \
+       "cron" in request.path or "telem" in request.path:
+        return
+
+    if "session_id" not in session:
+        session["session_id"] = str(uuid.uuid4())
+        current_app.logger.info(f"New session created with ID: {session['session_id']} for {request.path}")
+    else:
+        pass
+
+   
+
+
 
 def init_app(config_dir=None, deployment=None, log_level=None) -> App:
     """Initialize Flask application"""
 
-    from .models import db
     from .admin import admin_bp
     from .auth import auth_bp
     from .main import main_bp
+    from .models import db
 
     app = cast(App, Flask(__name__))
 
@@ -103,7 +113,7 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
         reprompt_select_account=True,
         client_id=app.app_config["GOOGLE_CLIENT_ID"],
         client_secret=app.app_config["GOOGLE_CLIENT_SECRET"],
-        # storage=SQLAlchemyStorage(OAuth, db.session, user=current_user),
+        #storage=SQLAlchemyStorage(OAuth, db.session, user=current_user),
         redirect_to="auth.google_login",
     )
     app.register_blueprint(google_bp, url_prefix="/oauth/")
@@ -145,6 +155,15 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
         raise e
 
     #setup_mongo(app)
+
+    @app.before_request
+    def before_request():
+        ensure_session()
+
+    # app.load_user(current_app)
+
+
+
 
     @app.teardown_appcontext
     def close_db(exception):
