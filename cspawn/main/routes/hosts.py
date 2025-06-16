@@ -14,7 +14,7 @@ ca = cast_app(current_app)
 @main_bp.route("/hosts")
 @login_required
 def hosts() -> str:
-    from cspawn.docker.csmanager import CSMService
+    from cspawn.cs_docker.csmanager import CSMService
 
     raise NotImplementedError("Maybe not used anymore")
 

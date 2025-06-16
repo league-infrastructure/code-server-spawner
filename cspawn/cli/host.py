@@ -4,11 +4,12 @@ import click
 from typing import cast
 
 from cspawn.models import CodeHost
+from cspawn.init import cast_app
 
 from .root import cli
 from .util import get_app, get_logger
 from docker.errors import NotFound
-
+from typing import cast
 
 @cli.group()
 def host():
@@ -24,13 +25,13 @@ def ls(ctx):
 
     logger = get_logger(ctx)
 
-    app = get_app(ctx)
+    app = cast_app(get_app(ctx))
 
     with app.app_context():
         rows = []
         for s in app.csm.list():
             s.sync_to_db()
-            ch = CodeHost.query.filter_by(service_name=s.name).first()
+            ch: CodeHost = CodeHost.query.filter_by(service_name=s.name).first()
             if not ch:
                 logger.warning(f"CodeHost not found for {s.name}")
                 continue
@@ -47,6 +48,29 @@ def ls(ctx):
 
     print(tabulate(rows, headers="keys"))
 
+
+@host.command()
+@click.argument("service_name")
+@click.pass_context
+def cont(ctx, service_name):
+    """Print the node and container name for the given service."""
+    from typing import cast
+    from cspawn.cs_docker.csmanager import CodeServerManager
+    app = get_app(ctx)
+
+    try:
+
+        s = app.csm.get(service_name)
+        s = cast(CodeServerManager, s)
+
+        ci = list(s.containers_info())[0]
+
+        print(f"Service Name: {service_name}")
+        print(f"Container Name: {ci['container_id']}")
+        print("NodeId:", ci['node_id'])
+        print(list(s.containers)[0].o)
+    except NotFound:
+        print(f"Service {service_name} not found")
 
 @host.command()
 @click.argument("service_name")

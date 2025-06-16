@@ -216,6 +216,7 @@ class ServicesManager(DockerManager):
 
         self.hostname_f = hostname_f or (lambda x: x)
 
+
     def _node_manager(self, node_name):
         """Return a ContainersManager for a specific node."""
         import docker

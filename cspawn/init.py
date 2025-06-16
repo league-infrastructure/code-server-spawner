@@ -19,7 +19,7 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from cspawn.__version__ import __version__ as version
-from cspawn.docker.csmanager import CodeServerManager
+from cspawn.cs_docker.csmanager import CodeServerManager
 from cspawn.util.app_support import (configure_app_dir, configure_config_tree,
                                      human_time_format, init_logger,
                                      is_running_under_gunicorn, setup_database,

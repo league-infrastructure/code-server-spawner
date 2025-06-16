@@ -15,8 +15,8 @@ import pytz
 import requests
 from slugify import slugify
 
-from cspawn.docker.manager import ServicesManager, logger
-from cspawn.docker.proc import Service
+from cspawn.cs_docker.manager import ServicesManager, logger
+from cspawn.cs_docker.proc import Service, Container
 from cspawn.models import CodeHost, User, HostState, db
 from cspawn.util.auth import basic_auth_hash, random_string
 
@@ -152,11 +152,14 @@ class CSMService(Service):
         if not user:
             user = User.query.get(0)  # Get the root user
 
-        if no_container:
-            c = None
-        else:
+        c: Container = None
+
+        if not no_container:
+
             try:
-                c = next(self.containers)
+
+                c:Container = next(self.containers) # There is nearly always only one. 
+              
             except (KeyError, StopIteration):
                 logger.error("CodeHost.to_model(): No container found for service %s", self.name)
                 c = None
@@ -176,6 +179,8 @@ class CSMService(Service):
                 class_id = None
         else:
             class_id = None
+
+
 
         return CodeHost(
             user_id=user.id,
@@ -279,7 +284,7 @@ def define_cs_container(
         
         public_url = f"https://{username}:{password}@{hostname}/"
         public_url_no_auth = f"https://{hostname}/"
-        vnc_url = public_url_no_auth + "vnc/?scale=true",
+        vnc_url = public_url_no_auth + "vnc/?scale=true"
         ports = None
         
     else:
