@@ -380,7 +380,7 @@ class CodeHost(db.Model):
         try:
             return CodeHost.to_minutes(datetime.now(timezone.utc) - self.last_heartbeat.replace(tzinfo=timezone.utc))
         except (TypeError, AttributeError):
-            return None
+            return CodeHost.to_minutes(datetime.now(timezone.utc) - self.created_at.replace(tzinfo=timezone.utc))
 
     @hybrid_property
     def modified_ago(self) -> int:
@@ -389,7 +389,7 @@ class CodeHost(db.Model):
         try:
             return CodeHost.to_minutes(datetime.now(timezone.utc) - self.last_utilization.replace(tzinfo=timezone.utc))
         except (TypeError, AttributeError):
-            return None
+            return CodeHost.to_minutes(datetime.now(timezone.utc) - self.created_at.replace(tzinfo=timezone.utc))
 
     @hybrid_property
     def is_quiescent(self) -> bool:

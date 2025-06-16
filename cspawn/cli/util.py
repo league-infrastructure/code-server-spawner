@@ -5,7 +5,7 @@ from pathlib import Path
 import click
 from faker import Faker
 
-from cspawn.docker.csmanager import logger as ctrl_logger
+from cspawn.cs_docker.csmanager import logger as ctrl_logger
 from cspawn.init import init_app
 from cspawn.models import CodeHost, ClassProto, User, db
 from cspawn.util.app_support import configure_config_tree
