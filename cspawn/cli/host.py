@@ -43,6 +43,8 @@ def ls(ctx):
                     "node": ch.node_name,
                     "act rate": round(ch.user_activity_rate, 3),
                     "last act": ch.modified_ago,
+                    "last heart": ch.heart_beat_ago,
+                    "quiet": ch.is_quiescent
                 }
             )
 
@@ -190,23 +192,19 @@ def reap(ctx, dry_run: bool):
                 s = app.csm.get(ch)
                 print(ch.service_name + ": ", end=" ")
 
-                if ch.is_mia or not s:
-                    print("MIA", end=" ")
-                elif ch.is_quiescent:
-                    print("Quiescent", end=" ")
+                if ch.is_mia:
+                    reason = f"MIA"
+                if ch.is_quiescent:
+                    reason = "Quiescent"
 
                 if not dry_run:
                     if s:
                         s.stop()
                     app.db.session.delete(ch)
-                    print(f"; Stopped and deleted {ch.service_name}")
+                    print(f"{reason}; Stopped and deleted {ch.service_name}")
                 else:
-                    if ch.is_mia:
-                        reason = f"MIA"
-                    if ch.is_quiescent:
-                        reason = "Quiescent"
-                        
-                    print(f"; Would stop and delete {ch.service_name}: {reason}")
+     
+                    print(f"{reason}; Would stop and delete {ch.service_name}")
 
         if not dry_run:
             app.db.session.commit()

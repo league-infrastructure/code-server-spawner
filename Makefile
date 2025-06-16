@@ -1,7 +1,6 @@
 .PHONY: setup build publish compile up down
 
 VERSION := $(shell grep '^version =' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
-
 FAPP := cspawn.app:app 
 
 ver:
@@ -23,6 +22,7 @@ setup:
 
 # Docker 
 
+DOCKER_CONTEXT := swarm1
 DOCKER_STACK_FILE := docker/docker-stack.yaml
 DOCKER_COMPOSE_FILE := docker/docker-compose.yaml
 
@@ -37,7 +37,7 @@ down:
 	docker stack rm codeserv
 
 shell:
-	docker compose -f $(DOCKER_STACK_FILE)   run --rm codeserv /bin/bash
+	docker --context $(DOCKER_CONTEXT) compose -f $(DOCKER_STACK_FILE)   run --rm codeserv /bin/bash
 
 flask:
 	docker compose -f $(DOCKER_STACK_FILE)   run --rm codeserv flask -A cspawn.app:app shell 

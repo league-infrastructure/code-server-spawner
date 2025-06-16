@@ -224,13 +224,23 @@ class Service(ProcessBase):
         """Return the tasks associated with the service."""
 
         for t in self._object.tasks():
-            container_id = t["Status"]["ContainerStatus"]["ContainerID"]
-            if container_id:
-                yield t
+            try:
+                container_id = t["Status"]["ContainerStatus"]["ContainerID"]
+                if container_id:
+                    yield t
+            except KeyError:
+                logger.error(
+                    f"Task {t['ID']} in service {self.name} does not have a ContainerStatus."
+                )
+                continue
 
     def _get_single_task(self):
         """Fetch the single task associated with this service."""
-        return next(self.container_tasks)
+        try:
+            return next(self.container_tasks)
+        except StopIteration:
+            logger.warning(f"No tasks found for service {self.name}")
+            return None
 
 
     @property
