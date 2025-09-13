@@ -11,6 +11,8 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from flask_session import Session
 from flask_pymongo import PyMongo
 from sqlalchemy.exc import ProgrammingError
+import psycopg2
+from psycopg2 import sql
 
 from cspawn.util.config import get_config
 
@@ -133,17 +135,70 @@ def setup_sessions(app, devel=False, session_expire_time=60 * 60 * 24 * 1):
     Session(app)  # Initialize the session
 
 
+def _ensure_postgres_database(uri: str, logger: logging.Logger) -> None:
+    """Create the target Postgres database if it does not exist.
+
+    Connects to the server-level 'postgres' database using the same host/port/user
+    and issues CREATE DATABASE when needed.
+    """
+    try:
+        parsed = urlparse(uri)
+        dbname = (parsed.path or "/").lstrip("/")
+        if not dbname:
+            # Nothing to ensure for empty DB name
+            return
+
+        # Connect to the default 'postgres' database on the same server
+        admin_parsed = parsed._replace(path="/postgres")
+        admin_dsn = urlunparse(admin_parsed)
+
+        conn = psycopg2.connect(admin_dsn)
+        conn.set_session(autocommit=True)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (dbname,))
+                exists = cur.fetchone() is not None
+                if exists:
+                    logger.debug(f"Database '{dbname}' already exists")
+                    return
+
+                logger.info(f"Creating database '{dbname}'")
+                if parsed.username:
+                    cur.execute(
+                        sql.SQL("CREATE DATABASE {} OWNER {}")
+                        .format(sql.Identifier(dbname), sql.Identifier(parsed.username))
+                    )
+                else:
+                    cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(dbname)))
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"Failed ensuring database exists for {uri}: {e}")
+        raise
+
+
 def setup_database(app):
     from cspawn.models import User
 
     with app.app_context():
+        # Ensure the target database exists before running migrations
+        _ensure_postgres_database(str(app.app_config["DATABASE_URI"]), app.logger)
 
-        
+        # Apply Alembic migrations to create/update schema
+        try:
+            from flask_migrate import upgrade
+
+            app.logger.info("Applying database migrations (flask db upgrade)")
+            upgrade()
+        except Exception as e:
+            app.logger.error(f"Error applying migrations: {e}")
+            raise
+
+        # Create root user if not present
         try:
             app.root_user = User.create_root_user(app)
-        except ProgrammingError as e:
-            app.logger.error(f"Error creating root user")
-            
+        except ProgrammingError:
+            app.logger.error("Error creating root user")
 
 
 def setup_mongo(app):
