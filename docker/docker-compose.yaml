@@ -10,7 +10,7 @@ services:
       caddy.reverse_proxy: "{{upstreams 8000}}"
 
     environment:
-      JTL_DEPLOYMENT: "develdb"
+      JTL_DEPLOYMENT: "devel"
       # Force config dir resolution and provide required runtime config
       JTL_CONFIG_DIR: "/app/config"
       APP_DIR: "/app/dfg"
