@@ -63,7 +63,7 @@ COPY . /app
 
 RUN python -m pip install /app
 
-RUN mkdir /root/.ssh
+RUN mkdir -p /root/.ssh
 RUN chmod 700 /root/.ssh
 
 RUN cp  /app/config/secrets/id_rsa /root/.ssh/id_rsa
