@@ -1,37 +1,91 @@
-services:
-  cs-spawner:
-    image: codeserv
-    container_name: codeserv
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+version: "3.8"
 
-    # These labels set up the domain name in the Caddy proxy
+services:
+  codeserv:
+    image: codeserv
+
+
     labels:
       caddy: code.jointheleague.org
       caddy.reverse_proxy: "{{upstreams 8000}}"
 
     environment:
-      JTL_DEPLOYMENT: "dockerdev"
+      JTL_DEPLOYMENT: "develdb"
+      # Force config dir resolution and provide required runtime config
+      JTL_CONFIG_DIR: "/app/config"
+      APP_DIR: "/app/dfg"
+      DATA_DIR: "/app/data"
+      USER_DIRS: "/app/users"
+      OAUTHLIB_INSECURE_TRANSPORT: "1"
+      # Database connections for local swarm services
+      DATABASE_URI: "postgresql://pguser:password@postgres:5432/codeserver"
+      MONGO_URI: "mongodb://root:root@mongodb:27017/codeserver?authSource=admin"
+      DOCKER_URI: "unix:///var/run/docker.sock"
+      # Google OAuth for development
+      GOOGLE_CLIENT_ID: "1059904057121-hqt0tneptjf95td13ljlulaq8is9gg0v.apps.googleusercontent.com"
+      GOOGLE_CLIENT_SECRET: "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"
+
 
     volumes:
       - app-data:/app/data
+      - user-data:/app/users
       - /var/run/docker.sock:/var/run/docker.sock
-      - /mnt/student_repos:/mnt/student_repos
 
     # Expose Flask app on host port 8090
     ports:
       - "5000:8000"
 
+
     networks: # Must exist to recieve traffic from Caddy
       - caddy
       - jtlctl
 
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: pguser
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: codeserver
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+    networks:
+      - jtlctl
+
+  mongodb:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root
+      MONGO_INITDB_DATABASE: codeserver
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+    networks:
+      - jtlctl
+
+
+
 networks:
   caddy:
     external: true
-  jtlctl:
+  jtlctl: # docker network create --driver overlay --attachable jtlctl
+    external: true
 
 volumes:
   app-data:
-
+  user-data:
+  postgres-data:
+  mongo-data:
