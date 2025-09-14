@@ -88,7 +88,10 @@ def stop_host(host_id):
     s = ca.csm.get(code_host.service_id)
     if not s:
         flash("Host not found", "danger")
+        db.session.delete(code_host)
+        db.session.commit()
         return redirect(url_for("admin.list_code_hosts"))
+    
     s.stop()
     db.session.delete(code_host)
     db.session.commit()

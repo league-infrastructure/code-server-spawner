@@ -1,5 +1,7 @@
 
 from cspawn.init import init_app
+import logging
+
 
 app = init_app()
 

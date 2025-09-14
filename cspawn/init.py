@@ -75,9 +75,6 @@ def ensure_session():
     else:
         pass
 
-   
-
-
 
 def init_app(config_dir=None, deployment=None, log_level=None) -> App:
     """Initialize Flask application"""
@@ -99,6 +96,7 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
     app.app_config = config
 
     # Initialize logger
+   
     init_logger(app, log_level=log_level)
 
     app_dir, db_dir = configure_app_dir(app)
@@ -141,7 +139,8 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
 
     try:
         setup_database(app)
-        setup_sessions(app)
+        # Use dev-friendly session cookies when running in development to avoid CSRF mismatches
+        setup_sessions(app, devel=(deployment == "devel"))
 
         app.csm = CodeServerManager(app)
 
@@ -161,8 +160,6 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
         ensure_session()
 
     # app.load_user(current_app)
-
-
 
 
     @app.teardown_appcontext

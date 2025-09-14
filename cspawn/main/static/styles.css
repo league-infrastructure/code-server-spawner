@@ -68,3 +68,9 @@ center {
 .tab-content.active {
     display: block;
 }
+
+/* Extra toast styles */
+
+.bg-error {
+    background-color: #dc3545 !important; /* Bootstrap danger color */
+}

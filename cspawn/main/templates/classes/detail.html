@@ -63,7 +63,8 @@
         color: #007bff;
     }
 
-    .toast {
+    /* Scope the local copy toast only; don't override Bootstrap .toast */
+    #copy-toast {
         position: fixed;
         bottom: 20px;
         right: 20px;
@@ -105,9 +106,10 @@
                 {% if class_.running %}
                 <button id="stop-class" class="btn btn-danger btn-sm">Stop Class</button>
                 {% else %}
-                
-                <button id="start-class" class="btn btn-success btn-sm" {% if not class_.can_start %}disabled {% endif %}>Start Class</button>
-               
+
+                <button id="start-class" class="btn btn-success btn-sm" {% if not class_.can_start %}disabled {% endif
+                    %}>Start Class</button>
+
                 {% endif %}
             </div>
             <div class="right-buttons">
@@ -135,7 +137,7 @@
                     <p><strong>Timezone:</strong> {{ class_.timezone }}</p>
                 </div>
             </div>
-            {% if class_.description %}
+
             <hr>
             <div class="row">
                 <div class="col-8">
@@ -146,7 +148,7 @@
                     {% include "elements/host_controls.html" %}
                 </div>
             </div>
-            {% endif %}
+
         </div>
     </div>
 
@@ -196,7 +198,8 @@
                                 {% if student.code_hosts %}
                                 {% for host in student.code_hosts %}
                                 {% if host.state %}
-                                {{ host.state }} |  {{ (host.memory_usage/1024/1024)| round() if host.memory_usage else 'N/A' }}  | {{ host.modified_ago }} | {{ host.user_activity_rate | round(3)  }}
+                                {{ host.state }} | {{ (host.memory_usage/1024/1024)| round() if host.memory_usage else
+                                'N/A' }} | {{ host.modified_ago }} | {{ host.user_activity_rate | round(3) }}
                                 {% endif %}
                                 {% endfor %}
                                 {% else %}
@@ -339,18 +342,18 @@
                     'Content-Type': 'application/json',
                 },
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    location.reload();
-                } else {
-                    alert('Failed to update class state: ' + data.error);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('An error occurred while updating class state.');
-            });
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Failed to update class state: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred while updating class state.');
+                });
         }
 
         if (startButton) {
@@ -368,12 +371,19 @@
         // Initial button state update
         updateActionButtons();
     });
+    // Activate Bootstrap 5 tooltips (no jQuery)
+    document.addEventListener('DOMContentLoaded', function () {
+        // Migrate legacy attribute
+        document.querySelectorAll('[data-toggle="tooltip"]').forEach(function (el) {
+            el.setAttribute('data-bs-toggle', 'tooltip');
+            el.removeAttribute('data-toggle');
+        });
 
-
-    // Activate Bootstrap tooltips
-    $(function () {
-        $('[data-toggle="tooltip"]').tooltip()
-    })
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.forEach(function (tooltipTriggerEl) {
+            new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    });
 </script>
 {% include "elements/polling_script.html" %}
 {% endblock %}

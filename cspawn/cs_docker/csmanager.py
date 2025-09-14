@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 
 import socket
+from xml.sax import handler
 import docker
 from docker import DockerClient
 import paramiko
@@ -79,7 +80,7 @@ class CSMService(Service):
         logger.setLevel(logging.DEBUG)
         try:
             response = requests.get(self.public_url, timeout=10)
-            # logger.debug("Response from %s: %s", self.public_url, response.status_code)
+            logger.debug("Response from %s: %s", self.public_url, response.status_code)
             return response.status_code in [200, 302]
         except requests.exceptions.SSLError:
             logger.debug("SSL error encountered when connecting to %s", self.public_url)
@@ -87,6 +88,8 @@ class CSMService(Service):
         except requests.exceptions.RequestException as e:
             logger.debug("Error checking server status to %s: %s", self.public_url, e)
             return False
+        
+
 
     @property
     def is_running(self):
@@ -288,10 +291,8 @@ def define_cs_container(
         ports = None
         
     else:
-        # Running in development mode, so we
-       
-        
-      
+        # Running in development mode
+
         public_url = f"http://{username}:{password}@{hostname}/"
         public_url_no_auth = f"http://{hostname}/"
 
@@ -303,26 +304,29 @@ def define_cs_container(
         ports = [f"{available_ports[0]}:{internal_port}", f"{available_ports[1]}:{internal_vnc_port}"]
 
        
-
-
-    _env_vars = {
-        "WORKSPACE_FOLDER": workspace_folder,
-        "PASSWORD": password,
-        "DISPLAY": ":0",
-        "JTL_USERNAME": username,
-        "JTL_CLASS_ID": str(class_.id) if class_ else None,
-        "JTL_VNC_URL": vnc_url,
-        "JTL_PUBLIC_URL": public_url,
-        "JTL_SYLLABUS": syllabus,
-        "JTL_IMAGE_URI": image,
-        "JTL_REPO": repo,
-        "JTL_CODESERVER_URL": public_url,
-        "KST_REPORTING_URL": config.KST_REPORTING_URL,
-        "KST_REPORT_DIR": config.KST_REPORT_DIR,
-        "KST_CONTAINER_ID": name,
-        "KST_REPORT_INTERVAL": (config.KST_REPORT_INTERVAL if hasattr(config, "KST_REPORT_INTERVAL") else 30),
-        "CS_DISABLE_GETTING_STARTED_OVERRIDE": "1",  # Disable the getting started page
-    }
+    
+    try:
+        
+        _env_vars = {
+            "WORKSPACE_FOLDER": workspace_folder,
+            "PASSWORD": password,
+            "DISPLAY": ":0",
+            "JTL_USERNAME": username,
+            "JTL_CLASS_ID": str(class_.id) if class_ else None,
+            "JTL_VNC_URL": vnc_url,
+            "JTL_PUBLIC_URL": public_url,
+            "JTL_SYLLABUS": syllabus,
+            "JTL_IMAGE_URI": image,
+            "JTL_REPO": repo,
+            "JTL_CODESERVER_URL": public_url,
+            "KST_REPORTING_URL": config.KST_REPORTING_URL,
+            "KST_REPORT_DIR": config.KST_REPORT_DIR,
+            "KST_CONTAINER_ID": name,
+            "KST_REPORT_INTERVAL": (config.KST_REPORT_INTERVAL if hasattr(config, "KST_REPORT_INTERVAL") else 30),
+            "CS_DISABLE_GETTING_STARTED_OVERRIDE": "1",  # Disable the getting started page
+        }
+    except (KeyError, AttributeError) as e:
+        raise KeyError(f"Missing configuration key: {e}")
 
     env_vars = {**_env_vars, **env_vars}
 
@@ -353,6 +357,8 @@ def define_cs_container(
         "caddy.2_route.handle.reverse_proxy": "{{upstreams 80}}",
         f"caddy.basic_auth.{username}": hashed_pw,
     }
+
+
 
 
 
@@ -489,6 +495,9 @@ class CodeServerManager(ServicesManager):
         Returns:
             CSMService: New Code Server instance.
         """
+
+
+
         username = user.username
 
         assert isinstance(proto, ClassProto)
@@ -531,6 +540,7 @@ class CodeServerManager(ServicesManager):
 
                     return None, None
             else:
+    
                 logger.error("Error creating container: %s", e)
                 return None, None
 

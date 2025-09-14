@@ -13,7 +13,5 @@ main_bp = Blueprint(
 
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.ERROR)
-logger.setLevel(logging.ERROR)
 
 from .routes import *  # noqa
