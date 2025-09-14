@@ -67,7 +67,7 @@ def init_logger(app, log_level=None):
         app.logger.debug("Logger initialized for gunicorn")
 
     else:
-        # logging.basicConfig(level=logging.INFO)
+      
         app.logger.setLevel(logging.INFO)
         app.logger.debug("Logger initialized for flask")
 
@@ -183,6 +183,14 @@ def setup_database(app):
     with app.app_context():
         # Ensure the target database exists before running migrations
         _ensure_postgres_database(str(app.app_config["DATABASE_URI"]), app.logger)
+
+        # Auto-create tables if they do not exist
+        try:
+            app.logger.info("Creating all tables (db.create_all()) if not present")
+            app.db.create_all()
+        except Exception as e:
+            app.logger.error(f"Error creating tables: {e}")
+            raise
 
         # Apply Alembic migrations to create/update schema
         try:

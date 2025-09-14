@@ -263,28 +263,45 @@ class ServicesManager(DockerManager):
         :return: A Service object.
         """
 
-        if "ports" in kwargs:
-            
+ 
+        if  "ports" in kwargs:
             logger.info(f"ServicesManager.run: ports: {kwargs['ports']}")
-            if isinstance(kwargs["ports"], list):
-                # Ports are not supported in Docker Swarm mode
+            # Build a Swarm EndpointSpec with explicit published/target ports
+            try:
                 from docker.types import EndpointSpec
-                ports = {}
+            except Exception:
+                EndpointSpec = None  # type: ignore
 
-                try:
-                    for port in kwargs["ports"]:
-                        if ":" in port:
-                            # Split the port mapping into host and container ports
-                            host_port, container_port = port.split(":")
-                            ports[int(host_port)] = int(container_port)
+            port_configs = []
 
-                    endpoint_spec = EndpointSpec(   ports=ports)
-                    
-                    kwargs["endpoint_spec"] = endpoint_spec
-                except TypeError:
-                    logger.error("Invalid port mapping format: {kwargs['ports']}")
-                    
+            def add_port(published: int, target: int, protocol: str = "tcp", mode: str = "ingress"):
+                # docker SDK accepts dicts with these keys inside EndpointSpec(ports=[...])
+                port_configs.append(
+                    {
+                        "Protocol": protocol,
+                        "PublishedPort": int(published),
+                        "TargetPort": int(target),
+                        "PublishMode": mode,
+                    }
+                )
 
+            ports_val = kwargs["ports"]
+            if isinstance(ports_val, list):
+                for item in ports_val:
+                    if isinstance(item, str) and ":" in item:
+                        host_port, container_port = item.split(":", 1)
+                        add_port(int(host_port), int(container_port))
+            elif isinstance(ports_val, dict):
+                # Allow dict form {host: container}
+                for host_port, container_port in ports_val.items():
+                    add_port(int(host_port), int(container_port))
+
+            if EndpointSpec and port_configs:
+                kwargs["endpoint_spec"] = EndpointSpec(ports=port_configs)
+            else:
+                logger.warning("No valid port mappings found; ports will not be published")
+
+            # Remove raw 'ports' from kwargs; Swarm uses endpoint_spec
             del kwargs["ports"]
 
         network = self.combine_lists(self.network, network)

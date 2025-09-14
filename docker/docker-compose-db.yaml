@@ -43,6 +43,7 @@ services:
     volumes:
       - pgadmin-data:/var/lib/pgadmin
 
+
   mongo-express:
     image: mongo-express:latest
     container_name: codeserv-mongo-express
@@ -59,3 +60,4 @@ volumes:
   postgres-data:
   mongo-data:
   pgadmin-data:
+

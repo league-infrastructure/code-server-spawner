@@ -15,6 +15,8 @@ import json
 
 ca = cast(App, current_app)
 
+raise NotImplementedError("Maybe not used anymore")
+
 
 @hosts_bp.route("/")
 @login_required

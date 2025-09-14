@@ -4,6 +4,7 @@ from typing import cast
 from flask import current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
+from cspawn.cs_docker.csmanager import CSMService
 from cspawn.main import main_bp
 from cspawn.models import CodeHost, ClassProto, db
 from cspawn.init import cast_app
@@ -137,17 +138,18 @@ def is_ready() -> jsonify:
 
     try:
         host = CodeHost.query.filter_by(user_id=current_user.id).first()
-
+        
         if not host:
             return jsonify({"status": "error", "message": "No host found"})
 
-        s = current_app.csm.get(host.service_id)
+        s: CSMService = current_app.csm.get(host.service_id)
 
         s.sync_to_db()
 
         if s.check_ready():
             return jsonify({"status": "ready", "hostname_url": s.public_url})
         else:
+            print("!!! Not ready")
             return jsonify({"status": "not_ready"})
     except (NotFound, AttributeError) as e:
         return jsonify({"status": "error", "message": str(e)})

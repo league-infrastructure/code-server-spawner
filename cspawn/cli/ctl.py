@@ -13,7 +13,6 @@ from .sys import sys  # noqa: W0611
 from .telem import telem  # noqa: W0611
 from .devel import devel  # noqa: W0611
 
-logging.basicConfig(level=logging.ERROR)
 
 logger = logging.getLogger("cspawnctl")
 

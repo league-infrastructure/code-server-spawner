@@ -83,6 +83,7 @@ def start_class(class_id) -> str:
 
     assert class_.proto_id == proto.id
 
+
     # Look for an existing CodeHost for the current user
     extant_host = CodeHost.query.filter_by(user_id=current_user.id).first()
 
@@ -123,6 +124,7 @@ def show_class(class_id):
 
 def which_host_buttons(state: str) -> Tuple[str]:
     """Return the buttons that should be displayed for a given class/host state."""
+
     if state == "stopped":
         return ("start",)
     elif state == "running":
