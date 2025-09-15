@@ -18,17 +18,6 @@ services:
       timeout: 5s
       retries: 10
 
-  mongodb:
-    image: mongo:7
-    container_name: codeserv-mongodb
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: root
-      MONGO_INITDB_DATABASE: codeserver
-    volumes:
-      - mongo-data:/data/db
-    ports:
-      - "27017:27017"
 
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -43,18 +32,6 @@ services:
     volumes:
       - pgadmin-data:/var/lib/pgadmin
 
-
-  mongo-express:
-    image: mongo-express:latest
-    container_name: codeserv-mongo-express
-    depends_on:
-      - mongodb
-    environment:
-      ME_CONFIG_MONGODB_URL: mongodb://root:root@mongodb:27017/?authSource=admin
-      ME_CONFIG_BASICAUTH_USERNAME: admin
-      ME_CONFIG_BASICAUTH_PASSWORD: admin
-    ports:
-      - "8081:8081"
 
 volumes:
   postgres-data:
