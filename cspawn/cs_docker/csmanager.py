@@ -287,7 +287,8 @@ def define_cs_container(
         
         public_url = f"https://{username}:{password}@{hostname}/"
         public_url_no_auth = f"https://{hostname}/"
-        vnc_url = public_url_no_auth + "vnc/?scale=true"
+        #vnc_url = public_url_no_auth + "vnc/?scale=true"
+        vnc_url = public_url_no_auth + "proxy/6080/vnc_lite.html?path=proxy/6080/websockify&scale=true"
         ports = None
         
     else:
