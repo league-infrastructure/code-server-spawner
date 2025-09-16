@@ -8,20 +8,6 @@ from typing import Optional, Mapping, Any
 import requests
 
 
-def _token_from_env() -> str:
-    # Prefer org-level token; fall back to general token for compatibility
-    t = os.getenv("GITHUB_ORG_TOKEN") or os.getenv("GITHUB_TOKEN")
-    if not t:
-        raise RuntimeError("GITHUB_ORG_TOKEN (or GITHUB_TOKEN) not set")
-    return t
-
-
-def _org_from_env() -> str:
-    org = os.getenv("GITHUB_ORG")
-    if not org:
-        raise RuntimeError("GITHUB_ORG not set")
-    return org.rstrip("/").split("/")[-1]
-
 
 def _parse_repo(url: str) -> tuple[str, str]:
     """Return (owner, name) for a GitHub repo URL or "owner/name" string."""
@@ -58,8 +44,8 @@ class GithubOrg:
             # Prefer org token, fallback to legacy token key
             cfg_token = config.get("GITHUB_ORG_TOKEN") or config.get("GITHUB_TOKEN")
 
-        eff_org = org or cfg_org or _org_from_env()
-        eff_token = token or cfg_token or _token_from_env()
+        eff_org = org or cfg_org 
+        eff_token = token or cfg_token
 
         self.org = eff_org.rstrip("/").split("/")[-1]
         self.token = eff_token

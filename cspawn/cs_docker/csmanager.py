@@ -324,6 +324,7 @@ def define_cs_container(
             "KST_CONTAINER_ID": name,
             "KST_REPORT_INTERVAL": (config.KST_REPORT_INTERVAL if hasattr(config, "KST_REPORT_INTERVAL") else 30),
             "CS_DISABLE_GETTING_STARTED_OVERRIDE": "1",  # Disable the getting started page
+            "GITHUB_TOKEN": config.GITHUB_TOKEN,  # For student access to their repo
         }
     except (KeyError, AttributeError) as e:
         raise KeyError(f"Missing configuration key: {e}")
@@ -496,8 +497,6 @@ class CodeServerManager(ServicesManager):
             CSMService: New Code Server instance.
         """
 
-
-
         username = user.username
 
         assert isinstance(proto, ClassProto)
@@ -654,6 +653,7 @@ class CodeServerManager(ServicesManager):
         username = slugify(username)
 
         for service in self.list():
+            print("!!!!", service.username, username)
             if service.username == username:
                 return service
         return None
