@@ -6,7 +6,7 @@ config vars are set:
 
 * GITHUB_ORG. The URL of the student Github organization
 * GITHUB_TOKEN. A Personal Access Token for repos in the student org, Provided
-  to the student code host
+  to the student code host.
 * GITHUB_ORG_TOKEN. Private, used for forking and deleting. 
 
 When a new Code Host is created, the repo for the students host is first forked
@@ -46,3 +46,7 @@ Create a new cli module in `cspawn.cli.github` that has these commands:
 * cspawnctl github fork --class=<class_id> <user_name> # Use the repo of the class prototype
 * cspawnctl github rm --repo=<repo_url> <user_name> # Delete the repo
 * cspawnctl github rm --class=<class_id> <user_name> # Use the repo of the class prototype
+
+### Sprint 2
+
+The `GITHUB_TOKEN` is used at part of the environment for new code hosts, 

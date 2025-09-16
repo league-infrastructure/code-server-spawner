@@ -38,40 +38,7 @@ def hosts() -> str:
     return render_template("hosts/proto_host_list.html", host=ch, host_protos=host_protos)
 
 
-@main_bp.route("/hosts/start")
-@login_required
-def start_host() -> str:
-    from cspawn.init import cast_app
 
-    raise NotImplementedError("Maybe not used anymore")
-
-    ca = cast_app(current_app)
-
-    proto_id = request.args.get("proto_id")
-    proto = ClassProto.query.get(proto_id)
-
-    if not proto:
-        flash("Image not found", "error")
-        return redirect(url_for("hosts.index"))
-    # Look for an existing CodeHost for the current user
-    extant_host = CodeHost.query.filter_by(user_id=current_user.id).first()
-
-    if extant_host:
-        flash("A host is already running for the current user", "info")
-        return redirect(url_for("hosts.index"))
-
-    # Create a new CodeHost instance
-    s = ca.csm.get_by_username(current_user.username)
-
-    if not s:
-        s = ca.csm.new_cs(user=current_user, proto=proto.image_uri, repo=proto.repo_uri, syllabus=proto.syllabus_path)
-
-        flash(f"Host {s.name} started successfully", "success")
-    else:
-        s.sync_to_db()
-        flash("Host already running", "info")
-
-    return redirect(url_for("hosts.index"))
 
 
 @main_bp.route("/host/<host_id>/stop", methods=["GET"])
@@ -149,7 +116,6 @@ def is_ready() -> jsonify:
         if s.check_ready():
             return jsonify({"status": "ready", "hostname_url": s.public_url})
         else:
-            print("!!! Not ready")
             return jsonify({"status": "not_ready"})
     except (NotFound, AttributeError) as e:
         return jsonify({"status": "error", "message": str(e)})
