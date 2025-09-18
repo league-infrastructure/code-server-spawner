@@ -1,26 +1,27 @@
-version: "3.8"
-
 services:
   codeserv:
     image: codeserv
 
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
 
     labels:
       caddy: code.jointheleague.org
       caddy.reverse_proxy: "{{upstreams 8000}}"
-
+    depends_on:
+      - postgres
     environment:
-      JTL_DEPLOYMENT: "devel"
+      JTL_DEPLOYMENT: "docker"
+      DATABASE_URI: postgresql://pguser:password@postgres:5432/codeserver
+      DOCKER_URI: ssh://root@docker2.dojtl.net
 
     volumes:
       - app-data:/app/data
-      - user-data:/app/users
-      #- /var/run/docker.sock:/var/run/docker.sock
-
+  
     # Expose Flask app on host port 8090
     ports:
-      - "5000:8000"
-
+      - "8000:8000"
 
     networks: # Must exist to recieve traffic from Caddy
       - caddy
@@ -36,11 +37,11 @@ services:
       - postgres-data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-    deploy:
-      replicas: 1
-      placement:
-        constraints:
-          - node.role == manager
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pguser -d codeserver -h 127.0.0.1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - jtlctl
 
@@ -48,10 +49,13 @@ services:
 networks:
   caddy:
     external: true
-  jtlctl: # docker network create --driver overlay --attachable jtlctl
+    name: caddy
+  jtlctl: # create with: `docker network create jtlctl` (bridge). For Swarm use overlay on stack deploy.
     external: true
+    name: jtlctl
 
 volumes:
   app-data:
   user-data:
   postgres-data:
+  pgadmin-data:

@@ -20,6 +20,7 @@ from cspawn.cs_docker.manager import ServicesManager, logger
 from cspawn.cs_docker.proc import Service, Container
 from cspawn.models import CodeHost, User, HostState, db
 from cspawn.util.auth import basic_auth_hash, random_string
+from cspawn.util.exceptions import DockerException
 
 from ..models import ClassProto, Class
 
@@ -402,7 +403,12 @@ class CodeServerManager(ServicesManager):
         def _hostname_f(node_name):
             return app.app_config["NODE_HOSTNAME_TEMPLATE"].format(nodename=node_name)
 
-        c = DockerClient(base_url=self.docker_uri)
+
+        try:
+            c = DockerClient(base_url=self.docker_uri, use_ssh_client=True)
+        except Exception as e:
+            logger.error("Error connecting to Docker daemon at %s: %s", self.docker_uri, e)
+            raise DockerException(f"Error connecting to Docker {self.docker_uri}: {e}")
 
         super().__init__( 
             c,
@@ -520,8 +526,12 @@ class CodeServerManager(ServicesManager):
 
         # import yaml
         # logger.debug(f"Container Definition\n {yaml.dump(container_def)}")
-
-        self.make_user_dir(username)
+        # Only attempt to create a user directory if USER_DIRS is configured.
+        # In dev (USER_DIRS empty), skip to avoid unnecessary SSH (Paramiko) connections.
+        if self.config.USER_DIRS:
+            self.make_user_dir(username)
+        else:
+            logger.debug("USER_DIRS not set; skipping remote user dir creation for %s", username)
 
         # For later, maybe there are other mounts.
         # for m in container_def.get('mounts', []):

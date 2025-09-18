@@ -25,7 +25,7 @@ from cspawn.util.app_support import (configure_app_dir, configure_config_tree,
                                      is_running_under_gunicorn, setup_database,
                                      setup_sessions)
 
-logging.getLogger("flask_dance.consumer.oauth2").setLevel(logging.DEBUG)
+
 
 default_context = {"version": version}
 
@@ -88,9 +88,6 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
 
     deployment = resolve_deployment(deployment)
 
-    # Register the filter with Flask or Jinja2
-    app.jinja_env.filters["human_time"] = human_time_format
-
     config = configure_config_tree(config_dir, deploy=deployment)
     app.secret_key = config["SECRET_KEY"]
     app.app_config = config
@@ -98,8 +95,10 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
     # Initialize logger
    
     init_logger(app, log_level=log_level)
-
     app_dir, db_dir = configure_app_dir(app)
+
+    app.logger.info(f"Starting app in {deployment} mode")
+    app.logger.info('Logging initialized. level={log_level}')
     app.logger.debug(f"App dir: {app_dir} DB dir: {db_dir}. CONFIGS: {app.app_config['__CONFIG_PATH']}")
 
     # Blueprints
@@ -181,5 +180,8 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, handle_shutdown)
+
+    # Register the filter with Flask or Jinja2
+    app.jinja_env.filters["human_time"] = human_time_format
 
     return app
