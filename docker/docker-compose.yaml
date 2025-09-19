@@ -20,8 +20,8 @@ services:
       - app-data:/app/data
   
     # Expose Flask app on host port 8090
-    ports:
-      - "8000:8000"
+    #ports:
+    #  - "8092:8000"
 
     networks: # Must exist to recieve traffic from Caddy
       - caddy
