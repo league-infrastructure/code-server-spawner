@@ -21,7 +21,7 @@ services:
     volumes:
       - app-data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
-      - /mnt/student_repos:/mnt/student_repos
+      #- /mnt/student_repos:/mnt/student_repos
 
     # Expose Flask app on host port 8090
     ports:
