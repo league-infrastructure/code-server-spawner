@@ -38,6 +38,7 @@ dependencies = [
     "bcrypt>=4.2.1",
     "tzlocal>=5.3.1",
     "flask-pymongo>=3.0.1",
+    "python-digitalocean>=1.17.0",
 ]
 
 [tool.uv]
