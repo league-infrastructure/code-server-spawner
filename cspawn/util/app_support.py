@@ -173,7 +173,7 @@ def _ensure_postgres_database(uri: str, logger: logging.Logger) -> None:
         finally:
             conn.close()
     except Exception as e:
-        logger.error(f"Failed ensuring database exists for {uri}: {e}")
+        logger.warning(f"Failed ensuring database exists for {uri}: {e}")
         raise
 
 

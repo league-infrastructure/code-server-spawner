@@ -184,6 +184,8 @@ def get_logging_level(ctx):
     else:
         log_level = logging.ERROR
 
+    logging.basicConfig(level=log_level, format="%(asctime)s %(levelname)s %(message)s")
+
     return log_level
 
 

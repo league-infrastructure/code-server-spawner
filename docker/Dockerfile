@@ -59,16 +59,30 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install -r requirements.txt
 
 # Copy the source code into the container.
-COPY . /app
+COPY cspawn /app/cspawn
+RUN mkdir -p /app/config/secrets
+COPY requirements.txt /app/requirements.txt
+COPY pyproject.toml /app/pyproject.toml
+COPY migrations /app/migrations
+COPY docker/supervisord.conf /app/supervisord.conf
+COPY config/gunicorn_config.py /app/config/gunicorn_config.py
 
-RUN python -m pip install /app
+COPY config/config.env /app/config/config.env
+COPY config/docker.env /app/config/docker.env
+COPY config/secrets/secret.env /app/config/secrets/secret.env
+COPY config/secrets/docker.env /app/config/secrets/docker.env
+
+COPY data /app/data
+
+RUN python -m pip install /app/
 
 RUN mkdir -p /root/.ssh
 RUN chmod 700 /root/.ssh
 
-RUN cp  /app/config/secrets/id_rsa /root/.ssh/id_rsa
-RUN cp  /app/config/secrets/id_rsa.pub /root/.ssh/id_rsa.pub
-RUN cp /app/config/known_hosts /root/.ssh/known_hosts
+COPY config/secrets/id_rsa /root/.ssh/id_rsa
+COPY config/secrets/id_rsa.pub /root/.ssh/id_rsa.pub
+RUN cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
+COPY config/known_hosts /root/.ssh/known_hosts
 
 RUN chmod 600 ~/.ssh/id_rsa                                                                       
 RUN chmod 644 ~/.ssh/id_rsa.pub                                                                                                                              
@@ -80,4 +94,4 @@ EXPOSE 8000
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
 # Run the application.
-CMD ["/usr/bin/supervisord", "-c", "/app/docker/supervisord.conf"]
+CMD ["/usr/bin/supervisord", "-c", "/app/supervisord.conf"]

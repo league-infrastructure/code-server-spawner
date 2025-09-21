@@ -1,0 +1,27 @@
+#cloud-config
+
+# Purpose: Ensure SSH (port 22) is open in the firewall on first boot.
+# Target: Ubuntu-based images (e.g., DigitalOcean docker-20-04) using UFW.
+
+package_update: true
+packages:
+  - ufw
+
+runcmd:
+  # Set sane defaults (deny incoming, allow outgoing). Safe on fresh droplets.
+  - ufw default deny incoming
+  - ufw default allow outgoing
+
+  # Open SSH explicitly; also allow the named OpenSSH profile when present.
+  - ufw allow 22/tcp
+  - ufw allow OpenSSH || true
+
+  # Enable UFW non-interactively.
+  - ufw --force enable
+
+# Notes:
+# - If you also need Docker Swarm ports, consider adding:
+#   - ufw allow 2377/tcp    # swarm control plane
+#   - ufw allow 7946/tcp
+#   - ufw allow 7946/udp
+#   - ufw allow 4789/udp    # overlay networking
