@@ -33,3 +33,15 @@ part of the swarm,.
 
 the purge command has a -N/--dry-run argument that only prints what would be done. 
 
+# Swarm node labels
+
+A new config variable, `SWARM_NODE_LABEL`, defines a **custom node label** for swarm workers.  
+
+- **When creating new nodes** (e.g., with `cspawn node expand`), assign the label in `SWARM_NODE_LABEL`.  
+  Nodes still join the swarm as **workers**.  
+
+- **When creating user code host services** (e.g., with `define_cs_container()`), services are scheduled only on:  
+  - worker nodes, and  
+  - nodes that have the label defined in `SWARM_NODE_LABEL`.  
+
+This ensures user services always run on workers, but only those intended for the given role.
