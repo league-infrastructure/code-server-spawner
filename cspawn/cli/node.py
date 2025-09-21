@@ -464,6 +464,34 @@ def _drain_swarm_node(manager_client: docker.DockerClient, node_obj, log=None) -
             log.warning(f"[stop] Failed to drain node: {e}")
 
 
+def _ensure_label_on_node(manager_client: docker.DockerClient, node_name: str, label_key: str, log=None) -> bool:
+    """Ensure the swarm node has Labels[label_key] == 'true'. Returns True if changed/applied.
+
+    Uses low-level API for Docker SDK 2.0 compatibility. Idempotent.
+    """
+    try:
+        short = node_name.split(".")[0] if node_name else node_name
+        node_obj = _find_swarm_node(manager_client, node_name, short)
+        if not node_obj:
+            return False
+        info = manager_client.api.inspect_node(node_obj.id)  # type: ignore[attr-defined]
+        version = ((info or {}).get("Version", {}) or {}).get("Index")
+        spec = ((info or {}).get("Spec", {}) or {}).copy()
+        labels = (spec.get("Labels") or {}).copy()
+        if labels.get(label_key) == "true":
+            return False
+        labels[label_key] = "true"
+        spec["Labels"] = labels
+        manager_client.api.update_node(node_obj.id, version, spec)  # type: ignore[attr-defined]
+        if log:
+            log.info(f"[expand] Applied node label '{label_key}=true' on {node_name}")
+        return True
+    except Exception as e:
+        if log:
+            log.warning(f"[expand] Failed to apply node label '{label_key}' on {node_name}: {e}")
+        return False
+
+
 def _find_project_id_for_droplet(token: str, droplet_id: int, log=None) -> str | None:
     """Find the Project ID that contains the given droplet using python-digitalocean."""
     urn = f"do:droplet:{droplet_id}"
@@ -794,6 +822,38 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
             return
         raise click.ClickException(f"Failed to join swarm: {err or out}")
     log.info("[expand] Join command executed successfully on droplet")
+    # Apply optional node label after join
+    try:
+        cfg = get_config()
+        label = cfg.get("SWARM_NODE_LABEL")
+        if label:
+            # Wait briefly for node to appear in manager, then match by IP
+            deadline = time.time() + 90
+            applied = False
+            while time.time() < deadline and not applied:
+                try:
+                    for n in manager_client.nodes.list():
+                        try:
+                            info = manager_client.api.inspect_node(n.id)  # type: ignore[attr-defined]
+                            addr = ((info or {}).get("Status", {}) or {}).get("Addr")
+                            if addr == ip:
+                                name = ((info or {}).get("Description", {}) or {}).get("Hostname") or ""
+                                if name:
+                                    applied = _ensure_label_on_node(manager_client, name, label, log=log) or applied
+                                    break
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+                if not applied:
+                    time.sleep(3)
+            # Fallback to name guess if needed
+            if not applied:
+                name_guess = target if "." in target and not _looks_like_ip(target) else (target.split(".")[0] if not _looks_like_ip(target) else None)
+                if name_guess:
+                    _ensure_label_on_node(manager_client, name_guess, label, log=log)
+    except Exception:
+        pass
 
 
 # ----- Node info and purge commands -----

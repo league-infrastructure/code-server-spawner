@@ -310,6 +310,28 @@ class ServicesManager(DockerManager):
         env = self.combine_dicts(self.env, environment)
         env_list = [f"{key}={value}" for key, value in env.items()]
 
+        # Placement constraints: prefer workers and optional custom node label
+        placement_constraints = []
+        try:
+            from cspawn.util.config import get_config as _get_cfg
+            _cfg = _get_cfg()
+            label_key = _cfg.get("SWARM_NODE_LABEL")
+            if label_key:
+                placement_constraints.append(f"node.role == worker")
+                placement_constraints.append(f"node.labels.{label_key} == true")
+            else:
+                placement_constraints.append(f"node.role == worker")
+        except Exception:
+            placement_constraints.append(f"node.role == worker")
+
+        try:
+            from docker.types import Placement
+            placement = Placement(constraints=placement_constraints)
+            kwargs["placement"] = placement
+        except Exception:
+            # Fall back to raw dict form accepted by docker-py
+            kwargs["placement"] = {"Constraints": placement_constraints}
+
         service = self.client.services.create(
             image=image,
             name=name,
