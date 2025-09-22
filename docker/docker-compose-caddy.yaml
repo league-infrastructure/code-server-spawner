@@ -1,4 +1,5 @@
 
+# docker stack deploy -c docker-stack.yaml caddy   
 services:
   caddy:
     image: lucaslorentz/caddy-docker-proxy:ci-alpine

@@ -21,13 +21,6 @@ echo "Detected VPC iface: ${VPC_IFACE} (${MANAGER_VPC_IP})"
 echo "Detected public iface: ${PUBLIC_IFACE:-<none>}"
 
 # --- UFW ---
-command -v ufw >/dev/null 2>&1 || apt-get update && apt-get install -y ufw
-
-# Ensure Docker forwarding works
-sed -i 's/^DEFAULT_FORWARD_POLICY=.*/DEFAULT_FORWARD_POLICY="ACCEPT"/' /etc/default/ufw || true
-
-# Enable UFW if not enabled
-ufw status | grep -q 'Status: active' || ufw --force enable
 
 # Baseline policy
 ufw default deny incoming
@@ -53,20 +46,3 @@ if [[ -n "${PUBLIC_IFACE:-}" ]]; then
 fi
 
 ufw reload
-
-# --- Pin swarm data path to VPC IP at the swarm level ---
-# No daemon.json edits; use swarm update to set DataPathAddr
-if docker info 2>/dev/null | grep -qi 'Swarm: active'; then
-  echo "Updating swarm data-path-addr to ${MANAGER_VPC_IP}"
-  docker swarm update --data-path-addr "${MANAGER_VPC_IP}"
-else
-  echo "NOTE: Swarm not active on this node yet. After 'docker swarm init' run:"
-  echo "  docker swarm update --data-path-addr ${MANAGER_VPC_IP}"
-fi
-
-# Show overlay peers for a quick sanity-check (example for 'caddy' network)
-if command -v jq >/dev/null 2>&1; then
-  docker network inspect caddy >/dev/null 2>&1 && docker network inspect caddy | jq '.[0].Peers' || true
-fi
-
-echo "Done. Ensure workers join with --advertise-addr set to their 10.124.x IP."
