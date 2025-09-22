@@ -668,6 +668,7 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
 
     Returns (droplet, ip, fqdn, shortname)
     """
+    config = get_config()
     log = get_logger(ctx)
 
     # Determine fqdn/shortname based on desired or next serial
@@ -713,10 +714,10 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
         user_data = None
         try:
             cfg = get_config()
-            cloud_init_file = cfg.get("CLOUD_INIT_FILE") or cfg.get("DO_CLOUD_INIT_FILE")
+            cloud_init_file =  cfg.get("DO_CLOUD_INIT_FILE")
             if cloud_init_file:
-                root = Path(find_parent_dir())
-                cip = Path(cloud_init_file)
+               
+                cip = Path(config['CONFIG_DIR']) / 'cloud-init' / cloud_init_file
                 if not cip.is_absolute():
                     cip = root / cloud_init_file
                 if cip.exists():
@@ -724,8 +725,10 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
                     log.info(f"[expand] Including cloud-init user-data from {cip}")
                 else:
                     log.warning(f"[expand] CLOUD_INIT_FILE not found at {cip}; proceeding without user-data")
-        except Exception:
-            pass
+            else:
+                log.info("[expand] No CLOUD_INIT_FILE configured; proceeding without user-data")
+        except Exception as e:
+            log.warning(f"[expand] Error reading CLOUD_INIT_FILE: {e}")
 
         # Create droplet
         droplet = digitalocean.Droplet(
@@ -879,7 +882,7 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
     code, out, err = _ssh_exec_retry(ip, "root", priv_key_path, join_cmd, retries=10, initial_delay=2.0, log=log)
     if code != 0:
         # If already part of swarm, docker returns an error; re-check and swallow
-    code2, out2, err2 = _ssh_exec_retry(ip, "root", priv_key_path, "docker info --format '{{.Swarm.LocalNodeState}}'", retries=6, initial_delay=2.0, log=log)
+        code2, out2, err2 = _ssh_exec_retry(ip, "root", priv_key_path, "docker info --format '{{.Swarm.LocalNodeState}}'", retries=6, initial_delay=2.0, log=log)
         if (out2 or err2 or "").strip().lower() == "active":
             log.info("[expand] Node appears to already be joined; continuing")
             return
@@ -1131,6 +1134,150 @@ def expand_info(ctx, show_all: bool):
         click.echo("(no nodes to display)")
 
 
+def _sync_domain_records(ctx) -> None:
+    """Sync A records in the configured domain to reflect current swarm membership.
+
+    - Create/update A records for all nodes in the swarm (hostnames matching DO_NAMES) to point to their public IPs.
+    - Remove A records that match the naming pattern but are not currently in the swarm.
+    """
+    log = get_logger(ctx)
+    cfg = get_config()
+
+    docker_uri = cfg.get("DOCKER_URI")
+    do_token = cfg.get("DO_TOKEN")
+    name_template = cfg.get("DO_NAMES")
+
+    if not (docker_uri and do_token and name_template):
+        raise click.ClickException("Missing required config: DOCKER_URI, DO_TOKEN, or DO_NAMES")
+
+    if "." not in name_template:
+        raise click.ClickException("DO_NAMES must include a domain suffix, e.g., swarm{serial}.example.com")
+
+    domain_suffix = name_template.split(".", 1)[1]
+    short_pattern = name_template.split(".")[0]  # e.g., 'swarm{serial}'
+    short_prefix = short_pattern.split("{serial}")[0]
+    short_re = re.compile(rf"^{re.escape(short_prefix)}(\d+)$")
+
+    # Connect to docker
+    try:
+        client = docker.DockerClient(base_url=docker_uri, use_ssh_client=True)
+    except Exception as e:
+        raise click.ClickException(f"Failed to connect to docker manager at {docker_uri}: {e}")
+
+    # Build set of swarm short names
+    swarm_shorts: set[str] = set()
+    try:
+        for n in client.nodes.list():
+            name = n.attrs.get("Description", {}).get("Hostname", "")
+            if name:
+                swarm_shorts.add(name.split(".")[0])
+    except Exception as e:
+        log.warning(f"[domains] Failed to list swarm nodes: {e}")
+
+    # Build short->IP map from all droplets
+    droplets_all = _list_droplets_by_tag_or_project(do_token, None, None, log=log)
+    short_to_ip: dict[str, str] = {}
+    for d in droplets_all:
+        nm = (d.get("name") or "").strip()
+        if not nm:
+            continue
+        s = nm.split(".")[0]
+        ip = _droplet_public_ip(d)
+        if s and ip:
+            short_to_ip[s] = ip
+
+    # Filter to names matching our pattern
+    desired_shorts = {s for s in swarm_shorts if short_re.match(s)}
+
+    # Access DO Domain
+    dom = digitalocean.Domain(token=do_token, name=domain_suffix)
+    try:
+        records = dom.get_records()
+    except Exception as e:
+        raise click.ClickException(f"Failed to fetch domain records for {domain_suffix}: {e}")
+
+    # Map current A records for our pattern
+    current_a: dict[str, list] = {}
+    for r in records:
+        try:
+            if getattr(r, "type", "") == "A":
+                rname = getattr(r, "name", "") or ""
+                if short_re.match(rname):
+                    current_a.setdefault(rname, []).append(r)
+        except Exception:
+            continue
+
+    created = 0
+    updated = 0
+    removed = 0
+    skipped_no_ip = 0
+    ttl_seconds = 60
+
+    # Create or update desired records
+    for short in sorted(desired_shorts):
+        ip = short_to_ip.get(short)
+        if not ip:
+            skipped_no_ip += 1
+            log.warning(f"[domains] Skipping {short}.{domain_suffix}: no public IP found")
+            continue
+        recs = current_a.get(short, [])
+        if not recs:
+            try:
+                dom.create_new_domain_record(type="A", name=short, data=ip, ttl=ttl_seconds)
+                created += 1
+                log.info(f"[domains] Created A {short}.{domain_suffix} -> {ip} (ttl={ttl_seconds}s)")
+            except Exception as e:
+                log.warning(f"[domains] Failed to create A {short}.{domain_suffix}: {e}")
+        else:
+            # Update first; delete duplicates with mismatched data
+            primary = recs[0]
+            try:
+                changed = False
+                if getattr(primary, "data", "") != ip:
+                    primary.data = ip
+                    changed = True
+                # Ensure TTL is set to 60s
+                try:
+                    if int(getattr(primary, "ttl", 0) or 0) != ttl_seconds:
+                        primary.ttl = ttl_seconds
+                        changed = True
+                except Exception:
+                    # If ttl unparsable, force set
+                    try:
+                        primary.ttl = ttl_seconds
+                        changed = True
+                    except Exception:
+                        pass
+                if changed:
+                    primary.save()
+                    updated += 1
+                    log.info(f"[domains] Updated A {short}.{domain_suffix} -> {ip} (ttl={ttl_seconds}s)")
+            except Exception as e:
+                log.warning(f"[domains] Failed to update A {short}.{domain_suffix}: {e}")
+            # Remove duplicates beyond the first
+            for dup in recs[1:]:
+                try:
+                    dup.destroy()
+                    removed += 1
+                    log.info(f"[domains] Removed duplicate A record for {short}.{domain_suffix}")
+                except Exception:
+                    pass
+
+    # Remove records that are not desired
+    for short, recs in current_a.items():
+        if short in desired_shorts:
+            continue
+        for r in recs:
+            try:
+                r.destroy()
+                removed += 1
+                log.info(f"[domains] Removed A {short}.{domain_suffix} (not in swarm)")
+            except Exception as e:
+                log.warning(f"[domains] Failed to remove A {short}.{domain_suffix}: {e}")
+
+    click.echo(f"Domain sync complete: created={created}, updated={updated}, removed={removed}, skipped(no-ip)={skipped_no_ip}")
+
+
 @node.command(name="purge")
 @click.option("-N", "--dry-run", is_flag=True, help="Only print what would be done")
 @click.pass_context
@@ -1337,9 +1484,10 @@ def stop_node(ctx, force: bool, dry_run: bool, node_spec: str):
 @click.option("--id", "create_serial", required=False, type=int, help="Serial id to create (used with --create or defaults in all-steps)")
 @click.option("--configure", "configure_name", required=False, type=str, help="Only configure the node hostname (by name or IP)")
 @click.option("--join", "join_name", required=False, type=str, help="Only join the node to the swarm (by name or IP)")
+@click.option("--domains", "domains_only", is_flag=True, help="Only sync domain A records for swarm nodes (create missing, remove stale)")
 @click.option("--ssh-timeout", "ssh_timeout_opt", required=False, type=int, help="Seconds to wait for SSH during configure/join (overrides config)")
 @click.pass_context
-def expand(ctx, project_selector: str | None, create_only: bool, create_serial: int | None, configure_name: str | None, join_name: str | None, ssh_timeout_opt: int | None):
+def expand(ctx, project_selector: str | None, create_only: bool, create_serial: int | None, configure_name: str | None, join_name: str | None, domains_only: bool, ssh_timeout_opt: int | None):
     """Provision and/or configure and/or join a node.
 
     If none of --create/--configure/--join are supplied, performs all three in order.
@@ -1381,6 +1529,12 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
     except Exception:
         cfg_ssh_timeout = 0
     ssh_timeout_effective = ssh_timeout_opt if (ssh_timeout_opt and ssh_timeout_opt > 0) else (cfg_ssh_timeout or 900)
+
+    # Domains-only short-circuit
+    if domains_only:
+        _sync_domain_records(ctx)
+        click.echo("Domains synced.")
+        return
 
     # Determine default behavior
     do_all = not any([create_only, create_serial is not None, configure_name, join_name])
@@ -1450,3 +1604,10 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
         click.echo(f"Configured node: {target_for_config}")
     elif join_name:
         click.echo(f"Joined node: {target_for_join}")
+
+    # After successful full flow, optionally sync domains for convenience
+    try:
+        _sync_domain_records(ctx)
+    except Exception:
+        # Non-fatal
+        pass

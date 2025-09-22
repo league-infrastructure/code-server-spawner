@@ -9,12 +9,26 @@ services:
     labels:
       caddy: code.jointheleague.org
       caddy.reverse_proxy: "{{upstreams 8000}}"
+
+    deploy:
+      replicas: 1
+      labels:
+        caddy: code.jointheleague.org
+        caddy.reverse_proxy: "{{upstreams 8000}}"
+      placement:
+        constraints:
+          - node.role == manager
+
+
+
     depends_on:
       - postgres
     environment:
       JTL_DEPLOYMENT: "docker"
       DATABASE_URI: postgresql://pguser:password@postgres:5432/codeserver
       DOCKER_URI: ssh://root@docker2.dojtl.net
+
+
 
     volumes:
       - app-data:/app/data

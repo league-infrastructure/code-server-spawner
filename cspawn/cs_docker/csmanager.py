@@ -403,9 +403,10 @@ class CodeServerManager(ServicesManager):
         def _hostname_f(node_name):
             return app.app_config["NODE_HOSTNAME_TEMPLATE"].format(nodename=node_name)
 
-
+   
         try:
-            c = DockerClient(base_url=self.docker_uri, use_ssh_client=True)
+            c = DockerClient(base_url=self.docker_uri, use_ssh_client=True, timeout=10)
+           
         except Exception as e:
             logger.error("Error connecting to Docker daemon at %s: %s", self.docker_uri, e)
             raise DockerException(f"Error connecting to Docker {self.docker_uri}: {e}")
