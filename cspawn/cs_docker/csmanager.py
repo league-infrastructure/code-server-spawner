@@ -357,7 +357,7 @@ def define_cs_container(
         "caddy.1_route.handle_path.reverse_proxy": "{{upstreams 6080}}",
         # General Reverse Proxy
         "caddy.2_route.handle": "/*",
-        "caddy.2_route.handle.reverse_proxy": "{{upstreams 8080}}",
+        "caddy.2_route.handle.reverse_proxy": "{{upstreams 80}}",
         f"caddy.basic_auth.{username}": hashed_pw,
     }
 
