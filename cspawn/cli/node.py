@@ -109,7 +109,7 @@ def _wait_for_droplet_active(
 def _wait_for_ssh(
     host: str,
     port: int = 22,
-    timeout: int = 300,
+    timeout: int = 900,
     log=None,
     key_path: Path | None = None,
     username: str = "root",
@@ -153,15 +153,15 @@ def _wait_for_ssh(
             pass
         time.sleep(delay)
         delay = min(delay * 1.5, 30.0)
-    raise TimeoutError(f"SSH not available on {host}:{port} in time")
+    raise TimeoutError(f"SSH not available on {host}:{port} in time (timeout={int(timeout)}s)")
 
 
-def _ssh_exec(host: str, username: str, key_path: Path, cmd: str) -> tuple[int, str, str]:
+def _ssh_exec(host: str, username: str, key_path: Path, cmd: str, *, connect_timeout: int = 15) -> tuple[int, str, str]:
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     pkey = paramiko.RSAKey.from_private_key_file(str(key_path))
     try:
-        ssh.connect(host, username=username, pkey=pkey, look_for_keys=False)
+        ssh.connect(host, username=username, pkey=pkey, look_for_keys=False, timeout=connect_timeout)
         stdin, stdout, stderr = ssh.exec_command(cmd)
         exit_code = stdout.channel.recv_exit_status()
         out = stdout.read().decode()
@@ -169,6 +169,27 @@ def _ssh_exec(host: str, username: str, key_path: Path, cmd: str) -> tuple[int, 
         return exit_code, out, err
     finally:
         ssh.close()
+
+
+def _ssh_exec_retry(host: str, username: str, key_path: Path, cmd: str, *, retries: int = 6, initial_delay: float = 1.5, log=None) -> tuple[int, str, str]:
+    """Execute an SSH command with small retry/backoff to tolerate transient drops/rate-limits."""
+    last_err: Exception | None = None
+    delay = initial_delay
+    for attempt in range(1, retries + 1):
+        try:
+            if log:
+                log.info(f"[ssh] exec attempt {attempt}/{retries}: {cmd}")
+            return _ssh_exec(host, username, key_path, cmd)
+        except Exception as e:
+            last_err = e
+            if attempt >= retries:
+                break
+            if log:
+                log.info(f"[ssh] exec failed (attempt {attempt}): {e}; retrying in {delay:.1f}s")
+            time.sleep(delay)
+            delay = min(delay * 1.7, 10.0)
+    # If we reach here, we've exhausted retries
+    raise click.ClickException(f"SSH error connecting to {host} with key {key_path} while running: {cmd}\nlast error: {last_err}")
 
 
 def _resolve_ip(hostname: str) -> str | None:
@@ -688,6 +709,24 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
         priv_key_path, pub_key_path = _ensure_priv_key()
         ssh_keys_param = _collect_do_ssh_keys(mgr, do_token, pub_key_path, shortname, log)
 
+        # Optional cloud-init user-data
+        user_data = None
+        try:
+            cfg = get_config()
+            cloud_init_file = cfg.get("CLOUD_INIT_FILE") or cfg.get("DO_CLOUD_INIT_FILE")
+            if cloud_init_file:
+                root = Path(find_parent_dir())
+                cip = Path(cloud_init_file)
+                if not cip.is_absolute():
+                    cip = root / cloud_init_file
+                if cip.exists():
+                    user_data = cip.read_text()
+                    log.info(f"[expand] Including cloud-init user-data from {cip}")
+                else:
+                    log.warning(f"[expand] CLOUD_INIT_FILE not found at {cip}; proceeding without user-data")
+        except Exception:
+            pass
+
         # Create droplet
         droplet = digitalocean.Droplet(
             token=do_token,
@@ -699,6 +738,7 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
             backups=False,
             ipv6=False,
             tags=[do_tag] if do_tag else None,
+            user_data=user_data,
         )
         log.info(f"[expand] Creating droplet {fqdn} in {do_region} with size {do_size} and image {do_image}")
         droplet.create()
@@ -743,12 +783,19 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
     return droplet, ip, fqdn, shortname
 
 
-def _configure_node(ctx, target: str, desired_shortname: str | None = None) -> tuple[str, str]:
+def _configure_node(ctx, target: str, desired_shortname: str | None = None, ssh_timeout: int | None = None) -> tuple[str, str]:
     """Configure hostname on the node. Idempotent. Returns (ip, shortname)."""
     log = get_logger(ctx)
     priv_key_path, _ = _ensure_priv_key()
     # Resolve IP and shortname
     cfg = get_config()
+    # Allow overriding SSH wait via config (seconds)
+    # Determine SSH wait timeout precedence (param > config > default)
+    if ssh_timeout is None:
+        try:
+            ssh_timeout = int(cfg.get("SSH_WAIT_TIMEOUT", 0) or 0)
+        except Exception:
+            ssh_timeout = 0
     do_token = cfg.get("DO_TOKEN")
     do_tag = cfg.get("DO_TAG")
     do_project = cfg.get("DO_PROJECT")
@@ -761,15 +808,17 @@ def _configure_node(ctx, target: str, desired_shortname: str | None = None) -> t
         or target
     )
     shortname = desired_shortname or target.split(".")[0]
-    _wait_for_ssh(ip, log=log, key_path=priv_key_path)
+    _wait_for_ssh(ip, log=log, key_path=priv_key_path, timeout=ssh_timeout or 900)
+    # brief pause to avoid UFW rate-limit on immediate reconnect
+    time.sleep(1.0)
     # Check current hostname
-    code, out, err = _ssh_exec(ip, "root", priv_key_path, "hostnamectl --static")
+    code, out, err = _ssh_exec_retry(ip, "root", priv_key_path, "hostnamectl --static", retries=8, initial_delay=1.5, log=log)
     current = (out or err or "").strip()
     if current == shortname:
         log.info(f"[expand] Hostname already '{shortname}', skipping")
         return ip, shortname
     log.info(f"[expand] Setting droplet hostname to {shortname}")
-    code, out, err = _ssh_exec(ip, "root", priv_key_path, f"hostnamectl set-hostname {shortname}")
+    code, out, err = _ssh_exec_retry(ip, "root", priv_key_path, f"hostnamectl set-hostname {shortname}", retries=8, initial_delay=1.5, log=log)
     if code != 0:
         log.warning(f"[expand] Failed to set hostname: {err or out}")
     else:
@@ -777,7 +826,7 @@ def _configure_node(ctx, target: str, desired_shortname: str | None = None) -> t
     return ip, shortname
 
 
-def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_uri: str) -> None:
+def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_uri: str, ssh_timeout: int | None = None) -> None:
     """Join the node to the swarm as worker. Idempotent."""
     log = get_logger(ctx)
     priv_key_path, _ = _ensure_priv_key()
@@ -787,6 +836,12 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
 
     # Resolve IP (prefer literal, then DNS/FQDN, then DO lookup)
     cfg = get_config()
+    # Allow overriding SSH wait via config (seconds)
+    if ssh_timeout is None:
+        try:
+            ssh_timeout = int(cfg.get("SSH_WAIT_TIMEOUT", 0) or 0)
+        except Exception:
+            ssh_timeout = 0
     do_token = cfg.get("DO_TOKEN")
     do_tag = cfg.get("DO_TAG")
     do_project = cfg.get("DO_PROJECT")
@@ -797,11 +852,19 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
         or _resolve_ip(_expand_host_with_template(name_template, target))
         or target
     )
-    _wait_for_ssh(ip, log=log, key_path=priv_key_path)
+    _wait_for_ssh(ip, log=log, key_path=priv_key_path, timeout=ssh_timeout or 900)
+    time.sleep(1.0)
 
     # Idempotency check: already in a swarm?
-    code, out, err = _ssh_exec(ip, "root", priv_key_path, "docker info --format '{{.Swarm.LocalNodeState}}'")
+    out = '<no output yet>'
+    cmd = "docker info --format '{{.Swarm.LocalNodeState}}'"
+    try:
+        code, out, err = _ssh_exec_retry(ip, "root", priv_key_path, cmd, retries=10, initial_delay=1.5, log=log)
+    except Exception as e:
+        raise click.ClickException(f"SSH error connecting to {ip} with key {priv_key_path}\ncommand  {cmd}\n output {out}\n:Exception {e}")
+
     state = (out or err or "").strip().lower()
+
     if state == "active":
         log.info("[expand] Node already part of a swarm; skipping join")
         return
@@ -813,10 +876,10 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
         join_token = manager_client.api.inspect_swarm()["JoinTokens"]["Worker"]
     join_cmd = f"docker swarm join --token {join_token} {manager_host}:2377"
     log.info("[expand] Executing swarm join on droplet")
-    code, out, err = _ssh_exec(ip, "root", priv_key_path, join_cmd)
+    code, out, err = _ssh_exec_retry(ip, "root", priv_key_path, join_cmd, retries=10, initial_delay=2.0, log=log)
     if code != 0:
         # If already part of swarm, docker returns an error; re-check and swallow
-        code2, out2, err2 = _ssh_exec(ip, "root", priv_key_path, "docker info --format '{{.Swarm.LocalNodeState}}'")
+    code2, out2, err2 = _ssh_exec_retry(ip, "root", priv_key_path, "docker info --format '{{.Swarm.LocalNodeState}}'", retries=6, initial_delay=2.0, log=log)
         if (out2 or err2 or "").strip().lower() == "active":
             log.info("[expand] Node appears to already be joined; continuing")
             return
@@ -1274,8 +1337,9 @@ def stop_node(ctx, force: bool, dry_run: bool, node_spec: str):
 @click.option("--id", "create_serial", required=False, type=int, help="Serial id to create (used with --create or defaults in all-steps)")
 @click.option("--configure", "configure_name", required=False, type=str, help="Only configure the node hostname (by name or IP)")
 @click.option("--join", "join_name", required=False, type=str, help="Only join the node to the swarm (by name or IP)")
+@click.option("--ssh-timeout", "ssh_timeout_opt", required=False, type=int, help="Seconds to wait for SSH during configure/join (overrides config)")
 @click.pass_context
-def expand(ctx, project_selector: str | None, create_only: bool, create_serial: int | None, configure_name: str | None, join_name: str | None):
+def expand(ctx, project_selector: str | None, create_only: bool, create_serial: int | None, configure_name: str | None, join_name: str | None, ssh_timeout_opt: int | None):
     """Provision and/or configure and/or join a node.
 
     If none of --create/--configure/--join are supplied, performs all three in order.
@@ -1311,6 +1375,13 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
 
     mgr = digitalocean.Manager(token=do_token)
 
+    # Resolve SSH wait timeout precedence: CLI > config > default
+    try:
+        cfg_ssh_timeout = int(cfg.get("SSH_WAIT_TIMEOUT", 0) or 0)
+    except Exception:
+        cfg_ssh_timeout = 0
+    ssh_timeout_effective = ssh_timeout_opt if (ssh_timeout_opt and ssh_timeout_opt > 0) else (cfg_ssh_timeout or 900)
+
     # Determine default behavior
     do_all = not any([create_only, create_serial is not None, configure_name, join_name])
 
@@ -1341,18 +1412,20 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
     if do_all or configure_name:
         if not target_for_config:
             raise click.ClickException("No target to configure; please provide --configure <name>")
-        ip, shortname = _configure_node(ctx, target_for_config, desired_shortname=(last_shortname or None))
-        last_ip, last_shortname = ip, shortname
+    ip, shortname = _configure_node(ctx, target_for_config, desired_shortname=(last_shortname or None), ssh_timeout=ssh_timeout_effective)
+    log.info(f"[expand] SSH wait timeout used for configure: {ssh_timeout_effective}s")
+    last_ip, last_shortname = ip, shortname
 
     # JOIN
     target_for_join = join_name or last_fqdn or last_ip
     if do_all or join_name:
         if not target_for_join:
             raise click.ClickException("No target to join; please provide --join <name>")
-        _join_swarm(ctx, target_for_join, manager_client, docker_uri)
+    log.info(f"[expand] SSH wait timeout used for join: {ssh_timeout_effective}s")
+    _join_swarm(ctx, target_for_join, manager_client, docker_uri, ssh_timeout=ssh_timeout_effective)
 
-        # Verify membership when we know the shortname
-        if last_shortname:
+    # Verify membership when we know the shortname
+    if last_shortname:
             deadline = time.time() + 300
             log.info("[expand] Verifying node appears in swarm membership")
             while time.time() < deadline:
