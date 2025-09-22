@@ -45,3 +45,14 @@ A new config variable, `SWARM_NODE_LABEL`, defines a **custom node label** for s
   - nodes that have the label defined in `SWARM_NODE_LABEL`.  
 
 This ensures user services always run on workers, but only those intended for the given role.
+
+# Info update
+
+FOr the `cspawnctl node info` command, add to the HostInfo a field to indicate that the node is a manager. Display
+this in the output table. 
+
+
+# Docker contract
+
+Create a new cspawn node command , `cspawnctl node contract' that will find the
+node with the highest number, which cannot be the leader manager 

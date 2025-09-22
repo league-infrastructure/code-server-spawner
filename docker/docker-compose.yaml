@@ -19,15 +19,12 @@ services:
         constraints:
           - node.role == manager
 
-
-
     depends_on:
       - postgres
     environment:
       JTL_DEPLOYMENT: "docker"
       DATABASE_URI: postgresql://pguser:password@postgres:5432/codeserver
       DOCKER_URI: ssh://root@docker2.dojtl.net
-
 
 
     volumes:
