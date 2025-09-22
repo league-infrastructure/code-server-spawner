@@ -12,9 +12,19 @@ runcmd:
   - ufw default deny incoming
   - ufw default allow outgoing
 
+  # Ensure no SSH rate limiting (remove any prior 'limit' rules if present).
+  - ufw delete limit OpenSSH || true
+  - ufw delete limit 22/tcp || true
+
   # Open SSH explicitly; also allow the named OpenSSH profile when present.
   - ufw allow 22/tcp
   - ufw allow OpenSSH || true
+
+  # Docker Swarm control/data plane ports
+  - ufw allow 2377/tcp    # swarm control plane
+  - ufw allow 7946/tcp    # container network discovery
+  - ufw allow 7946/udp
+  - ufw allow 4789/udp    # overlay networking (VXLAN)
 
   # Enable UFW non-interactively.
   - ufw --force enable
