@@ -26,6 +26,7 @@ def show(ctx):
         print(" " * 4, e)
     pass
 
+ 
     try:
         app = get_app(ctx)
 
@@ -39,6 +40,13 @@ def show(ctx):
                 pass
     except OperationalError as e:
         print("    Postgres: Not connected")
+
+
+    print("Config items:")
+    for key, value in sorted(config.to_dict().items()):
+        display_key = (key[:15]) if len(key) > 15 else key.ljust(15)
+        print(f"    {display_key}: {value}")
+
 
 
 @config.command()

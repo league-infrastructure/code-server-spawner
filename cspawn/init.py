@@ -119,6 +119,7 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
 
+
     app.bootstrap = Bootstrap5(app)
     app.font_awesome = FontAwesome(app)
 
@@ -139,6 +140,7 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
     try:
         setup_database(app)
         # Use dev-friendly session cookies when running in development to avoid CSRF mismatches
+
         setup_sessions(app, devel=(deployment == "devel"))
 
         app.csm = CodeServerManager(app)
@@ -153,7 +155,7 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
         raise e
 
     #setup_mongo(app)
-
+    
     @app.before_request
     def before_request():
         ensure_session()

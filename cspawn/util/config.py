@@ -157,8 +157,17 @@ def get_config(
             config.update(dotenv_values(f))
             loaded.append(f)
 
+            if '/config/config.env' in str(f):
+                config['CONFIG_DIR'] = str(f.parent)
+
+            if '/config/secrets/secret.env' in str(f):
+                config['SECRETS_DIR'] = str(f.parent)
+
+
     config.update(os.environ)
     config["__CONFIG_PATH"] = loaded
+
+    
 
     return Config(config)
 
