@@ -1,0 +1,64 @@
+#cloud-config
+package_update: true
+package_upgrade: false
+packages:
+  - docker.io
+  - ufw
+  - jq
+
+write_files:
+
+  - path: /usr/local/sbin/configure-ufw-swarm.sh
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      # Ensure UFW is installed
+      command -v ufw >/dev/null 2>&1 || { echo "UFW not installed"; exit 1; }
+
+      # Allow forwarding for Docker
+      sed -i 's/^DEFAULT_FORWARD_POLICY=.*/DEFAULT_FORWARD_POLICY="ACCEPT"/' /etc/default/ufw || true
+
+      # Enable UFW if not enabled
+      ufw status | grep -q 'Status: active' || ufw --force enable
+
+      # Baseline policy
+      ufw default deny incoming
+      ufw default allow outgoing
+
+      # Allow SSH
+      ufw allow 22/tcp
+
+      # Detect VPC iface (10.124.0.0/20) and public iface
+      VPC_IFACE=$(ip -o -4 addr show | awk '$4 ~ /10\.124\./ {print $2; exit 0}')
+      PUBLIC_IFACE=$(ip -o link show | awk -F': ' '$2 ~ /^e(th|np|ns)/ {print $2}' | head -n1)
+
+      # If VPC_IFACE is same as PUBLIC_IFACE, we still restrict by source CIDR
+      VPC_CIDR="10.124.0.0/20"
+
+      # Allow swarm dataplane ONLY from VPC on the VPC iface
+      ufw allow in on "${VPC_IFACE}" from ${VPC_CIDR} to any port 7946 proto tcp
+      ufw allow in on "${VPC_IFACE}" from ${VPC_CIDR} to any port 7946 proto udp
+      ufw allow in on "${VPC_IFACE}" from ${VPC_CIDR} to any port 4789 proto udp
+
+      # Explicitly deny these on the public interface (defense-in-depth)
+      if [[ -n "${PUBLIC_IFACE:-}" ]]; then
+        ufw deny in on "${PUBLIC_IFACE}" to any port 7946 proto tcp || true
+        ufw deny in on "${PUBLIC_IFACE}" to any port 7946 proto udp || true
+        ufw deny in on "${PUBLIC_IFACE}" to any port 4789 proto udp || true
+      fi
+
+      ufw reload
+      echo "UFW configured for Docker Swarm dataplane on ${VPC_IFACE} (${VPC_CIDR})"
+
+runcmd:
+  # Make sure Docker starts
+  - systemctl enable --now docker
+
+  # Configure firewall for swarm (workers do not need 2377)
+  - /usr/local/sbin/configure-ufw-swarm.sh
+
+  # (Optional) Join the swarm automatically. Fill these in if desired:
+  # - docker swarm leave || true
+  # - docker swarm join --token <WORKER_TOKEN> --advertise-addr $(ip -o -4 addr show | awk '$4 ~ /10\.124\./ {print $4}' | cut -d/ -f1 | head -n1) <MANAGER_10_124_IP>:2377

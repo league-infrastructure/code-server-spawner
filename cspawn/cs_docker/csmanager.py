@@ -357,7 +357,7 @@ def define_cs_container(
         "caddy.1_route.handle_path.reverse_proxy": "{{upstreams 6080}}",
         # General Reverse Proxy
         "caddy.2_route.handle": "/*",
-        "caddy.2_route.handle.reverse_proxy": "{{upstreams 80}}",
+        "caddy.2_route.handle.reverse_proxy": "{{upstreams 8080}}",
         f"caddy.basic_auth.{username}": hashed_pw,
     }
 
@@ -665,7 +665,7 @@ class CodeServerManager(ServicesManager):
         username = slugify(username)
 
         for service in self.list():
-            print("!!!!", service.username, username)
+       
             if service.username == username:
                 return service
         return None

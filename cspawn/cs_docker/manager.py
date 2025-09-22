@@ -229,7 +229,13 @@ class ServicesManager(DockerManager):
             
         else:
             node_host = self.hostname_f(node_name)
-            return ContainersManager(docker.DockerClient(base_url=f"ssh://root@{node_host}"))
+            base_url=f"ssh://root@{node_host}"
+            try:
+
+                return ContainersManager(docker.DockerClient(base_url=base_url))
+            except Exception as e:
+                logger.error(f"Failed to create Docker client for {node_name}, base_url: {base_url}, error: {e}")
+                return None
 
     @property
     def nodes(self):
@@ -324,13 +330,10 @@ class ServicesManager(DockerManager):
         except Exception:
             placement_constraints.append(f"node.role == worker")
 
-        try:
-            from docker.types import Placement
-            placement = Placement(constraints=placement_constraints)
-            kwargs["placement"] = placement
-        except Exception:
-            # Fall back to raw dict form accepted by docker-py
-            kwargs["placement"] = {"Constraints": placement_constraints}
+        # Option 2: pass constraints via convenience kwargs supported by docker SDK
+        kwargs.pop("placement", None)  # ensure no stray placement object leaks in
+        if placement_constraints:
+            kwargs["constraints"] = placement_constraints
 
         service = self.client.services.create(
             image=image,

@@ -718,8 +718,7 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
             if cloud_init_file:
                
                 cip = Path(config['CONFIG_DIR']) / 'cloud-init' / cloud_init_file
-                if not cip.is_absolute():
-                    cip = root / cloud_init_file
+
                 if cip.exists():
                     user_data = cip.read_text()
                     log.info(f"[expand] Including cloud-init user-data from {cip}")
@@ -744,12 +743,17 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
             user_data=user_data,
         )
         log.info(f"[expand] Creating droplet {fqdn} in {do_region} with size {do_size} and image {do_image}")
-        droplet.create()
+        try:
+            droplet.create()
+        except Exception as e:
+            log.error(f"[expand] Droplet creation failed for do token {do_token}: \n{e}")
+            raise
+
         try:
             droplet.load()
             log.info(f"[expand] Droplet created with id={getattr(droplet, 'id', None)} status={getattr(droplet, 'status', None)}")
-        except Exception:
-            pass
+        except Exception as e:
+            log.error(f"[expand] Droplet creation initiated but failed to load droplet info: {e}")
 
     # Wait active and get IP
     ip = _wait_for_droplet_active(mgr, droplet, log=log)
@@ -872,12 +876,29 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
         log.info("[expand] Node already part of a swarm; skipping join")
         return
 
+    # Determine worker VPC IP to use for advertise/data path
+    code_ip, out_ip, err_ip = _ssh_exec_retry(
+        ip,
+        "root",
+        priv_key_path,
+        "ip -o -4 addr show | awk '$4 ~ /10\\.124\\./ {print $4}' | cut -d/ -f1 | head -n1",
+        retries=6,
+        initial_delay=1.5,
+        log=log,
+    )
+    worker_vpc_ip = (out_ip or err_ip or "").strip() or ip
+
     # Get worker join token
     try:
         join_token = manager_client.swarm.attrs["JoinTokens"]["Worker"]
     except Exception:
         join_token = manager_client.api.inspect_swarm()["JoinTokens"]["Worker"]
-    join_cmd = f"docker swarm join --token {join_token} {manager_host}:2377"
+    # Include advertise-addr and data-path-addr for VPC dataplane
+    join_cmd = (
+        f"docker swarm join --token {join_token} "
+        f"--advertise-addr {worker_vpc_ip} --data-path-addr {worker_vpc_ip} "
+        f"{manager_host}:2377"
+    )
     log.info("[expand] Executing swarm join on droplet")
     code, out, err = _ssh_exec_retry(ip, "root", priv_key_path, join_cmd, retries=10, initial_delay=2.0, log=log)
     if code != 0:
@@ -886,7 +907,8 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
         if (out2 or err2 or "").strip().lower() == "active":
             log.info("[expand] Node appears to already be joined; continuing")
             return
-        raise click.ClickException(f"Failed to join swarm: {err or out}")
+        raise click.ClickException(f"Failed to join swarm on remote node: {err or out}")
+    
     log.info("[expand] Join command executed successfully on droplet")
     # Apply optional node label after join
     try:
@@ -1005,13 +1027,23 @@ def expand_info(ctx, show_all: bool):
     except Exception as e:
         raise click.ClickException(f"Failed to connect to docker manager at {docker_uri}: {e}")
 
-    # Swarm nodes
+    # Swarm nodes and roles
     swarm_nodes = []
+    swarm_roles: dict[str, str] = {}
+    swarm_leaders: set[str] = set()
     try:
         for n in client.nodes.list():
             name = n.attrs.get("Description", {}).get("Hostname", "")
-            if name:
-                swarm_nodes.append(name)
+            if not name:
+                continue
+            swarm_nodes.append(name)
+            short = name.split(".")[0]
+            role = (n.attrs.get("Spec", {}).get("Role") or "").lower()
+            is_leader = bool((n.attrs.get("ManagerStatus", {}) or {}).get("Leader"))
+            if role:
+                swarm_roles[short] = role
+            if is_leader:
+                swarm_leaders.add(short)
     except Exception:
         pass
     swarm_short = {n.split(".")[0]: n for n in swarm_nodes}
@@ -1032,6 +1064,7 @@ def expand_info(ctx, show_all: bool):
         project_id: str | None = None
         project_name: str | None = None
         tags: list[str] = field(default_factory=list)
+        is_manager: bool = False
 
         def status(self, pat: re.Pattern) -> str:
             if self.in_swarm and self.in_cloud:
@@ -1092,8 +1125,9 @@ def expand_info(ctx, show_all: bool):
             hi = hosts[short]
             hi.in_swarm = True
             hi.name = sname
+            hi.is_manager = (swarm_roles.get(short) == "manager")
         else:
-            hosts[short] = HostInfo(name=sname, short=short, in_swarm=True, in_cloud=False)
+            hosts[short] = HostInfo(name=sname, short=short, in_swarm=True, in_cloud=False, is_manager=(swarm_roles.get(short) == "manager"))
 
     # Template match regex
     pat = _regex_from_template(name_template)
@@ -1120,6 +1154,7 @@ def expand_info(ctx, show_all: bool):
             "IP": hi.ip or "",
             "In Swarm": "Yes" if hi.in_swarm else "No",
             "In Cloud": "Yes" if hi.in_cloud else "No",
+            "Manager": "Yes" if hi.is_manager else "No",
             "Status": stat,
             "Purgable": purg_s,
             "Project": hi.project_name or "-",
@@ -1498,6 +1533,7 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
 
     # Read DigitalOcean config
     do_token = cfg.get("DO_TOKEN")
+  
     do_size = cfg.get("DO_SIZE", "s-1vcpu-1gb")
     do_image = cfg.get("DO_IMAGE", "docker-20-04")
     do_region = cfg.get("DO_REGION") or cfg.get("DO_REGIOIN") or "sfo3"
@@ -1611,3 +1647,69 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
     except Exception:
         # Non-fatal
         pass
+
+
+@node.command(name="contract")
+@click.option("-N", "--dry-run", is_flag=True, help="Only print what would be done")
+@click.pass_context
+def contract_node(ctx, dry_run: bool):
+    """Shrink the cluster by removing the highest-numbered eligible node.
+
+    Eligibility: hostname matches DO_NAMES pattern and node is not the swarm leader (and not a manager).
+    """
+    log = get_logger(ctx)
+    cfg = get_config()
+
+    docker_uri = cfg.get("DOCKER_URI")
+    name_template = cfg.get("DO_NAMES")
+    if not (docker_uri and name_template):
+        raise click.ClickException("Missing DOCKER_URI or DO_NAMES in configuration")
+
+    # Connect to docker
+    try:
+        client = docker.DockerClient(base_url=docker_uri, use_ssh_client=True)
+    except Exception as e:
+        raise click.ClickException(f"Failed to connect to docker manager at {docker_uri}: {e}")
+
+    pat = _regex_from_template(name_template)
+
+    # Find highest-numbered non-leader worker node
+    selected = None  # tuple(serial:int, fqdn:str)
+    try:
+        for n in client.nodes.list():
+            attrs = n.attrs or {}
+            name = ((attrs.get("Description", {}) or {}).get("Hostname") or "").strip()
+            if not name:
+                continue
+            m = pat.match(name)
+            if not m:
+                continue
+            short = name.split(".")[0]
+            role = ((attrs.get("Spec", {}) or {}).get("Role") or "").lower()
+            is_leader = bool(((attrs.get("ManagerStatus", {}) or {}).get("Leader")) or False)
+            if is_leader:
+                continue
+            # Avoid contracting managers even if not leader
+            if role == "manager":
+                continue
+            try:
+                serial = int(m.group(1))
+            except Exception:
+                continue
+            if (selected is None) or (serial > selected[0]):
+                selected = (serial, name)
+    except Exception as e:
+        raise click.ClickException(f"Failed to list swarm nodes: {e}")
+
+    if not selected:
+        click.echo("No eligible node to contract.")
+        return
+
+    serial, fqdn = selected
+    if dry_run:
+        click.echo(f"Would contract by stopping node {fqdn} (serial={serial})")
+        return
+
+    log.info(f"[contract] Selected node {fqdn} (serial={serial}) for contraction")
+    # Reuse stop flow (non-force, not dry-run)
+    ctx.invoke(stop_node, force=False, dry_run=False, node_spec=fqdn)

@@ -180,6 +180,12 @@ class Service(ProcessBase):
                 )
                 continue
 
+            if n_manager is None:
+                logger.error(
+                    f"Node manager is None for node {node_name}, skipping container {t}"
+                )
+                continue
+
             cont: Container = n_manager.get(container_id)
            
             cont.node = node
