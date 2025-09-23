@@ -246,11 +246,25 @@ def _edit_class(class_id, return_page):
 
         # Validate form first before trying to save to model
         if form.validate_on_submit():
-            form.to_model(class_, current_user)
+            # Require a valid prototype selection
+            pid = form.proto_id.data
+            if pid in (None, 0, "0", ""):
+                form.proto_id.errors.append("Prototype is required.")
+                flash("Please select a Prototype.", "error")
+                return render_template("classes/edit.html", clazz=class_, form=form, **ctx)
+
+            # Guard against missing prototype usage when trying to backfill fields
+            try:
+                form.to_model(class_, current_user)
+            except Exception as e:
+                ca.logger.warning("Error mapping form to model: %s", e)
+                flash("Invalid input. Please fix highlighted fields.", "error")
+                return render_template("classes/edit.html", clazz=class_, form=form, **ctx)
 
             # Make sure required fields are set before committing
-            if not class_.name:
+            if not class_.name or not form.name.data:
                 form.name.errors.append("Name is required.")
+                flash("Name is required.", "error")
                 return render_template("classes/edit.html", clazz=class_, form=form, **ctx)
 
             db.session.add(class_)
@@ -267,7 +281,10 @@ def _edit_class(class_id, return_page):
 
                     return render_template("classes/edit.html", clazz=class_, form=form, **ctx)
                 else:
-                    raise
+                    # Unexpected DB error: present friendly message
+                    ca.logger.exception("Failed to save class")
+                    flash("Failed to save class due to a server error. Please try again.", "error")
+                    return render_template("classes/edit.html", clazz=class_, form=form, **ctx)
             if reload:
                 reload_form = ClassForm.from_model(class_)
                 reload_form.proto_id.choices = form.proto_id.choices
@@ -276,7 +293,10 @@ def _edit_class(class_id, return_page):
                 return redirect(url_for(return_page, class_id=class_.id))
         else:
             ca.logger.info("Form did not validate: %s", form.errors)
-            flash(f"Form errors: {','.join(form.errors)}", "error")
+            # Collect human-friendly errors
+            for field_name, errs in form.errors.items():
+                for err in errs:
+                    flash(f"{field_name}: {err}", "error")
 
     return render_template("classes/edit.html", clazz=class_, form=form, **ctx)
 

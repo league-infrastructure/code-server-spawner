@@ -95,7 +95,12 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
     # Initialize logger
    
     init_logger(app, log_level=log_level)
-    app_dir, db_dir = configure_app_dir(app)
+
+    try:
+        app_dir, db_dir = configure_app_dir(app)
+    except AttributeError as e:
+        app.logger.error(f"Error configuring app directory deployment {deployment}\nconfig_path: {config['__CONFIG_PATH']}\n {e}")
+        raise AttributeError(f"Error configuring app directory for deployment = {deployment}\nconfig_path: {config['__CONFIG_PATH']}\n {e}")
 
     app.logger.info(f"Starting app in {deployment} mode")
     app.logger.info('Logging initialized. level={log_level}')

@@ -58,10 +58,19 @@ class ClassForm(FlaskForm):
             if hasattr(model, field):
                 setattr(model, field, self._fields[field].data)
 
+        # If name/description missing, optionally fill from selected prototype when valid
         if not self.name.data or not self.description.data:
-            proto = ClassProto.query.get(self.proto_id.data)
-            model.name = model.name or proto.name
-            model.description = model.description or proto.desc
+            pid = self.proto_id.data
+            # Treat 0/"0"/empty as no selection
+            if pid in (None, 0, "0", ""):
+                pid = None
+            if pid is not None:
+                proto = ClassProto.query.get(pid)
+                if proto:
+                    if not self.name.data:
+                        model.name = proto.name
+                    if not self.description.data:
+                        model.description = proto.desc
 
         if not model.timezone:
             model.timezone = user.timezone
