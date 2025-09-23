@@ -49,9 +49,6 @@ logs:
 dbinfo:
 	docker compose -f $(DOCKER_STACK_FILE)   run --rm codeserv cspawnctl db info
 
-tunnel:
-	ssh   -R 5000:0.0.0.0:5000 -p 2222 tunnel@swarm1.dojtl.net -N
-
 
 # for development database
 dbshell:

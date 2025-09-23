@@ -20,6 +20,7 @@ def summary(ctx):
     - User activity rate (5-minute keystroke average)
     - Utilization averages (30m and 1m keystroke rates)
     - Abbreviated time since last stats, heartbeat, and utilization updates (1s, 2m, 3h, 4d)
+    - Additional status columns: Mod (modified_ago), Quiet (is_quiescent), MIA (is_mia), Purge (is_purgeable)
     """
     from tabulate import tabulate
     from cspawn.models import CodeHost
