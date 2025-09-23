@@ -317,7 +317,7 @@ def define_cs_container(
             "JTL_CLASS_ID": str(class_.id) if class_ else None,
             "JTL_VNC_URL": vnc_url,
             "JTL_PUBLIC_URL": public_url,
-            "JTL_SYLLABUS": syllabus,
+            "JTL_SYLLABUS": syllabus or '',
             "JTL_IMAGE_URI": image,
             "JTL_REPO": repo,
             "JTL_CODESERVER_URL": public_url,
@@ -328,6 +328,8 @@ def define_cs_container(
             "CS_DISABLE_GETTING_STARTED_OVERRIDE": "1",  # Disable the getting started page
             "GITHUB_TOKEN": config.GITHUB_TOKEN,  # For student access to their repo
         }
+
+        
     except (KeyError, AttributeError) as e:
         raise KeyError(f"Missing configuration key: {e}")
 

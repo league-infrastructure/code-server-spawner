@@ -12,39 +12,11 @@ from cspawn.init import cast_app
 ca = cast_app(current_app)
 
 
-@main_bp.route("/hosts")
-@login_required
-def hosts() -> str:
-    from cspawn.cs_docker.csmanager import CSMService
-
-    raise NotImplementedError("Maybe not used anymore")
-
-    ch = CodeHost.query.filter_by(user_id=current_user.id).first()  # extant code host
-
-    s: CSMService = ca.csm.get(ch.service_id) if ch else None
-
-    if s:
-        ch: CodeHost = s.sync_to_db(check_ready=True)  # update the host record
-
-    host_protos = ClassProto.query.all()
-
-    # If we have a code host, it is the only one shown on the list.
-    if ch:
-        for i, host_proto in enumerate(host_protos):
-            if host_proto.id == ch.proto_id:
-                host_protos = [host_proto]
-                break
-
-    return render_template("hosts/proto_host_list.html", host=ch, host_protos=host_protos)
-
-
-
-
-
 @main_bp.route("/host/<host_id>/stop", methods=["GET"])
 @login_required
 def stop_host(host_id) -> str:
     ca = cast_app(current_app)
+
 
     return_url = request.args.get("return_url", url_for("main.index"))
 
@@ -56,6 +28,10 @@ def stop_host(host_id) -> str:
         if not code_host or code_host.user_id != current_user.id:
             flash("Host not found", "danger")
             return redirect(url_for("main.index"))
+
+    if not code_host or code_host.user_id != current_user.id:
+        flash("You do not have permission to stop this host.", "danger")
+        return redirect(return_url)
 
     try:
         s = ca.csm.get(code_host.service_id)
@@ -85,7 +61,11 @@ def open_host(host_id) -> str:
 
     if not code_host:
         return jsonify({"success": False, "message": "Host record not found"})
-
+    
+    if not code_host or code_host.user_id != current_user.id:
+        return jsonify({"success": False, "message": "You do not have permission to access this host."})
+    
+    
     s = ca.csm.get(code_host)
 
     if not s:
