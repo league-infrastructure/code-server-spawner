@@ -55,4 +55,5 @@ this in the output table.
 # Docker contract
 
 Create a new cspawn node command , `cspawnctl node contract' that will find the
-node with the highest number, which cannot be the leader manager 
+node with the highest number and stop it. The node cannot be a swarm manager. 
+

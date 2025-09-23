@@ -62,13 +62,40 @@ def init_logger(app, log_level=None):
 
     elif is_running_under_gunicorn():
         gunicorn_logger = logging.getLogger("gunicorn.error")
-        app.logger.handlers = gunicorn_logger.handlers
-        app.logger.setLevel(gunicorn_logger.level)
-        app.logger.debug("Logger initialized for gunicorn")
+
+        # Configure Flask app logger
+        app.logger.handlers.clear()
+        for handler in gunicorn_logger.handlers:
+            app.logger.addHandler(handler)
+        app.logger.setLevel(logging.DEBUG)  # Ensure we capture all levels
+        app.logger.propagate = False  # Prevent duplicate logs
+        
+        # Configure Werkzeug logger for request logging
+        werkzeug_logger = logging.getLogger("werkzeug")
+        werkzeug_logger.handlers.clear()
+        for handler in gunicorn_logger.handlers:
+            werkzeug_logger.addHandler(handler)
+        werkzeug_logger.setLevel(logging.INFO)  # Show request logs
+        werkzeug_logger.propagate = False
+        
+        # Configure root cspawn logger to ensure all module logs are visible
+        cspawn_logger = logging.getLogger("cspawn")
+        cspawn_logger.handlers.clear()
+        for handler in gunicorn_logger.handlers:
+            cspawn_logger.addHandler(handler)
+        cspawn_logger.setLevel(logging.DEBUG)
+        cspawn_logger.propagate = False
+        
+        app.logger.info(f"Logger initialized for gunicorn with level {gunicorn_logger.level}")
 
     else:
-      
-        app.logger.setLevel(logging.INFO)
+        # Development/Flask mode
+        app.logger.setLevel(logging.DEBUG)
+        
+        # Ensure Werkzeug shows request logs in development too
+        werkzeug_logger = logging.getLogger("werkzeug")
+        werkzeug_logger.setLevel(logging.INFO)
+        
         app.logger.debug("Logger initialized for flask")
 
 
@@ -83,6 +110,16 @@ def configure_config_tree(config_dir: str | Path, deploy: str) -> Dict[str, Any]
 
     os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = config.get("OAUTHLIB_INSECURE_TRANSPORT", "")
 
+    # Set default DATABASE_URI if not configured
+    if "DATABASE_URI" not in config:
+        if deploy == "devel":
+            # Use SQLite for development if no database is configured
+            data_dir = config.get("DATA_DIR", "/tmp/app/dfg")
+            config["DATABASE_URI"] = f"sqlite:///{data_dir}/db/app.db"
+        else:
+            # For production, require explicit database configuration
+            raise ValueError("DATABASE_URI must be configured for production deployment")
+
     return config
 
 
@@ -91,15 +128,31 @@ def configure_app_dir(app):
 
     app.app_config.app_dir = app_dir = Path(app.app_config.APP_DIR)
 
-    if not app_dir.exists():
-        app_dir.mkdir(parents=True)
+    try:
+        if not app_dir.exists():
+            app_dir.mkdir(parents=True)
+    except OSError as e:
+        app.logger.warning(f"Cannot create app directory {app_dir}: {e}")
+        # Fall back to a writable temporary directory
+        import tempfile
+        app_dir = Path(tempfile.mkdtemp())
+        app.app_config.app_dir = app_dir
+        app.logger.info(f"Using fallback app directory: {app_dir}")
 
     app.app_config.data_dir = Path(app.app_config.DATA_DIR)
 
     app.app_config.db_dir = db_dir = app.app_config.data_dir / "db"
 
-    if not db_dir.exists():
-        db_dir.mkdir(parents=True)
+    try:
+        if not db_dir.exists():
+            db_dir.mkdir(parents=True)
+    except OSError as e:
+        app.logger.warning(f"Cannot create db directory {db_dir}: {e}")
+        # Fall back to a writable temporary directory
+        import tempfile
+        db_dir = Path(tempfile.mkdtemp())
+        app.app_config.db_dir = db_dir
+        app.logger.info(f"Using fallback db directory: {db_dir}")
 
     return app_dir, db_dir
 
