@@ -405,6 +405,11 @@ class CodeHost(db.Model):
         
         return self.app_state == HostState.MIA.value or self.state == HostState.MIA.value
 
+    @hybrid_property
+    def is_purgeable(self) -> bool:
+        """Is the host purgeable? True if it is MIA or quiescent."""
+        return self.is_mia or self.heart_beat_ago > 50 or self.modified_ago > 50 
+
     def update_from_ci(self, ci):
         self.service_name = ci["service_name"]
         self.container_id = ci["container_id"]

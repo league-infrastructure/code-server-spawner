@@ -27,8 +27,6 @@ from ..models import ClassProto, Class
 logger = logging.getLogger("cspawn.docker")  # noqa: F811
 
 
-
-    
 class CSMService(Service):
     """
     A service class for managing Code Server instances.
@@ -291,7 +289,6 @@ def define_cs_container(
         #vnc_url = public_url_no_auth + "vnc/?scale=true"
         vnc_url = public_url_no_auth + "proxy/6080/vnc_lite.html?path=proxy/6080/websockify&scale=true"
         ports = None
-        
     else:
         # Running in development mode
 
@@ -299,14 +296,12 @@ def define_cs_container(
         public_url_no_auth = f"http://{hostname}/"
 
         vnc_hostname = hostname_template.format(username=container_name, port=available_ports[1])
-        vnc_url = f"http://{vnc_hostname}/?scale=true"
+        vnc_url = f"http://{vnc_hostname}/vnc_lite.html?scale=true"
 
         internal_port = config.CODESERVER_PORT
         internal_vnc_port = 6080
         ports = [f"{available_ports[0]}:{internal_port}", f"{available_ports[1]}:{internal_vnc_port}"]
-
        
-    
     try:
         
         _env_vars = {

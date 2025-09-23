@@ -137,6 +137,15 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
 
     app.config["SQLALCHEMY_DATABASE_URI"] = app.app_config["DATABASE_URI"]
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    
+    # Configure connection pooling for multi-worker environment
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_size": 5,  # Number of connections to maintain in pool
+        "pool_timeout": 20,  # Timeout for getting connection from pool
+        "pool_recycle": 3600,  # Recycle connections after 1 hour
+        "max_overflow": 10,  # Additional connections beyond pool_size
+        "pool_pre_ping": True,  # Validate connections before use
+    }
 
     app.db = db
     app.db.init_app(app)
@@ -149,14 +158,19 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
         setup_sessions(app, devel=(deployment == "devel"))
 
         app.csm = CodeServerManager(app)
+        
+        app.logger.info(f"Application initialized successfully in {deployment} mode")
 
     except (OperationalError, ProgrammingError) as e:
-        app.logger.error(f"Database error: {e}")
-        app.logger.error("Error configuraing databse; No Database.")
+        app.logger.error(f"Database error during initialization: {e}")
+        app.logger.error("Error configuring database; No Database available.")
 
         if is_running_under_gunicorn():
             app.logger.critical("Fatal error: running under gunicorn without a database.")
             raise e
+        raise e
+    except Exception as e:
+        app.logger.error(f"Unexpected error during app initialization: {e}")
         raise e
 
     #setup_mongo(app)
@@ -170,9 +184,18 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
 
     @app.teardown_appcontext
     def close_db(exception):
-        db = g.pop("db", None)
-        if db is not None:
-            db.close()
+        # Properly clean up database connections after each request
+        try:
+            app.db.session.remove()
+        except Exception as e:
+            app.logger.warning(f"Error during database cleanup: {e}")
+        
+        db_ref = g.pop("db", None)
+        if db_ref is not None:
+            try:
+                db_ref.close()
+            except Exception as e:
+                app.logger.warning(f"Error closing database reference: {e}")
 
     @login_manager.user_loader
     def load_user(user_id):
@@ -180,13 +203,16 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
 
         return User.query.get(user_id)
 
-    def handle_shutdown(*args):
-        print("Shutting down gracefully...")
-        db.session.remove()
-        db.engine.dispose()
-        sys.exit(0)
+    # Only set up signal handlers when not running under Gunicorn
+    # Gunicorn handles worker lifecycle management itself
+    if not is_running_under_gunicorn():
+        def handle_shutdown(*args):
+            print("Shutting down gracefully...")
+            db.session.remove()
+            db.engine.dispose()
+            sys.exit(0)
 
-    signal.signal(signal.SIGTERM, handle_shutdown)
+        signal.signal(signal.SIGTERM, handle_shutdown)
 
     # Register the filter with Flask or Jinja2
     app.jinja_env.filters["human_time"] = human_time_format

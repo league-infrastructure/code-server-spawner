@@ -1,0 +1,62 @@
+configs:
+  caddy-basic-content:
+    file: ./Caddyfile
+    labels:
+      caddy:
+      
+services:
+  caddy:
+    image: lucaslorentz/caddy-docker-proxy:ci-alpine
+    ports:
+      - 80:80
+      - 443:443
+    environment:
+      - CADDY_INGRESS_NETWORKS=caddy
+    networks:
+      - caddy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - caddy_data:/data
+      - caddy_config:/config
+
+    deploy:
+      replicas:  1
+      placement:
+        constraints:
+           - node.labels.ingress == true 
+      labels:
+        caddy.email: eric.busboom@jointheleague.org
+
+  whoami:
+    image: traefik/whoami
+    networks:
+      - caddy
+    deploy:
+      labels:
+        caddy: whoami.lvh.me
+        caddy.tls: internal
+        caddy.reverse_proxy: "{{upstreams 80}}"
+
+  hello:
+    image: traefik/whoami
+    networks:
+      - caddy
+    deploy:
+      labels:
+        caddy: hello.lvh.me
+        caddy.tls: internal
+        caddy.reverse_proxy: "{{upstreams 80}}"
+    ports:
+      - 8000:8000
+
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}
+
+# For swarm, need to create this network with:
+# docker network create --driver overlay --attachable caddy
+  
+networks:
+  caddy:
+    external: true

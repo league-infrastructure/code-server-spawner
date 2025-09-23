@@ -32,7 +32,7 @@ status:
 	@docker stack ps $(STACK) || true
 
 logs:
-	@docker service logs $(STACK)_codeserver
+	@docker service logs -f $(STACK)_codeserver
 
 
 
@@ -58,4 +58,4 @@ shell:
 	fi; \
 	echo "Using container $$cid"; \
 	docker exec -it $$cid /bin/bash
-	
+
