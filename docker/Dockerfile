@@ -68,9 +68,9 @@ COPY docker/supervisord.conf /app/supervisord.conf
 COPY config/gunicorn_config.py /app/config/gunicorn_config.py
 
 COPY config/config.env /app/config/config.env
-COPY config/docker.env /app/config/docker.env
+COPY config/prod.env /app/config/prod.env
 COPY config/secrets/secret.env /app/config/secrets/secret.env
-COPY config/secrets/docker.env /app/config/secrets/docker.env
+COPY config/secrets/prod.env /app/config/secrets/prod.env
 
 COPY data /app/data
 
