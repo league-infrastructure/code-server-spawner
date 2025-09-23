@@ -3,11 +3,15 @@
 STACK ?= codeserver
 FILE  ?= docker-stack.yaml
 
-.PHONY: build up down networks status logs redeploy
+.PHONY: build up down networks status logs redeploy debug
 
 # Build images referenced by the stack using Compose (Stack ignores build)
 build:
 	@docker compose -f $(FILE) build codeserver
+
+build-clean:
+	@docker compose -f $(FILE) build codeserver --no-cache
+
 
 # Create required overlay networks (idempotent)
 networks:
@@ -30,4 +34,28 @@ status:
 logs:
 	@docker service logs $(STACK)_codeserver
 
+
+
+
 redeploy: build up
+
+# Debug inside the first running container built from image 'codeserver:latest'
+debug:
+	@cid=$$(docker ps -q --filter ancestor=codeserver:latest --filter status=running | head -n 1); \
+	if [ -z "$$cid" ]; then \
+		echo "No running container found for image 'codeserver:latest'."; \
+		exit 1; \
+	fi; \
+	echo "Using container $$cid"; \
+	docker exec -it $$cid supervisorctl stop gunicorn; \
+	docker exec -it $$cid flask -A cspawn.app:app  run --debug --without-threads -h 0.0.0.0 -p 8000 
+
+shell:
+	@cid=$$(docker ps -q --filter ancestor=codeserver:latest --filter status=running | head -n 1); \
+	if [ -z "$$cid" ]; then \
+		echo "No running container found for image 'codeserver:latest'."; \
+		exit 1; \
+	fi; \
+	echo "Using container $$cid"; \
+	docker exec -it $$cid /bin/bash
+	
