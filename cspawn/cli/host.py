@@ -3,6 +3,7 @@ from bson import Code
 import click
 from typing import cast
 
+
 from cspawn.models import CodeHost
 from cspawn.init import cast_app
 
@@ -28,27 +29,46 @@ def ls(ctx):
     app = cast_app(get_app(ctx))
 
     with app.app_context():
-        rows = []
+        table_data = []
         for s in app.csm.list():
             s.sync_to_db()
             ch: CodeHost = CodeHost.query.filter_by(service_name=s.name).first()
             if not ch:
                 logger.warning(f"CodeHost not found for {s.name}")
                 continue
-            rows.append(
-                {
-                    "service": ch.service_name,
-                    "state": ch.state,
-                    "app state": ch.app_state,
-                    "node": ch.node_name,
-                    "act rate": round(ch.user_activity_rate, 3),
-                    "last act": ch.modified_ago,
-                    "last heart": ch.heart_beat_ago,
-                    "quiet": ch.is_quiescent
-                }
-            )
+            
+            table_data.append([
+                ch.service_name or 'N/A',
+                ch.state or 'N/A',
+                ch.app_state or 'N/A',
+                ch.node_name or 'N/A',
+                round(ch.user_activity_rate, 3) if ch.user_activity_rate is not None else None,
+                ch.modified_ago,
+                ch.heart_beat_ago,
+                '✓' if ch.is_quiescent else '',
+                '✓' if ch.is_mia else '',
+                '✓' if ch.is_purgeable else ''
+            ])
 
-    print(tabulate(rows, headers="keys"))
+        # Define headers
+        headers = [
+            'Service',
+            'State',
+            'App State',
+            'Node',
+            'Act Rate',
+            'Last Act',
+            'Last Heart',
+            'Quiet',
+            'MIA',
+            'Purgeable'
+        ]
+
+        if table_data:
+            print(f"\nCode Hosts ({len(table_data)} hosts):")
+            print(tabulate(table_data, headers=headers, tablefmt='grid'))
+        else:
+            print("No code hosts found.")
 
 
 @host.command()
@@ -141,8 +161,8 @@ def find(ctx, query):
 
 @host.command()
 @click.pass_context
-@click.option("--purge", is_flag=True, help="Delete all probe records.")
-def purge(ctx, purge):
+@click.option("-N", "--dry-run", is_flag=True, help="Show what would be done, without making any changes.")
+def reap(ctx, dry_run: bool):
     """Delete all mia hosts"""
     app = get_app(ctx)
 
@@ -159,25 +179,17 @@ def purge(ctx, purge):
                     app.db.session.delete(ch)
                     print(f"; Deleted {ch.service_name}")
 
-        if purge:
+        if not dry_run:
             app.db.session.commit()
 
 
-@host.command()
-@click.pass_context
-def sync(ctx):
-    """Sync the database with the docker Code Hosts. Same as `cspawn db sync`."""
-    app = get_app(ctx)
-    with app.app_context():
-        app.csm.sync(check_ready=True)
 
 
 @host.command()
 @click.option("-N", "--dry-run", is_flag=True, help="Show what would be done, without making any changes.")
-
 @click.pass_context
-def reap(ctx, dry_run: bool):
-    """Remove containers that are MIA or are quiescent."""
+def purge(ctx, dry_run: bool):
+    """Remove containers that are purgable."""
     from datetime import datetime, timezone
 
     app = get_app(ctx)
@@ -192,19 +204,23 @@ def reap(ctx, dry_run: bool):
                 s = app.csm.get(ch)
                 print(ch.service_name + ": ", end=" ")
 
-                if ch.is_mia:
-                    reason = f"MIA"
-                if ch.is_quiescent:
-                    reason = "Quiescent"
-
                 if not dry_run:
                     if s:
                         s.stop()
                     app.db.session.delete(ch)
-                    print(f"{reason}; Stopped and deleted {ch.service_name}")
+                    print(f"Stopped and deleted:   {ch.service_name}")
                 else:
      
-                    print(f"{reason}; Would stop and delete {ch.service_name}")
+                    print(f"Would stop and delete: {ch.service_name}")
 
         if not dry_run:
             app.db.session.commit()
+
+@host.command()
+@click.pass_context
+def sync(ctx):
+    """Sync the database with the docker Code Hosts. Same as `cspawn db sync`."""
+    app = get_app(ctx)
+    with app.app_context():
+        app.csm.sync(check_ready=True)
+
