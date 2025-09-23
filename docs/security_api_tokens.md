@@ -8,3 +8,8 @@ The API token for the Digital Ocean API is generated for the user
 has a limited number of permissions it can have, so when you create a 
 new API token for the League Bot, you just select all 
 of the permissions available. 
+
+## Github 
+
+API access is managed with the GITHUB_TOKEN token. 
+

@@ -57,3 +57,27 @@ this in the output table.
 Create a new cspawn node command , `cspawnctl node contract' that will find the
 node with the highest number and stop it. The node cannot be a swarm manager. 
 
+
+# Sync Storage 
+
+Create a new cli command `cspawnctl host sync <username>` that will sync the
+user storage between the code host and the storage buckets. 
+
+The command will find the service for <username> and via the docker api, 
+execute on the service: 
+
+rclone sync "$WORKSPACE_FOLDER" \
+  :s3,provider=Other,env_auth=false,access_key_id=$STORAGE_ACCESS_KEY,secret_access_key=$STORAGE_SECRET,endpoint=$STORAGE_ENDPOINT:\
+  /users/$JTL_USERNAME/$WORKSPACE_FOLDER \
+  --progress
+
+
+These value will br provided in the command environment from the config: 
+
+- $STORAGE_ENDPOINT
+- $STORAGE_ACCESS_KEY
+- $STORAGE_SECRET
+
+The remainder are already in the container environment
+
+

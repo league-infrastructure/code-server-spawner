@@ -218,9 +218,26 @@ def purge(ctx, dry_run: bool):
 
 @host.command()
 @click.pass_context
-def sync(ctx):
-    """Sync the database with the docker Code Hosts. Same as `cspawn db sync`."""
+def dbsync(ctx):
+    """Sync the database with the docker Code Hosts. Same as `cspawnctl db sync`."""
     app = get_app(ctx)
     with app.app_context():
         app.csm.sync(check_ready=True)
+
+
+@host.command()
+@click.argument("username")
+@click.option("-n", "--dry-run", is_flag=True, help="Show what would be done, without making any changes.")
+@click.pass_context
+def sync(ctx, username: str, dry_run: bool):
+    """Sync user storage between the code host and storage buckets."""
+    app = get_app(ctx)
+    from cspawn.util.host_s3_sync import HostS3Sync
+    with app.app_context():
+        syncer = HostS3Sync(app)
+        try:
+            syncer.sync_host(username, dry_run=dry_run)
+        except Exception as e:
+            print(f"Sync failed: {e}")
+
 
