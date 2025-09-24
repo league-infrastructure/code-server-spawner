@@ -365,6 +365,17 @@ class CodeHost(db.Model):
     data = Column(Text, nullable=True)
     labels = Column(Text, nullable=True)
 
+    @hybrid_property
+    def host_uuid(self) -> str:
+        """Return the host UUID."""
+      
+        try:
+            import json
+            l = json.loads(self.labels)
+            return l.get("jtl.codeserver.host_uuid") if l else None
+        except (TypeError, ValueError):
+            return "<unknown>"
+
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
         DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc), nullable=False
