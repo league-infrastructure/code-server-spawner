@@ -15,6 +15,7 @@ import paramiko
 import pytz
 import requests
 from slugify import slugify
+import uuid
 
 from cspawn.cs_docker.manager import ServicesManager, logger
 from cspawn.cs_docker.proc import Service, Container
@@ -302,6 +303,9 @@ def define_cs_container(
         internal_vnc_port = 6080
         ports = [f"{available_ports[0]}:{internal_port}", f"{available_ports[1]}:{internal_vnc_port}"]
        
+
+    host_uuid = str(uuid.uuid4())
+
     try:
         
         _env_vars = {
@@ -316,6 +320,8 @@ def define_cs_container(
             "JTL_IMAGE_URI": image,
             "JTL_REPO": repo,
             "JTL_CODESERVER_URL": public_url,
+            "JTL_HOST_UUID": host_uuid,
+            "JTL_SPAWNER_URL": config.INTERNAL_CODESERVER_URL,
             "KST_REPORTING_URL": config.KST_REPORTING_URL,
             "KST_REPORT_DIR": config.KST_REPORT_DIR,
             "KST_CONTAINER_ID": name,
@@ -337,6 +343,7 @@ def define_cs_container(
         "jtl.codeserver.password": password,
         "jtl.codeserver.public_url": public_url,
         "jtl.codeserver.class_id": str(class_.id) if class_ else None,
+        "jtl.codeserver.host_uuid": host_uuid,
         "jtl.codeserver.start_time": datetime.now(pytz.timezone("America/Los_Angeles")).isoformat(),
         "caddy": hostname,
         # WebSocket Handling
@@ -418,6 +425,7 @@ class CodeServerManager(ServicesManager):
 
     def get_unused_port(self, n=1, extra_ports=[]):
         import random
+
         """Find an unused port in the range 25000-30000."""
 
         if n == 1:
@@ -555,6 +563,8 @@ class CodeServerManager(ServicesManager):
         logger.debug("Committing model")
         ch: CodeHost = s.to_model(no_container=True)
         ch.proto_id = proto.id
+
+
 
         db.session.add(ch)
         db.session.commit()

@@ -13,6 +13,7 @@
     <p><strong>Service ID:</strong> {{ service.id }}</p>
     <p><strong>First Container Name:</strong> {{ service.attrs['Spec']['TaskTemplate']['ContainerSpec']['Image'] }}</p>
     <p><strong>First Container ID:</strong> {{ service.attrs['ID'] }}</p>
+    <p><strong>Host UUID:</strong> {{ code_host.host_uuid }} </p>
     <p><strong>Public URL:</strong> <a href="{{ code_host.public_url }}" target="_blank">{{ code_host.public_url }}</a>
     </p>
     <p><strong>Repo:</strong> <a href="{{ code_host.class_proto.repo_uri }}" target="_blank">{{

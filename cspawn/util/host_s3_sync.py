@@ -1,8 +1,7 @@
 class HostS3Sync:
     def __init__(self, app):
         self.app = app
-        from cspawn.cli.util import get_config
-        config = get_config()
+        config = app.app_config
         self.storage_endpoint = config.get('STORAGE_ENDPOINT')
         self.storage_access_key = config.get('STORAGE_ACCESS_KEY')
         self.storage_secret = config.get('STORAGE_SECRET')
@@ -28,10 +27,8 @@ class HostS3Sync:
         print(f"Using container {container.id[:12]} on node {container.node_name()}")
         cmd = (
             'rclone sync "$WORKSPACE_FOLDER" '
-            '":s3,provider=DigitalOcean,env_auth=false,'
-            'access_key_id=$STORAGE_ACCESS_KEY,secret_access_key=$STORAGE_SECRET,'
+            '":s3,provider=DigitalOcean,env_auth=true,'
             'endpoint=\'$STORAGE_ENDPOINT\':$STORAGE_BUCKET/class_$JTL_CLASS_ID/$JTL_USERNAME$WORKSPACE_FOLDER"'
-
         )
 
 
@@ -45,8 +42,8 @@ class HostS3Sync:
             environment={
                 'STORAGE_BUCKET': self.storage_bucket,
                 'STORAGE_ENDPOINT': self.storage_endpoint,
-                'STORAGE_ACCESS_KEY': self.storage_access_key,
-                'STORAGE_SECRET': self.storage_secret
+                'AWS_ACCESS_KEY_ID': self.storage_access_key,
+                'AWS_SECRET_ACCESS_KEY': self.storage_secret
             },
             stream=True,
             demux=True
@@ -64,18 +61,25 @@ class HostS3Sync:
         Check if the given username has any files in the S3 store under /class_$classid/$username/workspace.
         Returns True if any files exist, False otherwise.
         """
-        import subprocess
-        s3_path = f":s3,provider=DigitalOcean,env_auth=false,access_key_id={self.storage_access_key},secret_access_key={self.storage_secret},endpoint='{self.storage_endpoint}':{self.storage_bucket}/class_{class_id}/{username}/workspace"
-        # Use rclone ls to list files in the path
-        cmd = [
-            "rclone", "ls", s3_path
-        ]
+        import minio
+        from minio.error import S3Error
+
+       
+        # Initialize MinIO client
+        minio_client = minio.Minio(
+            self.storage_endpoint.replace('http://', '').replace('https://', ''),
+            access_key=self.storage_access_key,
+            secret_key=self.storage_secret,
+            secure=True if self.storage_endpoint.startswith('https://') else False
+        )
+
+        # Check if the user has any files in the specified S3 path
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            # If any output, files exist
-            if result.stdout.strip():
-                return True
-            return False
-        except Exception as e:
-            print(f"Error checking sync for user {username}, class {class_id}: {e}")
+            objects = minio_client.list_objects(self.storage_bucket, f'class_{class_id}/{username}/workspace', recursive=True)
+            for obj in objects:
+                return True  # Files exist
+            return False  # No files found
+
+        except S3Error as e:
+            print(f"Error occurred: {e}")
             return False

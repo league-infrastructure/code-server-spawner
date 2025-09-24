@@ -6,8 +6,9 @@ from flask_login import current_user, login_required
 
 from cspawn.cs_docker.csmanager import CSMService
 from cspawn.main import main_bp
-from cspawn.models import CodeHost, ClassProto, db
+from cspawn.models import CodeHost, ClassProto, db, User
 from cspawn.init import cast_app
+from cspawn.util.host_s3_sync import HostS3Sync
 
 ca = cast_app(current_app)
 
@@ -115,3 +116,46 @@ def open_codehost(chost_id: str) -> str:
         return redirect(url_for("hosts.index"))
 
     return render_template("hosts/open_codehost.html", public_url=ch.public_url)
+
+
+@main_bp.route("/host/<username>/<classid>/synced", methods=["GET"])
+def has_synced_data(username, classid):
+
+    ca = cast_app(current_app)
+    syncer = HostS3Sync(ca)
+
+    if  syncer.has_sync(username, classid):
+        return "true", 200
+    return "false", 200
+
+
+
+
+# Called from the code host to request a user data sync
+@main_bp.route("/host/<username>/sync", methods=["POST", "GET"])
+def sync_host_route(username):
+
+    ca = cast_app(current_app)
+    from cspawn.util.host_s3_sync import HostS3Sync
+
+    syncer = HostS3Sync(ca)
+    host_uuid = request.args.get("host_uuid")
+
+    user: User = User.query.filter_by(username=username).first()
+
+
+    if not user:
+        return jsonify({"status": "error", "message": "User not found " + username}), 404
+
+    code_host: CodeHost = CodeHost.query.filter_by(user_id=user.id).first()
+
+    if not code_host:
+        return jsonify({"status": "error", "message": "Host not found " + host_uuid}), 404
+
+    try:
+        syncer.sync_host(username)
+        return jsonify({"status": "success", "message": f"Host {username} synced."}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
