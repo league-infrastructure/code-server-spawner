@@ -23,20 +23,16 @@ class HostS3Sync:
 
     def sync_host(self, username, dry_run=False):
         service, container = self.get_service_and_container(username)
-        print(f"Found service {service.name} for username {username}")
-        print(f"Using container {container.id[:12]} on node {container.node_name()}")
-        cmd = (
-            'rclone sync "$WORKSPACE_FOLDER" '
-            '":s3,provider=DigitalOcean,env_auth=true,'
-            'endpoint=\'$STORAGE_ENDPOINT\':$STORAGE_BUCKET/class_$JTL_CLASS_ID/$JTL_USERNAME$WORKSPACE_FOLDER"'
-        )
+
+        args = ':s3,provider=DigitalOcean,env_auth=true,endpoint=\'$STORAGE_ENDPOINT\''
+        remote_path = f'{args}:$STORAGE_BUCKET/class_$JTL_CLASS_ID/$JTL_USERNAME$WORKSPACE_FOLDER'
+        cmd = f'rclone sync "$WORKSPACE_FOLDER" "{remote_path}"'
 
 
         if dry_run:
             print(f"Would execute on container {container.id[:12]}: {cmd}")
             return
-        print(f"Executing sync command on container {container.id[:12]}")
-        print(f"Command: {cmd}")
+
         result = container.o.exec_run(
             cmd=['sh', '-c', cmd],
             environment={
@@ -54,7 +50,6 @@ class HostS3Sync:
                     print(stdout.decode().strip())
                 if stderr:
                     print(f"ERROR: {stderr.decode().strip()}")
-        print(f"Sync completed with exit code: {result.exit_code}")
 
     def has_sync(self, username, class_id):
         """
