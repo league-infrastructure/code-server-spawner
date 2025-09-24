@@ -15,7 +15,7 @@ from .devel import devel  # noqa: W0611
 from .github import github  # noqa: W0611
 
 
-logger = logging.getLogger("cspawnctl")
+logger = logging.getLogger("cspawn.cli")
 
 if __name__ == "__main__":
     cli(ctx=None, v=None, config_file=None)  # noqa: E1120
