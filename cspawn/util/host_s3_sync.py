@@ -30,15 +30,15 @@ class HostS3Sync:
         return service, containers[0]
     
 
-    def _run_rclone_op(self, username, cmd, dry_run=False):
+    def _run_rclone_op(self, username, op_type, direction, dry_run=False):
+        """
+        Run /app/bin/rclone.sh with copy|sync in|out
+        """
         service, container = self.get_service_and_container(username)
-     
-    
+        cmd = f'/app/bin/rclone.sh {op_type} {direction}'
         if dry_run:
             print(f"Would execute on container {container.id[:12]}: {cmd}")
             return
-
-     
         result = container.o.exec_run(
             cmd=['sh', '-c', cmd],
             environment={
@@ -61,20 +61,20 @@ class HostS3Sync:
                         print(f"ERROR: {msg}")
 
     def sync_to_remote(self, username, dry_run=False):
-        cmd = f'{self.prog_args} sync {self.local_path} "{self.args}:{self.remote_path}"'
-        self.__class__._run_rclone_op(self, username, cmd, dry_run)
+        # sync out: local -> remote
+        self._run_rclone_op(username, 'sync', 'out', dry_run)
 
     def sync_to_local(self, username, dry_run=False):
-        cmd = f'{self.prog_args} sync "{self.args}:{self.remote_path}" {self.local_path} '
-        self.__class__._run_rclone_op(self, username, cmd, dry_run)
+        # sync in: remote -> local
+        self._run_rclone_op(username, 'sync', 'in', dry_run)
 
     def copy_to_local(self, username, dry_run=False):
-        cmd = f'{self.prog_args} copy "{self.args}:{self.remote_path}" {self.local_path}'
-        self.__class__._run_rclone_op(self, username, cmd, dry_run)
+        # copy in: remote -> local
+        self._run_rclone_op(username, 'copy', 'in', dry_run)
 
     def copy_to_remote(self, username, dry_run=False):
-        cmd = f'{self.prog_args} copy {self.local_path} "{self.args}:{self.remote_path}"'
-        self.__class__._run_rclone_op(self, username, cmd, dry_run)
+        # copy out: local -> remote
+        self._run_rclone_op(username, 'copy', 'out', dry_run)
 
     def has_sync(self, username, class_id):
         """

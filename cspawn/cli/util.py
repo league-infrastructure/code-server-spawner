@@ -11,7 +11,7 @@ from cspawn.models import CodeHost, ClassProto, User, db
 from cspawn.util.app_support import configure_config_tree
 from cspawn.util.config import find_parent_dir
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('cspawn.cli')
 
 
 def create_demo_users(app):

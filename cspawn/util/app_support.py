@@ -53,52 +53,6 @@ def get_payload(request) -> dict:
     return payload
 
 
-def init_logger(app, log_level=None):
-    """Initialize the logger for the app, either production or debug"""
-
-    if log_level is not None:
-        app.logger.setLevel(log_level)
-        app.logger.debug("Logger initialized for debug")
-
-    elif is_running_under_gunicorn():
-        gunicorn_logger = logging.getLogger("gunicorn.error")
-
-        # Configure Flask app logger
-        app.logger.handlers.clear()
-        for handler in gunicorn_logger.handlers:
-            app.logger.addHandler(handler)
-        app.logger.setLevel(logging.DEBUG)  # Ensure we capture all levels
-        app.logger.propagate = False  # Prevent duplicate logs
-        
-        # Configure Werkzeug logger for request logging
-        werkzeug_logger = logging.getLogger("werkzeug")
-        werkzeug_logger.handlers.clear()
-        for handler in gunicorn_logger.handlers:
-            werkzeug_logger.addHandler(handler)
-        werkzeug_logger.setLevel(logging.INFO)  # Show request logs
-        werkzeug_logger.propagate = False
-        
-        # Configure root cspawn logger to ensure all module logs are visible
-        cspawn_logger = logging.getLogger("cspawn")
-        cspawn_logger.handlers.clear()
-        for handler in gunicorn_logger.handlers:
-            cspawn_logger.addHandler(handler)
-        cspawn_logger.setLevel(logging.DEBUG)
-        cspawn_logger.propagate = False
-        
-        app.logger.info(f"Logger initialized for gunicorn with level {gunicorn_logger.level}")
-
-    else:
-        # Development/Flask mode
-        app.logger.setLevel(logging.DEBUG)
-        
-        # Ensure Werkzeug shows request logs in development too
-        werkzeug_logger = logging.getLogger("werkzeug")
-        werkzeug_logger.setLevel(logging.INFO)
-        
-        app.logger.debug("Logger initialized for flask")
-
-
 def configure_config_tree(config_dir: str | Path, deploy: str) -> Dict[str, Any]:
     # Determine if we're running in production or development
 
@@ -254,6 +208,7 @@ def setup_database(app):
         except Exception as e:
             app.logger.error(f"Error applying migrations: {e}")
             raise
+
 
         # Create root user if not present
         try:

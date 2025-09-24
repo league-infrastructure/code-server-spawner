@@ -21,9 +21,9 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from cspawn.__version__ import __version__ as version
 from cspawn.cs_docker.csmanager import CodeServerManager
 from cspawn.util.app_support import (configure_app_dir, configure_config_tree,
-                                     human_time_format, init_logger,
-                                     is_running_under_gunicorn, setup_database,
+                                     human_time_format, is_running_under_gunicorn, setup_database,
                                      setup_sessions)
+from cspawn.util.logging import init_logger
 
 
 
@@ -103,7 +103,8 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
         raise AttributeError(f"Error configuring app directory for deployment = {deployment}\nconfig_path: {config['__CONFIG_PATH']}\n {e}")
 
     app.logger.info(f"Starting app in {deployment} mode")
-    app.logger.info('Logging initialized. level={log_level}')
+   
+
     app.logger.debug(f"App dir: {app_dir} DB dir: {db_dir}. CONFIGS: {app.app_config['__CONFIG_PATH']}")
 
     # Blueprints
@@ -147,11 +148,16 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
         "pool_pre_ping": True,  # Validate connections before use
     }
 
+
     app.db = db
+    
     app.db.init_app(app)
+
     app.migrate = Migrate(app, db)
+    
 
     try:
+
         setup_database(app)
         # Use dev-friendly session cookies when running in development to avoid CSRF mismatches
 
@@ -172,6 +178,8 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
     except Exception as e:
         app.logger.error(f"Unexpected error during app initialization: {e}")
         raise e
+    
+    
 
     #setup_mongo(app)
     
@@ -216,5 +224,7 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
 
     # Register the filter with Flask or Jinja2
     app.jinja_env.filters["human_time"] = human_time_format
+
+    app.logger.info("Application setup complete.")
 
     return app
