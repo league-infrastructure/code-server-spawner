@@ -1,3 +1,4 @@
+
 class HostS3Sync:
     def __init__(self, app):
         self.app = app
@@ -7,10 +8,17 @@ class HostS3Sync:
         self.storage_secret = config.get('STORAGE_SECRET')
         self.storage_bucket = config.get('STORAGE_BUCKET', 'jtl-codeserve-users')
 
+        self.prog_args = 'rclone --log-level ERROR'
+        self.local_path = '"$WORKSPACE_FOLDER"'
+        self.remote_path =  '$STORAGE_BUCKET/class_$JTL_CLASS_ID/$JTL_USERNAME$WORKSPACE_FOLDER'
+     
+        self.args = ':s3,provider=DigitalOcean,env_auth=true,endpoint=\'$STORAGE_ENDPOINT\''
+        
         self.user_subdir = 'users'
 
         if not all([self.storage_endpoint, self.storage_access_key, self.storage_secret, self.storage_bucket]):
             raise ValueError("Missing storage configuration. Required: STORAGE_ENDPOINT, STORAGE_ACCESS_KEY, STORAGE_SECRET, STORAGE_BUCKET")
+
 
     def get_service_and_container(self, username):
         service = self.app.csm.get_by_username(username)
@@ -20,19 +28,17 @@ class HostS3Sync:
         if not containers:
             raise ValueError(f"No containers found for service {service.name}")
         return service, containers[0]
+    
 
-    def sync_host(self, username, dry_run=False):
+    def _run_rclone_op(self, username, cmd, dry_run=False):
         service, container = self.get_service_and_container(username)
-
-        args = ':s3,provider=DigitalOcean,env_auth=true,endpoint=\'$STORAGE_ENDPOINT\''
-        remote_path = f'{args}:$STORAGE_BUCKET/class_$JTL_CLASS_ID/$JTL_USERNAME$WORKSPACE_FOLDER'
-        cmd = f'rclone sync "$WORKSPACE_FOLDER" "{remote_path}"'
-
-
+     
+    
         if dry_run:
             print(f"Would execute on container {container.id[:12]}: {cmd}")
             return
 
+     
         result = container.o.exec_run(
             cmd=['sh', '-c', cmd],
             environment={
@@ -41,6 +47,7 @@ class HostS3Sync:
                 'AWS_ACCESS_KEY_ID': self.storage_access_key,
                 'AWS_SECRET_ACCESS_KEY': self.storage_secret
             },
+            user='vscode',
             stream=True,
             demux=True
         )
@@ -49,7 +56,25 @@ class HostS3Sync:
                 if stdout:
                     print(stdout.decode().strip())
                 if stderr:
-                    print(f"ERROR: {stderr.decode().strip()}")
+                    msg = stderr.decode().strip()
+                    if "Response has no supported checksum." not in msg:
+                        print(f"ERROR: {msg}")
+
+    def sync_to_remote(self, username, dry_run=False):
+        cmd = f'{self.prog_args} sync {self.local_path} "{self.args}:{self.remote_path}"'
+        self.__class__._run_rclone_op(self, username, cmd, dry_run)
+
+    def sync_to_local(self, username, dry_run=False):
+        cmd = f'{self.prog_args} sync "{self.args}:{self.remote_path}" {self.local_path} '
+        self.__class__._run_rclone_op(self, username, cmd, dry_run)
+
+    def copy_to_local(self, username, dry_run=False):
+        cmd = f'{self.prog_args} copy "{self.args}:{self.remote_path}" {self.local_path}'
+        self.__class__._run_rclone_op(self, username, cmd, dry_run)
+
+    def copy_to_remote(self, username, dry_run=False):
+        cmd = f'{self.prog_args} copy {self.local_path} "{self.args}:{self.remote_path}"'
+        self.__class__._run_rclone_op(self, username, cmd, dry_run)
 
     def has_sync(self, username, class_id):
         """

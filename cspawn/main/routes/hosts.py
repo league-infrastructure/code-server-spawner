@@ -10,6 +10,7 @@ from cspawn.models import CodeHost, ClassProto, db, User
 from cspawn.init import cast_app
 from cspawn.util.host_s3_sync import HostS3Sync
 
+
 ca = cast_app(current_app)
 
 
@@ -128,33 +129,54 @@ def has_synced_data(username, classid):
         return "true", 200
     return "false", 200
 
+ 
 
+class SyncError(Exception):
+    pass
 
-
-# Called from the code host to request a user data sync
-@main_bp.route("/host/<username>/sync", methods=["POST", "GET"])
-def sync_host_route(username):
+def _sync(username, host_uuid=None):
 
     ca = cast_app(current_app)
-    from cspawn.util.host_s3_sync import HostS3Sync
-
+   
     syncer = HostS3Sync(ca)
     host_uuid = request.args.get("host_uuid")
 
     user: User = User.query.filter_by(username=username).first()
 
-
     if not user:
-        return jsonify({"status": "error", "message": "User not found " + username}), 404
+        raise SyncError("User not found " + username)
 
     code_host: CodeHost = CodeHost.query.filter_by(user_id=user.id).first()
 
     if not code_host:
-        return jsonify({"status": "error", "message": "Host not found " + host_uuid}), 404
+        raise SyncError("Host not found " + host_uuid)
+
+    if code_host.host_uuid != host_uuid:
+        raise SyncError("Permission denied")
+
+    return syncer
+
+   
+# Called from the code host to request a user data sync
+@main_bp.route("/host/<username>/sync_in", methods=["POST", "GET"])
+def sync_in(username):
+
+   
+    try:
+        syncer = _sync(username)
+        syncer.sync_to_local(username)
+        return jsonify({"status": "success", "message": f"Host {username} synced to local."}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# Called from the code host to request a user data sync
+@main_bp.route("/host/<username>/sync_out", methods=["POST", "GET"])
+def sync_out_host_route(username):
 
     try:
-        syncer.sync_host(username)
-        return jsonify({"status": "success", "message": f"Host {username} synced."}), 200
+        syncer = _sync(username)
+        syncer.sync_to_remote(username)
+        return jsonify({"status": "success", "message": f"Host {username} synced to remote."}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
