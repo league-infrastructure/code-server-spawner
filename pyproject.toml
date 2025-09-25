@@ -40,6 +40,7 @@ dependencies = [
     "flask-pymongo>=3.0.1",
     "python-digitalocean>=1.17.0",
     "minio>=7.2.16",
+    "pygithub>=2.8.1",
 ]
 
 [tool.uv]
