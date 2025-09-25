@@ -81,3 +81,16 @@ These value will br provided in the command environment from the config:
 The remainder are already in the container environment
 
 
+# Git Push and Pull 
+
+In cspawn.cs_github, add  to GitHubOrg a .get_repo(upstream_url, username)  --
+same as fork -- that will return the same StudentRepo as .fork(), but assuming
+it is already created. Note that the upstream_url is the upstream to the student
+repo, not the student repo. 
+
+Probably should make StudentRepo a regular class, then add to it .push() and
+.pull(). These command will work like cspawn.util.host_s3_sync: they will  ssh
+into a container and run the commands. 
+
+`config/devel.env` that the required config vars. See cspawn/cs_github/repo.py for
+related code that may give you ideas. 

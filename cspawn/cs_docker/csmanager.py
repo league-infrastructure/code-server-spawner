@@ -1,29 +1,30 @@
 import json
 import logging
 import os
+import socket
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
-
-
-import socket
 from xml.sax import handler
-import docker
-from docker import DockerClient
+
 import paramiko
 import pytz
 import requests
 from slugify import slugify
-import uuid
 
+import docker
 from cspawn.cs_docker.manager import ServicesManager, logger
-from cspawn.cs_docker.proc import Service, Container
-from cspawn.models import CodeHost, User, HostState, db
+from cspawn.cs_docker.proc import Container, Service
+from cspawn.cs_github.repo import GithubOrg
+from cspawn.models import CodeHost, HostState, User, db
 from cspawn.util.auth import basic_auth_hash, random_string
 from cspawn.util.exceptions import DockerException
+from docker import DockerClient
+from cspawn.cs_github.repo import StudentRepo
 
-from ..models import ClassProto, Class
+from ..models import Class, ClassProto
 
 logger = logging.getLogger("cspawn.docker")  # noqa: F811
 
@@ -234,7 +235,7 @@ def define_cs_container(
     class_,
     image,
     hostname_template,
-    repo=None,
+    repo: StudentRepo = None,
     syllabus=None,
     env_vars=None,
     port=None,
@@ -270,7 +271,7 @@ def define_cs_container(
 
     
     if repo:
-        clone_dir = os.path.basename(repo)
+        clone_dir = repo.upstream_name
         if clone_dir.endswith(".git"):
             clone_dir = clone_dir[:-4]
         workspace_folder = f"/workspace/{clone_dir}"
@@ -318,7 +319,8 @@ def define_cs_container(
             "JTL_PUBLIC_URL": public_url,
             "JTL_SYLLABUS": syllabus or '',
             "JTL_IMAGE_URI": image,
-            "JTL_REPO": repo,
+            "JTL_REPO": repo.html_url if repo else '',
+            "JTL_UPSTREAM_REPO": repo.upstream_url if repo else '',
             "JTL_CODESERVER_URL": public_url,
             "JTL_HOST_UUID": host_uuid,
             "JTL_SPAWNER_URL": config.INTERNAL_CODESERVER_URL,
@@ -398,6 +400,7 @@ class CodeServerManager(ServicesManager):
         """
 
         self.config = app.app_config
+        self.app = app
 
         # Save this for convenience. You'd think that we could get this later from the 
         # client ( self.client.api.base_url), but the docker client constructor will
@@ -514,13 +517,17 @@ class CodeServerManager(ServicesManager):
 
         assert isinstance(proto, ClassProto)
 
+
+        gorg = GithubOrg.new_org(self.app)
+        student_repo = gorg.fork(proto.repo_uri, username)
+
         container_def = define_cs_container(
             config=self.config,
             username=username,
             class_=class_,
             image=proto.image_uri,
             hostname_template=self.config.HOSTNAME_TEMPLATE,
-            repo=proto.repo_uri,
+            repo=student_repo,
             syllabus=proto.syllabus_path,
             available_ports=self.get_unused_port(2),
         )
