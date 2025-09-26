@@ -37,7 +37,9 @@ def login():
 
     # Normal login
     if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data).first()
+        # Normalize username for consistent lookup
+        normalized_username = User.clean_username(form.username.data)
+        user = User.query.filter_by(username=normalized_username).first()
         login_user(user)
         return redirect(url_for("main.index"))
 
@@ -48,7 +50,9 @@ def login():
     class_ = Class.query.filter_by(class_code=class_code).first()
 
     if class_ and class_.can_register:
-        user = User.query.filter_by(username=username).first()
+        # Normalize username for consistent lookup
+        normalized_username = User.clean_username(username)
+        user = User.query.filter_by(username=normalized_username).first()
         if user:
             flash("Username is taken", "danger")
             return render_template("login.html", form=form, **_context())
