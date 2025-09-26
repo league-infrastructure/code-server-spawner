@@ -11,7 +11,7 @@ def github():
     """GitHub operations (fork/remove repos in student org)."""
     pass
 
-
+@click.pass_context # REQUIRED TO PASS IN CTX ARG DO NOT REMOVE
 def get_class_from_classid(ctx, class_id):
     if class_id is None:
         return None

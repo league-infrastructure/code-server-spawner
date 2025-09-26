@@ -1,4 +1,4 @@
-from __future__ import annotations
+from cspawn.models import CodeHost
 
 import os
 import re
@@ -9,6 +9,126 @@ from github import Github
 
 if TYPE_CHECKING:
     from cspawn.init import App
+
+class CodeHostRepo:
+    def __init__(self, codehost: CodeHost, app: "App"):
+        self.codehost = codehost
+        self.app = app
+        self.username = codehost.user.username if codehost.user else None
+        self.service_name = codehost.service_name
+        self.container_id = codehost.container_id
+        self.container_name = codehost.container_name
+        self.class_proto = codehost.class_proto
+        self.class_ = codehost.class_
+        self.node_id = codehost.node_id
+        self.node_name = codehost.node_name
+        # Add more fields as needed
+
+    @classmethod
+    def new_codehostrepo(cls, app, username):
+        with app.app_context():
+            ch = CodeHost.query.filter_by(service_name=username).first()
+            if not ch:
+                ch = CodeHost.query.join("user").filter_by(username=username).first()
+            if not ch:
+                raise ValueError(f"No CodeHost found for username: {username}")
+            return cls(ch, app)
+
+    def _get_service_container(self) -> "App":
+        # Use app.csm to get the container object
+        service = self.app.csm.get(self.service_name)
+        
+        containers = list(service.containers)
+        if not containers:
+            raise ValueError(f"No containers found for service {self.service_name}")
+        return service, containers[0]
+
+    def _git_environment(self):
+        # Only GITHUB_TOKEN is needed from config/env
+        token = None
+        if self.app and hasattr(self.app, "app_config"):
+            token = self.app.app_config.get("GITHUB_TOKEN")
+        if not token:
+            token = os.getenv("GITHUB_TOKEN")
+        if not token:
+            raise ValueError("GITHUB_TOKEN is not configured for git operations")
+        return {"GITHUB_TOKEN": token}
+
+    def push(self, branch: str = "master") -> int:
+        """Push local changes from the codehost's container to GitHub."""
+
+        service, container = self._get_service_container()
+        env = self._git_environment()
+   
+        repo = service.env['JTL_REPO']
+
+        owner, repo_name = _parse_repo(repo)
+        remote = f"https://x-access-token:{env['GITHUB_TOKEN']}@github.com/{owner}/{repo_name}.git"
+
+     
+        refspec = f" {branch}" if branch else ""
+
+        cmd = f'cd "$WORKSPACE_FOLDER" && git commit -a -m"Automated commit" || true && git push "{remote}"{refspec}'
+        self.app.logger.info(f"Executing git push for {self.username}: {cmd}")
+     
+        result = container.o.exec_run(
+            cmd=["sh", "-c", cmd],
+            environment=env,
+            user="vscode",
+            stream=True,
+            demux=True,
+        )
+        if result.output:
+            for stdout, stderr in result.output:
+                if stdout:
+                    print(stdout.decode().rstrip())
+                if stderr:
+                    msg = stderr.decode().rstrip()
+                    if msg:
+                        print(f"ERROR: {msg}")
+        exit_code = getattr(result, "exit_code", None)
+        if exit_code is None:
+            exit_code = 0
+        if exit_code != 0:
+            raise RuntimeError(f"git push failed with exit code {exit_code}")
+        
+        return exit_code
+
+    def pull(self, branch: str = "master", rebase: bool = True, dry_run: bool = False) -> int:
+        """Pull changes from GitHub into the codehost's container."""
+        remote = f"https://x-access-token:${{GITHUB_TOKEN}}@github.com/{self.service_name}.git"
+        rebase_flag = " --rebase" if rebase else ""
+        refspec = f" {branch}" if branch else ""
+        cmd = f'cd "$WORKSPACE_FOLDER" && git pull{rebase_flag} "{remote}"{refspec}'
+
+        container = self._get_container()
+        env = self._git_environment()
+
+        if dry_run:
+            print(f"Would execute on container {container.id[:12]}: {cmd}")
+            return 0
+        result = container.o.exec_run(
+            cmd=["sh", "-c", cmd],
+            environment=env,
+            user="vscode",
+            stream=True,
+            demux=True,
+        )
+        if result.output:
+            for stdout, stderr in result.output:
+                if stdout:
+                    print(stdout.decode().rstrip())
+                if stderr:
+                    msg = stderr.decode().rstrip()
+                    if msg:
+                        print(f"ERROR: {msg}")
+        exit_code = getattr(result, "exit_code", None)
+        if exit_code is None:
+            exit_code = 0
+        if exit_code != 0:
+            raise RuntimeError(f"git pull failed with exit code {exit_code}")
+        return exit_code
+
 
 
 def _parse_repo(url: str) -> tuple[str, str]:
@@ -193,7 +313,7 @@ class StudentRepo:
 class GithubOrg:
 
     @staticmethod
-    def new_org(app: "App") -> GithubOrg:
+    def new_org(app: "App") -> "GithubOrg":
         cfg  = app.app_config
 
         org = cfg.get("GITHUB_ORG")
@@ -247,7 +367,8 @@ class GithubOrg:
 
         # Create a fork under the org
         upstream_repo = self.gh.get_repo(f"{owner}/{name}")
-        forked_repo = upstream_repo.create_fork(organization=self.org)
+        # Create a shallow fork with only the last commit (default_branch_only=True)
+        forked_repo = upstream_repo.create_fork(organization=self.org, default_branch_only=True)
 
         # Wait for fork to be ready
         self._wait_repo_ready(self.org, name)

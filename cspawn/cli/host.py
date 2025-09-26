@@ -1,8 +1,8 @@
-import time
+
 from bson import Code
 import click
 from typing import cast
-
+import time
 
 from cspawn.models import CodeHost
 from cspawn.init import cast_app
@@ -239,5 +239,43 @@ def sync(ctx, username: str, dry_run: bool):
             syncer.sync_host(username, dry_run=dry_run)
         except Exception as e:
             print(f"Sync failed: {e}")
+
+
+@host.command()
+@click.argument("username")
+@click.option("--branch", default=None, help="Branch to push.")
+@click.pass_context
+def push(ctx, username, branch):
+    """Push local changes from the user's code host to GitHub."""
+    app = get_app(ctx)
+    from cspawn.cs_github.repo import CodeHostRepo
+    with app.app_context():
+        try:
+            ch_repo = CodeHostRepo.new_codehostrepo(app, username)
+            ch_repo.push(branch=branch)
+            print(f"Push completed for {username} on branch {branch}")
+        except Exception as e:
+            raise
+
+
+@host.command()
+@click.argument("username")
+@click.option("--repo", "repo_url", help="Upstream repo URL or owner/name")
+@click.option("--class", "class_id", type=int, help="Class ID to use its prototype repo")
+@click.option("--branch", default="master", help="Branch to pull.")
+@click.option("--rebase/--no-rebase", default=True, help="Use git pull --rebase.")
+@click.option("-n", "--dry-run", is_flag=True, help="Show what would be done, without making any changes.")
+@click.pass_context
+def pull(ctx, username, repo_url, class_id, branch, rebase, dry_run):
+    """Pull changes from GitHub into the user's code host."""
+    app = get_app(ctx)
+    from cspawn.cs_github.repo import CodeHostRepo
+    with app.app_context():
+        try:
+            ch_repo = CodeHostRepo.new_codehostrepo(app, username)
+            ch_repo.pull(branch=branch, rebase=rebase, dry_run=dry_run)
+            print(f"Pull completed for {username} on branch {branch}")
+        except Exception as e:
+            print(f"Pull failed: {e}")
 
 
