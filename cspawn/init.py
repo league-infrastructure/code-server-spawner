@@ -153,14 +153,13 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
     
     app.db.init_app(app)
 
-    app.migrate = Migrate(app, db)
-    
+
 
     try:
 
         setup_database(app)
         # Use dev-friendly session cookies when running in development to avoid CSRF mismatches
-
+      
         setup_sessions(app, devel=(deployment == "devel"))
 
         app.csm = CodeServerManager(app)

@@ -40,14 +40,13 @@ redeploy: build up
 # Debug inside the first running container built from image 'codeserver:latest'
 debug:
 	@cid=$$(docker ps -q --filter ancestor=codeserver:latest --filter status=running | head -n 1); \
-	if [ -z "$$cid" ]; then echo "No running container found for image 'codeserver:latest'."; exit 1; fi; \
-	echo "Using container $$cid"; \
 	docker exec -it $$cid supervisorctl stop gunicorn; \
 	docker exec -it $$cid flask -A cspawn.app:app  run --debug --without-threads -h 0.0.0.0 -p 8000 
 
 shell:
 	@cid=$$(docker ps -q --filter ancestor=codeserver:latest --filter status=running | head -n 1); \
-	if [ -z "$$cid" ]; then echo "No running container found for image 'codeserver:latest'."; exit 1; fi; \
-	echo "Using container $$cid"; \
 	docker exec -it $$cid /bin/bash
 
+migrate:
+	@cid=$$(docker ps -q --filter ancestor=codeserver:latest --filter status=running | head -n 1); \
+	docker exec -it $$cid flask -A cspawn.app:app db migrate

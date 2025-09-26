@@ -1,0 +1,5 @@
+
+# Disable host key checking and known hosts file only for .dojtl.net hosts (INSECURE for those hosts)
+Host *.dojtl.net
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null

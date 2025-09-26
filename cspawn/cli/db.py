@@ -85,19 +85,41 @@ def sync(ctx):
         app.csm.sync(check_ready=True)
 
 
+
 @db.command()
 @click.option("-d", "--demo", is_flag=True, help="Load demo data after recreating the database.")
 @click.option("-p", "--allow-production", is_flag=True, help="Allow running this command in production.")
+@click.option("--sessions-only", is_flag=True, help="Only drop and recreate the session tables.")
 @click.pass_context
-def recreate(ctx, demo, allow_production):
-    """Destroy and recreate all database tables."""
+def recreate(ctx, demo, allow_production, sessions_only):
+    """Destroy and recreate all database tables, or just the session tables if --sessions-only is set."""
     app = get_app(ctx)
+
+    def drop_and_create_sessions():
+        db = app.db
+        engine = db.engine
+        meta = MetaData()
+        meta.reflect(bind=engine)
+        session_tables = [t for t in meta.sorted_tables if t.name == "sessions"]
+        if not session_tables:
+            print("No session table found.")
+            return
+        for table in session_tables:
+            print(f"Dropping table: {table.name}")
+            table.drop(engine, checkfirst=True)
+            print(f"Creating table: {table.name}")
+            table.create(engine, checkfirst=True)
+        print("Session tables dropped and recreated.")
 
     with app.app_context():
         print("Postgres: ", str(app.db.engine.url))
 
         if not allow_production:
             test_not_production(app)
+
+        if sessions_only:
+            drop_and_create_sessions()
+            return
 
         drop_db(app)
         print("Database tables destroyed successfully.")

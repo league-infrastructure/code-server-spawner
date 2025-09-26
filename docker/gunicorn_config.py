@@ -9,14 +9,11 @@ def post_fork(server, worker):
     
     # Import here to avoid circular imports
     try:
-        from flask import current_app
+        from cspawn.app import app  # Import your Flask app instance
         from cspawn.models import db
-        
-        # Create new database connections for this worker
-        # This disposes connections inherited from the parent process
-        db.engine.dispose()
+        with app.app_context():
+            db.engine.dispose()
         server.log.info(f"Worker {worker.pid}: Database connections reset")
-        
     except Exception as e:
         server.log.error(f"Worker {worker.pid}: Error resetting database connections: {e}")
 
