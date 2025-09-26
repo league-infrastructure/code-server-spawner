@@ -232,7 +232,7 @@ class ServicesManager(DockerManager):
             base_url=f"ssh://root@{node_host}"
             try:
 
-                return ContainersManager(docker.DockerClient(base_url=base_url))
+                return ContainersManager(docker.DockerClient(base_url=base_url, use_ssh_client=True))
             except Exception as e:
                 logger.error(f"Failed to create Docker client for {node_name}, base_url: {base_url}, error: {e}")
                 return None
