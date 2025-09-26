@@ -1,3 +1,4 @@
+
 # syntax=docker/dockerfile:1
 
 ARG PYTHON_VERSION=3.11
@@ -64,8 +65,12 @@ RUN mkdir -p /app/config/secrets
 COPY requirements.txt /app/requirements.txt
 COPY pyproject.toml /app/pyproject.toml
 COPY migrations /app/migrations
+
 COPY docker/supervisord.conf /app/supervisord.conf
-COPY config/gunicorn_config.py /app/config/gunicorn_config.py
+COPY docker/gunicorn_config.py /app/config/gunicorn_config.py
+COPY docker/ssh-config /etc/ssh/ssh_config.d/dojtl.conf
+RUN chmod 644 /etc/ssh/ssh_config.d/dojtl.conf
+
 
 COPY config/config.env /app/config/config.env
 COPY config/prod.env /app/config/prod.env
@@ -82,11 +87,10 @@ RUN chmod 700 /root/.ssh
 COPY config/secrets/id_rsa /root/.ssh/id_rsa
 COPY config/secrets/id_rsa.pub /root/.ssh/id_rsa.pub
 RUN cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
-COPY config/known_hosts /root/.ssh/known_hosts
 
 RUN chmod 600 ~/.ssh/id_rsa                                                                       
 RUN chmod 644 ~/.ssh/id_rsa.pub                                                                                                                              
-RUN chmod 644 ~/.ssh/known_hosts
+
 
 # Expose the port that the application listens on.
 EXPOSE 8000
@@ -95,3 +99,5 @@ ENTRYPOINT ["/usr/bin/tini", "--"]
 
 # Run the application.
 CMD ["/usr/bin/supervisord", "-c", "/app/supervisord.conf"]
+
+

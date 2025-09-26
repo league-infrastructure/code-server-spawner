@@ -199,16 +199,8 @@ def setup_database(app):
             app.logger.error(f"Error creating tables: {e}")
             raise
 
-        # Apply Alembic migrations to create/update schema
-        try:
-            from flask_migrate import upgrade
 
-            app.logger.info("Applying database migrations (flask db upgrade)")
-            upgrade()
-        except Exception as e:
-            app.logger.error(f"Error applying migrations: {e}")
-            raise
-
+        
 
         # Create root user if not present
         try:
