@@ -9,7 +9,7 @@ from cspawn.main import main_bp
 from cspawn.models import CodeHost, ClassProto, db, User
 from cspawn.init import cast_app
 from cspawn.util.host_s3_sync import HostS3Sync
-
+from cspawn.cs_github.repo import CodeHostRepo
 
 ca = cast_app(current_app)
 
@@ -119,65 +119,44 @@ def open_codehost(chost_id: str) -> str:
     return render_template("hosts/open_codehost.html", public_url=ch.public_url)
 
 
-@main_bp.route("/host/<username>/<classid>/synced", methods=["GET"])
-def has_synced_data(username, classid):
 
-    ca = cast_app(current_app)
-    syncer = HostS3Sync(ca)
 
-    if  syncer.has_sync(username, classid):
-        return "true", 200
-    return "false", 200
-
- 
-
-class SyncError(Exception):
+class PullError(Exception):
     pass
 
-def _sync(username, host_uuid=None):
-
+def _get_codehost(username, host_uuid=None):
     ca = cast_app(current_app)
-   
-    syncer = HostS3Sync(ca)
-    host_uuid = request.args.get("host_uuid")
+    host_uuid = request.args.get("host_uuid") if host_uuid is None else host_uuid
 
     user: User = User.query.filter_by(username=username).first()
-
     if not user:
-        raise SyncError("User not found " + username)
+        raise PullError("User not found " + username)
 
     code_host: CodeHost = CodeHost.query.filter_by(user_id=user.id).first()
-
     if not code_host:
-        raise SyncError("Host not found " + host_uuid)
+        raise PullError("Host not found " + str(host_uuid))
 
     if code_host.host_uuid != host_uuid:
-        raise SyncError("Permission denied")
+        raise PullError("Permission denied")
 
-    return syncer
+    return code_host
 
-   
-# Called from the code host to request a user data sync
-@main_bp.route("/host/<username>/sync_in", methods=["POST", "GET"])
-def sync_in(username):
-
-   
+@main_bp.route("/host/<username>/push", methods=["POST", "GET"])
+def pull_from_host(username):
+    """
+    Pull changes from GitHub into the user's code host.
+    Requires host_uuid as a query parameter for security.
+    Optional: branch, rebase, dry_run as query parameters.
+    """
     try:
-        syncer = _sync(username)
-        syncer.sync_to_local(username)
-        return jsonify({"status": "success", "message": f"Host {username} synced to local."}), 200
+        code_host = _get_codehost(username)
+        app = cast_app(current_app)
+        branch = request.args.get("branch", "master")
+        rebase = request.args.get("rebase", "true").lower() == "true"
+        dry_run = request.args.get("dry_run", "false").lower() == "true"
+
+        ch_repo = CodeHostRepo.new_codehostrepo(app, username)
+        ch_repo.push(branch=None)
+        return jsonify({"status": "success", "message": "pushed"}, 200)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
-# Called from the code host to request a user data sync
-@main_bp.route("/host/<username>/sync_out", methods=["POST", "GET"])
-def sync_out_host_route(username):
-
-    try:
-        syncer = _sync(username)
-        syncer.sync_to_remote(username)
-        return jsonify({"status": "success", "message": f"Host {username} synced to remote."}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-

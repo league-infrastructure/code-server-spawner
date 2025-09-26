@@ -1,6 +1,6 @@
 from paramiko.ssh_exception import NoValidConnectionsError
 import logging
-from typing import Any
+from typing import Any, List, Generator
 from docker.client import DockerClient
 from docker.models.containers import Container as DockerContainer
 from docker.models.services import Service as DockerService
@@ -44,6 +44,12 @@ class ProcessBase:
     def attrs(self) -> dict:
         """Return all attributes of the process."""
         return self._object.attrs
+
+    @property
+    def env(self) -> dict:
+        """Return the environment variables of the process."""
+        return self._object.attrs.keys()
+        return self._object.attrs['Spec']['TaskTemplate']['ContainerSpec']['Env']
 
     @property
     def name(self):
@@ -145,7 +151,7 @@ class Service(ProcessBase):
             return {}
 
     @property
-    def containers(self):
+    def containers(self) -> Generator[Container, None, None]:
         """Return the containers associated with the service."""
 
         for t in self.container_tasks:
