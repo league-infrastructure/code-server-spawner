@@ -45,6 +45,16 @@
     </div>
   </div>
 </nav>
+{% if session.get('impersonator_id') %}
+<div class="alert alert-warning text-center mb-0">
+  <strong>Impersonating:</strong>
+  {{ current_user.display_name or current_user.username or current_user.email }}
+  <form method="post" action="{{ url_for('admin.stop_impersonating') }}" class="d-inline ms-2">
+    <button type="submit" class="btn btn-sm btn-warning">Return to {{ session.get('impersonator_name', 'admin account')
+      }}</button>
+  </form>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block subnavbar %}{% endblock %}

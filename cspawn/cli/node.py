@@ -948,8 +948,19 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
 
 
 def _regex_from_template(name_template: str) -> re.Pattern:
-    pat = re.escape(name_template).replace(re.escape("{serial}"), r"(\d+)")
-    return re.compile(rf"^{pat}$")
+    if "{serial}" not in name_template:
+        raise ValueError("name_template must contain '{serial}' placeholder")
+
+    prefix, suffix = name_template.split("{serial}", 1)
+    prefix_re = re.escape(prefix)
+    suffix_re = re.escape(suffix)
+
+    if suffix and suffix.startswith('.'):
+        suffix_pattern = rf"(?:{suffix_re})?"
+    else:
+        suffix_pattern = suffix_re
+
+    return re.compile(rf"^{prefix_re}(\d+){suffix_pattern}$")
 
 
 def _list_droplets_by_tag_or_project(token: str, project_id: str | None, do_tag: str | None, log=None) -> list[dict]:
@@ -1677,27 +1688,35 @@ def contract_node(ctx, dry_run: bool):
     selected = None  # tuple(serial:int, fqdn:str)
     try:
         for n in client.nodes.list():
+
             attrs = n.attrs or {}
             name = ((attrs.get("Description", {}) or {}).get("Hostname") or "").strip()
+            log.debug(f"[contract] Examining node: {name}")
             if not name:
+                log.debug(f"[contract] Skipping empty node name")
                 continue
             m = pat.match(name)
             if not m:
+                log.debug(f"[contract] Skipping node name `{name}` not matching pattern {pat}")
                 continue
             short = name.split(".")[0]
             role = ((attrs.get("Spec", {}) or {}).get("Role") or "").lower()
             is_leader = bool(((attrs.get("ManagerStatus", {}) or {}).get("Leader")) or False)
             if is_leader:
+                log.debug(f"[contract] Skipping leader node: {name}")
                 continue
             # Avoid contracting managers even if not leader
             if role == "manager":
+                log.debug(f"[contract] Skipping manager node: {name}")
                 continue
             try:
                 serial = int(m.group(1))
-            except Exception:
+            except Exception as e:
+                log.debug(f"[contract] Failed to parse serial from node name {name}: {e}")
                 continue
             if (selected is None) or (serial > selected[0]):
                 selected = (serial, name)
+
     except Exception as e:
         raise click.ClickException(f"Failed to list swarm nodes: {e}")
 

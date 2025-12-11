@@ -17,6 +17,7 @@
                 <th>Student</th>
                 <th>Instructor</th>
                 <th>Avatar</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -35,6 +36,16 @@
                     <img src="{{ user.avatar_url }}" alt="Avatar" class="rounded-circle" width="30" height="30">
                     {% else %}
                     N/A
+                    {% endif %}
+                </td>
+                <td>
+                    {% if current_user.id == user.id %}
+                    <span class="text-muted">Current user</span>
+                    {% else %}
+                    <form method="post" action="{{ url_for('admin.impersonate_user', user_id=user.id) }}"
+                        class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-outline-primary">Become</button>
+                    </form>
                     {% endif %}
                 </td>
             </tr>

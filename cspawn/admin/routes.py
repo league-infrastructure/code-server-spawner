@@ -3,8 +3,8 @@ from datetime import datetime
 from functools import wraps
 from operator import is_
 
-from flask import current_app, flash, redirect, render_template, request, url_for
-from flask_login import current_user
+from flask import current_app, flash, redirect, render_template, request, session, url_for
+from flask_login import current_user, login_required, login_user, logout_user
 
 from cspawn.init import cast_app
 from cspawn.models import Class, CodeHost, ClassProto, User, db
@@ -235,6 +235,53 @@ def list_users():
     users = User.query.all()
     current_year = datetime.now().year
     return render_template("admin/users.html", users=users, current_year=current_year)
+
+
+@admin_bp.route("/users/<int:user_id>/impersonate", methods=["POST"])
+@admin_required
+def impersonate_user(user_id: int):
+    if current_user.id == user_id:
+        flash("You're already signed in as that user.", "info")
+        return redirect(url_for("admin.list_users"))
+
+    target_user = User.query.get_or_404(user_id)
+
+    if not session.get("impersonator_id"):
+        session["impersonator_id"] = current_user.id
+        session["impersonator_name"] = (
+            current_user.display_name or current_user.username or current_user.email or "admin"
+        )
+
+    login_user(target_user)
+    flash(
+        f"Now impersonating {target_user.display_name or target_user.username or target_user.email}",
+        "success",
+    )
+    return redirect(url_for("main.index"))
+
+
+@admin_bp.route("/users/stop-impersonating", methods=["POST"])
+@login_required
+def stop_impersonating():
+    impersonator_id = session.pop("impersonator_id", None)
+    impersonator_name = session.pop("impersonator_name", None)
+
+    if not impersonator_id:
+        flash("You're not impersonating another user.", "info")
+        return redirect(url_for("main.index"))
+
+    original_user = User.query.get(impersonator_id)
+    if not original_user:
+        flash("Original admin account could not be restored. Please log in again.", "danger")
+        logout_user()
+        return redirect(url_for("auth.logout"))
+
+    login_user(original_user)
+    flash(
+        f"Returned to {impersonator_name or original_user.display_name or original_user.username or 'admin'}.",
+        "success",
+    )
+    return redirect(url_for("admin.list_users"))
 
 
 @admin_bp.route("/classes")
