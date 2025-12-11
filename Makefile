@@ -22,32 +22,7 @@ setup:
 
 # Docker 
 
-DOCKER_CONTEXT := swarm1
-DOCKER_STACK_FILE := docker/docker-stack.yaml
-DOCKER_COMPOSE_FILE := docker/docker-compose.yaml
 
-build: compile
-	docker compose -f $(DOCKER_STACK_FILE) build --no-cache
-	docker tag codeserv codeserv:$(VERSION)
-
-up:
-	docker stack deploy --detach=false -c $(DOCKER_STACK_FILE) codeserv 
-
-down:
-	docker stack rm codeserv
-
-shell:
-	docker --context $(DOCKER_CONTEXT) compose -f $(DOCKER_STACK_FILE)   run --rm codeserv /bin/bash
-
-flask:
-	docker compose -f $(DOCKER_STACK_FILE)   run --rm codeserv flask -A cspawn.app:app shell 
-
-logs:
-	docker service   logs --tail "1000" -f codeserv_codeserv
-
-
-dbinfo:
-	docker compose -f $(DOCKER_STACK_FILE)   run --rm codeserv cspawnctl db info
 
 
 # for development database
