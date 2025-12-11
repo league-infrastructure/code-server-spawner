@@ -3,6 +3,7 @@ import re
 import hashlib
 import socket
 import time
+import logging
 from pathlib import Path
 from urllib.parse import urlparse
 from dataclasses import dataclass, field
@@ -15,6 +16,9 @@ import paramiko
 from .root import cli
 from .util import get_config, get_logger
 from cspawn.util.config import find_parent_dir
+
+# Suppress Paramiko's verbose host key logging
+logging.getLogger("paramiko.transport").setLevel(logging.WARNING)
 
 
 @cli.group()

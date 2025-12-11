@@ -10,6 +10,7 @@ LABEL version=$VERSION
 
 ENV JTL_APP_DIR=/app
 ENV JTL_DEPLOYMENT='devel'
+ENV DOCKER_SSH_CMD="ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
 # Prevents Python from writing pyc files.
 ENV PYTHONDONTWRITEBYTECODE=1

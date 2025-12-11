@@ -39,14 +39,21 @@ redeploy: build up
 
 # Debug inside the first running container built from image 'codeserver:latest'
 debug:
-	@cid=$$(docker ps -q --filter ancestor=codeserver:latest --filter status=running | head -n 1); \
+	@cid=$$(docker ps -q --filter name=$(STACK)_codeserver --filter status=running | head -n 1); \
+	if [ -z "$$cid" ]; then echo "No running container found for $(STACK)_codeserver"; exit 1; fi; \
 	docker exec -it $$cid supervisorctl stop gunicorn; \
 	docker exec -it $$cid flask -A cspawn.app:app  run --debug --without-threads -h 0.0.0.0 -p 8000 
 
+
 shell:
-	@cid=$$(docker ps -q --filter ancestor=codeserver:latest --filter status=running | head -n 1); \
+	@cid=$$(docker ps -q --filter name=$(STACK)_codeserver --filter status=running | head -n 1); \
+	if [ -z "$$cid" ]; then echo "No running container found for $(STACK)_codeserver"; exit 1; fi; \
 	docker exec -it $$cid /bin/bash
 
+cspawnctl:
+	docker compose -f $(DOCKER_STACK_FILE) run --rm codeserver cspawnctl $(ARGS)
+
 migrate:
-	@cid=$$(docker ps -q --filter ancestor=codeserver:latest --filter status=running | head -n 1); \
+	@cid=$$(docker ps -q --filter name=$(STACK)_codeserver --filter status=running | head -n 1); \
+	if [ -z "$$cid" ]; then echo "No running container found for $(STACK)_codeserver"; exit 1; fi; \
 	docker exec -it $$cid flask -A cspawn.app:app db migrate
