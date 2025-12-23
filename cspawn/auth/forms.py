@@ -2,7 +2,6 @@ from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField
 from wtforms.validators import DataRequired, EqualTo, ValidationError
 from cspawn.models import User, Class
-from wtforms import Form
 
 
 class UPRegistrationForm(FlaskForm):
@@ -14,7 +13,9 @@ class UPRegistrationForm(FlaskForm):
     )
 
     def validate_username(self, username):
-        user = User.query.filter_by(username=username.data).first()
+        # Normalize username for consistent lookup
+        normalized_username = User.clean_username(username.data)
+        user = User.query.filter_by(username=normalized_username).first()
         if user:
             raise ValidationError("Username is taken")
 
@@ -43,11 +44,15 @@ class LoginForm(FlaskForm):
     submit = SubmitField("Sign In")
 
     def validate_username(self, username):
-        user = User.query.filter_by(username=username.data).first()
+        # Normalize username for consistent lookup
+        normalized_username = User.clean_username(username.data)
+        user = User.query.filter_by(username=normalized_username).first()
         if user is None:
             raise ValidationError("Invalid username or password")
 
     def validate_password(self, password):
-        user = User.query.filter_by(username=self.username.data).first()
+        # Normalize username for consistent lookup
+        normalized_username = User.clean_username(self.username.data)
+        user = User.query.filter_by(username=normalized_username).first()
         if user and user.password != password.data:
             raise ValidationError("Invalid username or password")
