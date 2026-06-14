@@ -1,0 +1,99 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clasi hook status-inject"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clasi hook subagent-start"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clasi hook subagent-stop"
+          }
+        ]
+      }
+    ],
+    "TaskCreated": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clasi hook task-created"
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clasi hook task-completed"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clasi hook role-guard"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__clasi__create_ticket|mcp__clasi__create_sprint",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clasi hook mcp-guard"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clasi hook commit-check"
+          }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "clasi hook plan-to-issue"
+          }
+        ]
+      }
+    ]
+  }
+}

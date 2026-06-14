@@ -740,7 +740,7 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
             region=do_region,
             image=do_image,
             size_slug=do_size,
-            ssh_keys=ssh_keys_param or None,
+            ssh_keys=list(ssh_keys_param or []),
             backups=False,
             ipv6=False,
             tags=[do_tag] if do_tag else None,
@@ -751,6 +751,13 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
             droplet.create()
         except Exception as e:
             log.error(f"[expand] Droplet creation failed for do token {do_token}: \n{e}")
+            emsg = str(e).lower()
+            if "not authorized" in emsg or "forbidden" in emsg:
+                raise click.ClickException(
+                    "DigitalOcean token is valid but lacks droplet create permission. "
+                    "Grant at least Droplets: Read+Write (and for full node expand flow also Tags: Read+Write, "
+                    "Projects: Read+Write, SSH Keys: Read+Write, Domains: Read+Write)."
+                )
             raise
 
         try:
@@ -842,8 +849,6 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
     log = get_logger(ctx)
     priv_key_path, _ = _ensure_priv_key()
     manager_host = urlparse(docker_uri).hostname or ""
-    if not manager_host:
-        raise click.ClickException(f"Unable to parse manager host from DOCKER_URI={docker_uri}")
 
     # Resolve IP (prefer literal, then DNS/FQDN, then DO lookup)
     cfg = get_config()
@@ -880,6 +885,60 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
         log.info("[expand] Node already part of a swarm; skipping join")
         return
 
+    # Preflight: manager/worker Docker major versions should match.
+    # Mismatch can fail swarm TLS handshakes (e.g., ALPN-related errors).
+    def _major(v: str | None) -> int | None:
+        try:
+            if not v:
+                return None
+            m = re.match(r"^(\d+)", str(v).strip())
+            return int(m.group(1)) if m else None
+        except Exception:
+            return None
+
+    manager_ver = None
+    worker_ver = None
+    try:
+        manager_ver = (manager_client.version() or {}).get("Version")
+    except Exception:
+        manager_ver = None
+
+    try:
+        code_v, out_v, err_v = _ssh_exec_retry(
+            ip,
+            "root",
+            priv_key_path,
+            "docker version --format '{{.Server.Version}}'",
+            retries=6,
+            initial_delay=1.5,
+            log=log,
+        )
+        if code_v == 0:
+            worker_ver = (out_v or err_v or "").strip()
+    except Exception:
+        worker_ver = None
+
+    mgr_major = _major(manager_ver)
+    wrk_major = _major(worker_ver)
+    if mgr_major is not None and wrk_major is not None and mgr_major != wrk_major:
+        raise click.ClickException(
+            "Docker version mismatch blocks safe swarm join: "
+            f"manager={manager_ver} (major {mgr_major}), worker={worker_ver} (major {wrk_major}). "
+            "Align worker Docker engine major version with the manager, then retry join."
+        )
+    if manager_ver and worker_ver:
+        if mgr_major is not None and wrk_major is not None:
+            log.info(
+                f"[expand] Join preflight passed: manager docker={manager_ver} (major {mgr_major}), "
+                f"worker docker={worker_ver} (major {wrk_major})"
+            )
+        else:
+            log.info(
+                f"[expand] Join preflight passed: manager docker={manager_ver}, worker docker={worker_ver}"
+            )
+    else:
+        log.info("[expand] Join preflight: docker version comparison unavailable; proceeding")
+
     # Determine worker VPC IP to use for advertise/data path
     code_ip, out_ip, err_ip = _ssh_exec_retry(
         ip,
@@ -897,11 +956,57 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
         join_token = manager_client.swarm.attrs["JoinTokens"]["Worker"]
     except Exception:
         join_token = manager_client.api.inspect_swarm()["JoinTokens"]["Worker"]
+
+    # Prefer a manager private address (from node ManagerStatus.Addr) for join,
+    # then fall back to swarm-advertised RemoteManagers address, then DOCKER_URI.
+    # This avoids ALPN/TLS handshake issues via public/FQDN endpoints.
+    join_target = None
+    try:
+        leader_addr = None
+        manager_addr = None
+        for n in manager_client.nodes.list():
+            attrs = n.attrs or {}
+            spec = attrs.get("Spec", {}) or {}
+            if (spec.get("Role") or "").lower() != "manager":
+                continue
+            mstat = attrs.get("ManagerStatus", {}) or {}
+            addr = (mstat.get("Addr") or "").strip()
+            if not addr:
+                continue
+            if mstat.get("Leader"):
+                leader_addr = addr
+                break
+            if not manager_addr:
+                manager_addr = addr
+        join_target = leader_addr or manager_addr
+    except Exception:
+        join_target = None
+
+    try:
+        if not join_target:
+            swarm_info = manager_client.api.inspect_swarm()
+            remote_managers = (swarm_info or {}).get("RemoteManagers") or []
+            for rm in remote_managers:
+                addr = (rm or {}).get("Addr")
+                if addr:
+                    join_target = addr
+                    break
+    except Exception:
+        pass
+
+    if not join_target:
+        if not manager_host:
+            raise click.ClickException(
+                f"Unable to determine swarm manager join endpoint from DOCKER_URI={docker_uri}"
+            )
+        join_target = f"{manager_host}:2377"
+
+    log.info(f"[expand] Using swarm manager join target: {join_target}")
     # Include advertise-addr and data-path-addr for VPC dataplane
     join_cmd = (
         f"docker swarm join --token {join_token} "
         f"--advertise-addr {worker_vpc_ip} --data-path-addr {worker_vpc_ip} "
-        f"{manager_host}:2377"
+        f"{join_target}"
     )
     log.info("[expand] Executing swarm join on droplet")
     code, out, err = _ssh_exec_retry(ip, "root", priv_key_path, join_cmd, retries=10, initial_delay=2.0, log=log)
@@ -1617,17 +1722,17 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
     if do_all or configure_name:
         if not target_for_config:
             raise click.ClickException("No target to configure; please provide --configure <name>")
-    ip, shortname = _configure_node(ctx, target_for_config, desired_shortname=(last_shortname or None), ssh_timeout=ssh_timeout_effective)
-    log.info(f"[expand] SSH wait timeout used for configure: {ssh_timeout_effective}s")
-    last_ip, last_shortname = ip, shortname
+        ip, shortname = _configure_node(ctx, target_for_config, desired_shortname=(last_shortname or None), ssh_timeout=ssh_timeout_effective)
+        log.info(f"[expand] SSH wait timeout used for configure: {ssh_timeout_effective}s")
+        last_ip, last_shortname = ip, shortname
 
     # JOIN
     target_for_join = join_name or last_fqdn or last_ip
     if do_all or join_name:
         if not target_for_join:
             raise click.ClickException("No target to join; please provide --join <name>")
-    log.info(f"[expand] SSH wait timeout used for join: {ssh_timeout_effective}s")
-    _join_swarm(ctx, target_for_join, manager_client, docker_uri, ssh_timeout=ssh_timeout_effective)
+        log.info(f"[expand] SSH wait timeout used for join: {ssh_timeout_effective}s")
+        _join_swarm(ctx, target_for_join, manager_client, docker_uri, ssh_timeout=ssh_timeout_effective)
 
     # Verify membership when we know the shortname
     if last_shortname:

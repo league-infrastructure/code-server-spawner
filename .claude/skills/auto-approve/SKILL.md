@@ -1,0 +1,1 @@
+/Users/eric/proj/league/code-server-mono/code-server-spawner/.agents/skills/auto-approve/SKILL.md
