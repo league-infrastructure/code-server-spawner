@@ -8,6 +8,12 @@ packages:
 
 write_files:
 
+  - path: /etc/ssh/sshd_config.d/99-swarm.conf
+    permissions: '0644'
+    content: |
+      # Raised from default 10:30:100 to tolerate SSH bursts under load.
+      MaxStartups 30:60:100
+
   - path: /usr/local/sbin/configure-ufw-swarm.sh
     permissions: '0755'
     content: |
@@ -58,6 +64,9 @@ runcmd:
 
   # Configure firewall for swarm (workers do not need 2377)
   - /usr/local/sbin/configure-ufw-swarm.sh
+
+  # Raise sshd MaxStartups and restart
+  - systemctl restart ssh || systemctl restart sshd
 
   # (Optional) Join the swarm automatically. Fill these in if desired:
   # - docker swarm leave || true
