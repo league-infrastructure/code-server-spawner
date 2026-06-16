@@ -10,7 +10,7 @@ def init_logger_devel(app, log_level):
     
     # Remove all handlers from app logger and propagate to root
     app.logger.handlers.clear()
-    app.logger.setLevel(log_level)
+    app.logger.setLevel(log_level or logging.INFO)
     app.logger.propagate = True
     app.logger.debug("Logger initialized for development mode")
 

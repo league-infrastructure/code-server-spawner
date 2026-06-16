@@ -49,5 +49,10 @@ class LoginForm(FlaskForm):
 
     def validate_password(self, password):
         user = User.query.filter_by(username=self.username.data).first()
-        if user and user.password != password.data:
+        if not user:
+            return
+        password_ok = user.password and user.password == password.data
+        class_ = Class.query.filter_by(class_code=password.data).first()
+        class_code_ok = class_ and class_ in user.classes_taking
+        if not password_ok and not class_code_ok:
             raise ValidationError("Invalid username or password")

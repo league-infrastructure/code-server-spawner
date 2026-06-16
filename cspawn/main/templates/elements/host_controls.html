@@ -29,7 +29,8 @@
 
 {%- if 'start' in hb -%}
 <a href="{{ url_for('main.start_class', class_id=class_.id, return_url=return_url) }}"
-    class="btn btn-success btn-table ">Start</a>
+    class="btn btn-success btn-table js-start-host"
+    onclick="event.preventDefault(); var u=this.href; var p=this.parentNode; p.innerHTML='<div class=&quot;w-100 p-0&quot;><div class=&quot;spinner&quot;></div></div>'; window.location.href=u;">Start</a>
 {%- endif %}
 
 {%- if 'spin' in hb -%}

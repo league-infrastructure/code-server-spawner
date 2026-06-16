@@ -55,7 +55,7 @@
 <tr >
     <td style="width: 10em;"><a href="{{ url_for('main.detail_class', class_id=class_.id) }}">{{ class_.name }}</a></td>
     <td style="width: 10em;">{{ class_.class_code }}</td>
-    <td style="width: 10em;">{% if class_.image %}{{ class_.image.name }}{% else %}No Image{% endif %}</td>
+    <td style="width: 10em;">{% if class_.proto %}{{ class_.proto.name }}{% else %}No Image{% endif %}</td>
     <td style="width: 7em;">{{ class_.location }}</td>
     <td style="width: 7em;">{{ class_.term }}</td>
     <td>{{ class_.start_date.strftime('%Y-%m-%d %H:%M') }}</td>
@@ -81,7 +81,7 @@
         <a href="{{ url_for('main.edit_class', class_id = 'new') }}" class="btn btn-success btn-smaller">New Class</a>
     </div>
 
-    {% if current_user.classes_instructing %}
+    {% if classes %}
         {% for section, class_list in classes.items() %}
             {% if class_list %}
                 <div class="class-section-{{ section.lower() }}">
