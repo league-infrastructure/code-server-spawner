@@ -67,7 +67,8 @@ def index():
             if host and host.app_state != "running":
                 pass
 
-            all_classes = current_user.classes_instructing
+            from cspawn.models import Class
+            all_classes = Class.query.all()
             if all_classes:
                 classes = {k: [] for k in ["Running", "Current", "Closed", "Hidden"]}
                 for c in all_classes:

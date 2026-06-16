@@ -8,6 +8,17 @@ import sys
 import uuid
 from typing import cast
 
+# passlib doesn't know how to read bcrypt 4.x version — patch it before any import uses it
+try:
+    import bcrypt
+    import passlib.handlers.bcrypt as _ph_bcrypt
+    if not hasattr(bcrypt, "__about__"):
+        class _about:
+            __version__ = bcrypt.__version__
+        bcrypt.__about__ = _about
+except Exception:
+    pass
+
 from flask import Flask, current_app, g, request, session
 from flask_bootstrap import Bootstrap5
 from flask_dance.contrib.google import make_google_blueprint
@@ -158,9 +169,10 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
     try:
 
         setup_database(app)
-        # Use dev-friendly session cookies when running in development to avoid CSRF mismatches
-      
-        setup_sessions(app, devel=(deployment == "devel"))
+        # Use dev-friendly session cookies (insecure HTTP) when not serving over HTTPS,
+        # to avoid silent CSRF failures. OAUTHLIB_INSECURE_TRANSPORT signals local HTTP serving.
+        insecure_http = deployment == "devel" or bool(config.get("OAUTHLIB_INSECURE_TRANSPORT"))
+        setup_sessions(app, devel=insecure_http)
 
         app.csm = CodeServerManager(app)
         

@@ -571,7 +571,22 @@ class CodeServerManager(ServicesManager):
         ch: CodeHost = s.to_model(no_container=True)
         ch.proto_id = proto.id
 
-
+        # The swarm service may already have a CodeHost row (e.g. a prior start
+        # that raced or left a stale record). Reuse it instead of inserting a
+        # duplicate, which would violate the unique service_id constraint.
+        existing = CodeHost.query.filter_by(service_id=ch.service_id).first()
+        if existing:
+            logger.info("Reusing existing CodeHost row for service_id %s", ch.service_id)
+            existing.service_name = ch.service_name
+            existing.user_id = ch.user_id
+            existing.proto_id = proto.id
+            existing.class_id = ch.class_id
+            existing.state = ch.state
+            existing.public_url = ch.public_url
+            existing.password = ch.password
+            existing.labels = ch.labels
+            db.session.commit()
+            return s, existing
 
         db.session.add(ch)
         db.session.commit()

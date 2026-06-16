@@ -35,25 +35,23 @@ def login():
 
     form = LoginForm()
 
-    # Normal login
     if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data).first()
-        login_user(user)
-        return redirect(url_for("main.index"))
+        username = form.username.data
+        password_or_code = form.password.data
 
-    # Maybe this is a registration with a class code?
-    username = form.username.data
-    class_code = form.password.data
-
-    class_ = Class.query.filter_by(class_code=class_code).first()
-
-    if class_ and class_.can_register:
         user = User.query.filter_by(username=username).first()
         if user:
-            flash("Username is taken", "danger")
-            return render_template("login.html", form=form, **_context())
+            # Accept personal password or any class code the user is enrolled in
+            class_ = Class.query.filter_by(class_code=password_or_code).first()
+            password_ok = user.password and user.password == password_or_code
+            class_code_ok = class_ and class_ in user.classes_taking
+            if password_ok or class_code_ok:
+                login_user(user)
+                return redirect(url_for("main.index"))
 
-        return register_user_up(username, class_code, class_code)
+        flash("Invalid username, password, or class code.", "danger")
+    else:
+        logger.debug(f"Login form validation errors: {form.errors}")
 
     return render_template("login.html", form=form, **_context())
 
