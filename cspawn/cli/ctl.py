@@ -11,6 +11,7 @@ from .node import node  # noqa: W0611
 from .probe import probe  # noqa: W0611
 from .sys import sys  # noqa: W0611
 from .telem import telem  # noqa: W0611
+from .test import test  # noqa: W0611
 from .devel import devel  # noqa: W0611
 from .github import github  # noqa: W0611
 
