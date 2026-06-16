@@ -27,6 +27,7 @@ ufw default deny incoming
 ufw default allow outgoing
 
 # Allow SSH
+# Plain allow (not 'limit') — no rate-limit on SSH port.
 ufw allow 22/tcp
 
 # Allow swarm dataplane from VPC only (on VPC iface)

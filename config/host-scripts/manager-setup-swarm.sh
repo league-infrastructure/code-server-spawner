@@ -62,4 +62,15 @@ if command -v jq >/dev/null 2>&1; then
   docker network inspect caddy >/dev/null 2>&1 && docker network inspect caddy | jq '.[0].Peers' || true
 fi
 
+# --- sshd tuning (MaxStartups) ---
+# NOTE: For the existing swarm1 manager, re-run this script or apply manually,
+# since cloud-init already ran on that node.
+echo "Configuring sshd MaxStartups 30:60:100"
+mkdir -p /etc/ssh/sshd_config.d
+cat > /etc/ssh/sshd_config.d/99-swarm.conf <<'EOF'
+# Raised from default 10:30:100 to tolerate SSH bursts under load.
+MaxStartups 30:60:100
+EOF
+systemctl restart ssh || systemctl restart sshd
+
 echo "Done. Ensure workers join with --advertise-addr set to their 10.124.x IP."
