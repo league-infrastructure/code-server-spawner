@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import socket
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -418,13 +419,27 @@ class CodeServerManager(ServicesManager):
             logger.error("Error connecting to Docker daemon at %s: %s", self.docker_uri, e)
             raise DockerException(f"Error connecting to Docker {self.docker_uri}: {e}")
 
-        super().__init__( 
+        super().__init__(
             c,
             env=env,
             network=network,
             labels=labels,
             hostname_f=_hostname_f,
         )
+
+        # Limit concurrent SSH connections to the Docker swarm manager.
+        # BoundedSemaphore prevents sshd MaxStartups from dropping connections
+        # when many threads call Docker-touching methods simultaneously.
+        #
+        # Deadlock-avoidance pattern: public methods (list, get, get_by_username,
+        # new_cs) acquire this semaphore exactly once. _list_raw and any
+        # _*_raw helpers are semaphore-free so they can be called safely from
+        # within a block that already holds the semaphore (e.g., the 409
+        # recovery path inside _new_cs_inner, which runs while new_cs holds
+        # the semaphore).  Never call a semaphore-guarded public method from
+        # inside another guarded method — use the _raw variant instead.
+        concurrency = int(self.config.get("DOCKER_SSH_CONCURRENCY", 4))
+        self._docker_sem = threading.BoundedSemaphore(concurrency)
 
     def get_unused_port(self, n=1, extra_ports=[]):
         import random
@@ -503,14 +518,42 @@ class CodeServerManager(ServicesManager):
         """
         Create a new Code Server instance.
 
+        Acquires the SSH semaphore and delegates to _new_cs_inner. The inner
+        method uses _list_raw / _get_by_username_raw for any Docker calls on
+        the 409-recovery path so the semaphore is never acquired twice.
+
         Args:
             user (User): User instance.
-            image (str, optional): Docker image to use.
-            repo (str, optional): Git repository to clone.
-            syllabus (str, optional): Syllabus for the Code Server instance.
+            proto (ClassProto): Class prototype.
+            class_ (Class): Class instance.
 
         Returns:
-            CSMService: New Code Server instance.
+            tuple[CSMService, CodeHost]: New Code Server instance and DB record.
+        """
+        self._docker_sem.acquire()
+        try:
+            return self._new_cs_inner(user, proto, class_)
+        finally:
+            self._docker_sem.release()
+
+    def _get_by_username_raw(self, username):
+        """
+        Look up a running service by username without acquiring the semaphore.
+
+        Safe to call from inside a semaphore-guarded block (e.g. _new_cs_inner).
+        """
+        username = slugify(username)
+        for service in self._list_raw():
+            if service.username == username:
+                return service
+        return None
+
+    def _new_cs_inner(self, user: User, proto: ClassProto, class_: Class):
+        """
+        Body of new_cs — called with the SSH semaphore already held.
+
+        All Docker-touching calls inside here use _list_raw / _get_by_username_raw
+        (not the public semaphore-guarded wrappers) to prevent reentrant deadlock.
         """
 
         username = user.username
@@ -535,7 +578,7 @@ class CodeServerManager(ServicesManager):
         existing_ch = CodeHost.query.filter_by(service_name=username).first()
         if existing_ch:
             logger.info("CodeHost record for %s already exists", username)
-            return self.get(existing_ch.service_id), existing_ch
+            return super().get(existing_ch.service_id), existing_ch
 
         # import yaml
         # logger.debug(f"Container Definition\n {yaml.dump(container_def)}")
@@ -557,13 +600,16 @@ class CodeServerManager(ServicesManager):
         except docker.errors.APIError as e:
             if e.response.status_code == 409:
                 logger.error("Container for %s already exists: %s", username, e)
-                s = self.get_by_username(username)
+                # Use the raw (non-semaphore) lookup: we already hold the
+                # semaphore from new_cs, so calling public get_by_username
+                # here would deadlock.
+                s = self._get_by_username_raw(username)
                 if not s:
                     logger.error("Error getting existing container for username %s ", username)
 
                     return None, None
             else:
-    
+
                 logger.error("Error creating container: %s", e)
                 return None, None
 
@@ -601,11 +647,24 @@ class CodeServerManager(ServicesManager):
         if s:
             s.stop()
 
+    def _list_raw(self, filters: Optional[Dict[str, Any]] = {"label": "jtl.codeserver"}) -> List[CSMService]:
+        """
+        Call the parent list() without acquiring the SSH semaphore.
+
+        Use this inside any block that already holds self._docker_sem to avoid
+        reentrant deadlock.  External callers should use the public list() instead.
+        """
+        return super().list(filters=filters)
+
     def get(self, service_id: str | CodeHost) -> CSMService:
         if isinstance(service_id, CodeHost):
             service_id = service_id.service_id
 
-        return super().get(service_id)
+        self._docker_sem.acquire()
+        try:
+            return super().get(service_id)
+        finally:
+            self._docker_sem.release()
 
     def list(self, filters: Optional[Dict[str, Any]] = {"label": "jtl.codeserver"}) -> List[CSMService]:
         """
@@ -613,10 +672,12 @@ class CodeServerManager(ServicesManager):
 
         Args:
             filters (Optional[Dict[str, Any]]): Filters to apply.
-
-
         """
-        return super().list(filters=filters)
+        self._docker_sem.acquire()
+        try:
+            return self._list_raw(filters=filters)
+        finally:
+            self._docker_sem.release()
 
     def list_db(self):
         """Return the code_host records."""
@@ -693,8 +754,12 @@ class CodeServerManager(ServicesManager):
 
         username = slugify(username)
 
-        for service in self.list():
-       
-            if service.username == username:
-                return service
-        return None
+        self._docker_sem.acquire()
+        try:
+            # Use _list_raw (not public list) to avoid acquiring the semaphore twice.
+            for service in self._list_raw():
+                if service.username == username:
+                    return service
+            return None
+        finally:
+            self._docker_sem.release()
