@@ -2,9 +2,25 @@ from cspawn.models import CodeHost
 
 import os
 import re
+import threading
+import time
 from typing import Optional, Mapping, Any, TYPE_CHECKING
 
-from github import Github
+from github import Github, GithubException
+
+
+# Per-upstream-URL fork locks: serializes concurrent create_fork calls for the
+# same upstream so GitHub does not return 403 "already being forked" or 429.
+_fork_locks: dict[str, threading.Lock] = {}
+_fork_locks_mu = threading.Lock()
+
+
+def _get_fork_lock(upstream_url: str) -> threading.Lock:
+    """Return (creating if necessary) the per-upstream threading.Lock."""
+    with _fork_locks_mu:
+        if upstream_url not in _fork_locks:
+            _fork_locks[upstream_url] = threading.Lock()
+        return _fork_locks[upstream_url]
 
 
 if TYPE_CHECKING:
@@ -365,10 +381,37 @@ class GithubOrg:
             self.app.logger.info(f"Repo {self.org}/{target_name} already exists; skipping fork")
             return StudentRepo(self.config, self.app, self.org, target_name, upstream_name, upstream_url, username)
 
-        # Create a fork under the org
+        # Create a fork under the org, serialized per upstream URL.
+        # GitHub returns 403 "already being forked" when a fork is still in
+        # progress, and 429 under rapid retries.  We acquire a per-upstream
+        # lock so only one thread issues the create_fork POST at a time, then
+        # retry on those two transient conditions.
         upstream_repo = self.gh.get_repo(f"{owner}/{name}")
-        # Create a shallow fork with only the last commit (default_branch_only=True)
-        forked_repo = upstream_repo.create_fork(organization=self.org, default_branch_only=True)
+        fork_lock = _get_fork_lock(upstream_url)
+        _MAX_FORK_ATTEMPTS = 8
+        _FORK_BACKOFF_START = 2   # seconds
+        _FORK_BACKOFF_CAP = 30    # seconds
+        with fork_lock:
+            backoff = _FORK_BACKOFF_START
+            for attempt in range(1, _MAX_FORK_ATTEMPTS + 1):
+                try:
+                    upstream_repo.create_fork(
+                        organization=self.org, default_branch_only=True
+                    )
+                    break  # success
+                except GithubException as exc:
+                    retryable = (
+                        exc.status == 429
+                        or (exc.status == 403 and "already being forked" in str(exc.data))
+                    )
+                    if not retryable or attempt == _MAX_FORK_ATTEMPTS:
+                        raise
+                    self.app.logger.warning(
+                        f"create_fork attempt {attempt}/{_MAX_FORK_ATTEMPTS} "
+                        f"got {exc.status}; retrying in {backoff}s"
+                    )
+                    time.sleep(backoff)
+                    backoff = min(backoff * 2, _FORK_BACKOFF_CAP)
 
         # Wait for fork to be ready
         self._wait_repo_ready(self.org, name)
@@ -420,7 +463,6 @@ class GithubOrg:
             return False
 
     def _wait_repo_ready(self, owner: str, name: str, timeout: int = 180) -> None:
-        import time
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
@@ -431,7 +473,6 @@ class GithubOrg:
         raise TimeoutError(f"Repo {owner}/{name} not ready in time")
 
     def _rename_with_retry(self, owner: str, current_name: str, target_name: str, private: bool = False, retries: int = 8) -> None:
-        import time
         backoff = 1
         last_exc = None
         for _ in range(retries):
