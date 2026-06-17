@@ -62,3 +62,9 @@ test/app
 **/test/*.db
 
 secrets.key
+# dotconfig — assembled env files contain decrypted secrets
+.env.*
+!.env.example
+
+# Legacy git-crypt secrets directory (migrated to dotconfig SOPS encryption)
+config/secrets/

@@ -1,6 +1,14 @@
+import os
 import pytest
+from dotenv import load_dotenv
 from cspawn.init import init_app
 from cspawn.models import db as _db
+
+# Load dotconfig-assembled .env so SECRET_KEY and other secrets are available
+# even when config/secrets/ legacy files are absent.
+_env_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+if os.path.exists(_env_file):
+    load_dotenv(_env_file, override=False)
 
 
 @pytest.fixture(scope="session")
