@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# dotconfig version_bump hook.
+# Runs after `dotconfig version bump` writes the new version into
+# config/dotconfig.yaml. Keeps cspawn/__version__.py in sync so the
+# application footer (read via cspawn.__version__) reflects the real
+# version. Without this, __version__.py only updates via the legacy
+# `make compile`, and the footer goes stale.
+#
+# Args: <project_dir> <old_version> <new_version>
+set -euo pipefail
+
+PROJECT_DIR="$1"
+NEW_VERSION="$3"
+
+VERSION_FILE="${PROJECT_DIR}/cspawn/__version__.py"
+
+printf "__version__ = '%s'\n" "${NEW_VERSION}" > "${VERSION_FILE}"
+echo "version_bump hook: wrote ${NEW_VERSION} to cspawn/__version__.py"
