@@ -1,8 +1,25 @@
 ---
-status: pending
+status: done
 ---
 
 # Purge committed secrets from git history and prevent re-commit
+
+## RESOLUTION (closed as moot — 2026-06-16)
+
+This issue was based on a mistaken premise. The secrets were **git-crypt
+encrypted** in git / on GitHub all along (`.gitattributes`:
+`**/secrets/* filter=git-crypt`) — they were NEVER committed or pushed as
+plaintext. The plaintext seen locally is git-crypt's decrypted working-tree view.
+So a history purge is not a security necessity.
+
+Superseded by **sprint 002 (dotconfig-migration)**, which removed git-crypt
+entirely and moved secrets to dotconfig/SOPS with runtime-only delivery (no
+secrets in image layers). `config/secrets/` is now untracked + gitignored and a
+`dotconfig audit` pre-commit hook prevents future unencrypted commits.
+
+Residual (low urgency): the creds were briefly decrypted on a local machine
+during this session; rotate at leisure if desired (GitHub + DO tokens already
+rotated). Closing.
 
 ## Context
 

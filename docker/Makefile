@@ -18,10 +18,11 @@ networks:
 	@docker network inspect caddy >/dev/null 2>&1 || docker network create --driver overlay --attachable caddy
 	@docker network inspect jtlctl >/dev/null 2>&1 || docker network create --driver overlay --attachable jtlctl
 
-# Generate runtime env-file from dotconfig (secrets arrive at runtime, not baked in image)
-# Runs from docker/ directory; .env lands here, relative to the stack file.
+# Generate runtime env-file from dotconfig (secrets arrive at runtime, not baked in image).
+# dotconfig's config dir is ../config (this Makefile lives in docker/); .env lands here
+# in docker/, next to the stack file that references it via env_file:.
 env-file:
-	@dotconfig load -d prod --no-export -e -o .env
+	@dotconfig -c ../config load -d prod --no-export -e -o .env
 
 # Deploy the stack to Swarm
 up: networks env-file
