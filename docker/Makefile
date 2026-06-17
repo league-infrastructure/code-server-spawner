@@ -3,7 +3,7 @@
 STACK ?= codeserver
 FILE  ?= docker-stack.yaml
 
-.PHONY: build up down networks status logs redeploy debug
+.PHONY: build up down networks env-file status logs redeploy debug
 
 # Build images referenced by the stack using Compose (Stack ignores build)
 build:
@@ -18,8 +18,13 @@ networks:
 	@docker network inspect caddy >/dev/null 2>&1 || docker network create --driver overlay --attachable caddy
 	@docker network inspect jtlctl >/dev/null 2>&1 || docker network create --driver overlay --attachable jtlctl
 
+# Generate runtime env-file from dotconfig (secrets arrive at runtime, not baked in image)
+# Runs from docker/ directory; .env lands here, relative to the stack file.
+env-file:
+	@dotconfig load -d prod --no-export -e -o .env
+
 # Deploy the stack to Swarm
-up: networks
+up: networks env-file
 	@docker stack deploy --detach=true -c $(FILE) $(STACK)
 
 # Remove the stack from Swarm

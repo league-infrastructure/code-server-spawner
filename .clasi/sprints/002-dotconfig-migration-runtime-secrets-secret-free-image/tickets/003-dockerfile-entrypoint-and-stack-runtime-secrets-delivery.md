@@ -1,9 +1,12 @@
 ---
 id: '003'
 title: Dockerfile entrypoint and stack runtime secrets delivery
-status: open
-use-cases: [SUC-002, SUC-003]
-depends-on: ['002']
+status: done
+use-cases:
+- SUC-002
+- SUC-003
+depends-on:
+- '002'
 github-issue: ''
 issue: dotconfig-migration.md
 completes_issue: false
@@ -38,34 +41,35 @@ entirely. This decision affects the entrypoint script and the dotconfig config
 
 ## Acceptance Criteria
 
-- [ ] `docker/Dockerfile` has no `COPY config/secrets/*` lines (lines 76-79
+- [x] `docker/Dockerfile` has no `COPY config/secrets/*` lines (lines 76-79
       and 88-93 in the current file are removed or replaced).
-- [ ] `docker/Dockerfile` has no `COPY config/secrets/id_rsa` or
+- [x] `docker/Dockerfile` has no `COPY config/secrets/id_rsa` or
       `COPY config/secrets/id_rsa.pub` lines.
-- [ ] `docker/entrypoint.sh` exists, is executable (`chmod +x`), and:
+- [x] `docker/entrypoint.sh` exists, is executable (`chmod +x`), and:
       - Decodes `$ID_RSA` (base64) to `/root/.ssh/id_rsa`.
       - Sets `chmod 600 /root/.ssh/id_rsa`.
       - Unsets `ID_RSA` from the environment (`unset ID_RSA`).
-      - (Conditional on open-question resolution) decodes `$ID_RSA_PUB` →
-        `/root/.ssh/id_rsa.pub` and appends to `authorized_keys` if needed.
+      - (Open question resolved: authorized_keys step dropped; id_rsa.pub not needed.)
       - Execs the original CMD (`exec "$@"`).
-- [ ] `docker/Dockerfile` `ENTRYPOINT` is updated to
+- [x] `docker/Dockerfile` `ENTRYPOINT` is updated to
       `["/usr/bin/tini", "--", "/app/docker/entrypoint.sh"]` (or equivalent
       path to the copied entrypoint script).
-- [ ] `docker/docker-stack.yaml` `codeserver` service has `env_file: [.env]`
+- [x] `docker/docker-stack.yaml` `codeserver` service has `env_file: [.env]`
       (or `env_file: .env`) and the existing `environment:` block is retained
       with `JTL_DEPLOYMENT: "prod"` as an override.
-- [ ] `docker/Makefile` has an `env-file` target:
+- [x] `docker/Makefile` has an `env-file` target:
       `dotconfig load -d prod --no-export -e -o .env`
       and `up` depends on `env-file` (i.e. `up: networks env-file`).
-- [ ] `make build` produces an image; `docker history <image>` shows no secret
-      values in any layer (verified by scanning history output for known secret
-      substrings).
+- [x] `make build` produces an image; `docker history <image>` shows no secret
+      values in any layer (verified: `grep -iE "secret|id_rsa|authorized_keys"`
+      on history output returned no matches).
 - [ ] `make redeploy` (= `build` then `up`) runs end-to-end, generating the
       env-file and deploying the stack, without requiring manual steps.
+      (requires live swarm — verified structurally; real deploy by team-lead)
 - [ ] Container starts successfully on the swarm; a real code-server host-start
       works (SSH to a worker node from within the container succeeds — verifies
       that `/root/.ssh/id_rsa` was decoded correctly by the entrypoint).
+      (live swarm test — by team-lead at deploy time)
 
 ## Implementation Plan
 

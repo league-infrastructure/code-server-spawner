@@ -62,7 +62,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Copy the source code into the container.
 COPY cspawn /app/cspawn
-RUN mkdir -p /app/config/secrets
 COPY requirements.txt /app/requirements.txt
 COPY pyproject.toml /app/pyproject.toml
 COPY migrations /app/migrations
@@ -73,30 +72,21 @@ COPY docker/ssh-config /etc/ssh/ssh_config.d/dojtl.conf
 RUN chmod 644 /etc/ssh/ssh_config.d/dojtl.conf
 
 
-COPY config/config.env /app/config/config.env
-COPY config/prod.env /app/config/prod.env
-COPY config/secrets/secret.env /app/config/secrets/secret.env
-COPY config/secrets/prod.env /app/config/secrets/prod.env
-
 COPY data /app/data
 
 RUN python -m pip install /app/
 
-RUN mkdir -p /root/.ssh
-RUN chmod 700 /root/.ssh
+# Prepare SSH directory (key is decoded at runtime by entrypoint.sh)
+RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
 
-COPY config/secrets/id_rsa /root/.ssh/id_rsa
-COPY config/secrets/id_rsa.pub /root/.ssh/id_rsa.pub
-RUN cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
-
-RUN chmod 600 ~/.ssh/id_rsa                                                                       
-RUN chmod 644 ~/.ssh/id_rsa.pub                                                                                                                              
-
+# Copy entrypoint script that decodes ID_RSA from the runtime env-file
+COPY docker/entrypoint.sh /app/docker/entrypoint.sh
+RUN chmod +x /app/docker/entrypoint.sh
 
 # Expose the port that the application listens on.
 EXPOSE 8000
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/app/docker/entrypoint.sh"]
 
 # Run the application.
 CMD ["/usr/bin/supervisord", "-c", "/app/supervisord.conf"]

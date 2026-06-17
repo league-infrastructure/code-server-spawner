@@ -22,6 +22,9 @@ services:
         constraints:
           - node.role == manager
    
+    env_file:
+      - .env
+
     environment:
       JTL_DEPLOYMENT: "prod"
 
