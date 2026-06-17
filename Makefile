@@ -1,4 +1,4 @@
-.PHONY: setup build publish compile up down
+.PHONY: setup build publish compile up down dev
 
 VERSION := $(shell grep '^version =' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
 FAPP := cspawn.app:app 
@@ -28,6 +28,10 @@ setup:
 # for development database
 dbshell:
 	PGPASSWORD=password psql -h localhost -p 5432 -U codeserv -d codeserv 
+
+dev:
+	dotconfig load -d devel -o .env
+	flask --app $(FAPP) run --debug
 
 routes:
 	@flask --app $(FAPP) routes

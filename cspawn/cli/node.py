@@ -718,7 +718,7 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
         user_data = None
         try:
             cfg = get_config()
-            cloud_init_file =  cfg.get("DO_CLOUD_INIT_FILE")
+            cloud_init_file = cfg.get("DO_CLOUD_INIT") or cfg.get("DO_CLOUD_INIT_FILE")
             if cloud_init_file:
                
                 cip = Path(config['CONFIG_DIR']) / 'cloud-init' / cloud_init_file
