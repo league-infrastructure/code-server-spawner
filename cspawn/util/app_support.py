@@ -60,7 +60,8 @@ def configure_config_tree(config_dir: str | Path, deploy: str) -> Dict[str, Any]
 
     # Resolve the path to the secrets file
     if "SECRETS_FILE_NAME" in config:
-        config["SECRETS_FILE"] = (Path(config["__CONFIG_PATH"]).parent / config["SECRETS_FILE_NAME"]).resolve()
+        # __CONFIG_PATH is a list; take the first entry (the .env file path)
+        config["SECRETS_FILE"] = (Path(config["__CONFIG_PATH"][0]).parent / config["SECRETS_FILE_NAME"]).resolve()
 
     os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = config.get("OAUTHLIB_INSECURE_TRANSPORT", "")
 

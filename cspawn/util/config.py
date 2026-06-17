@@ -49,22 +49,71 @@ class Config:
         return self._config_dict.copy()
 
 
-def find_parent_dir():
-    jtp_app_dir = os.getenv("JTP_APP_DIR")
-    if jtp_app_dir and Path(jtp_app_dir).is_dir():
-        return Path(jtp_app_dir)
+def find_parent_dir() -> Path:
+    """Walk up from cwd (or JTL_APP_DIR / JTP_APP_DIR) to find the project root.
+
+    The project root is the directory that contains a ``config`` subdirectory
+    or a ``.env`` file.  Checks up to three levels above cwd.
+    """
+    # Support both old (JTP_APP_DIR) and new (JTL_APP_DIR) env-var names.
+    app_dir = os.getenv("JTL_APP_DIR") or os.getenv("JTP_APP_DIR")
+    if app_dir and Path(app_dir).is_dir():
+        return Path(app_dir)
 
     cwd = Path.cwd()
 
-    for i in range(3):
-        if (cwd / "config").exists() or (cwd / "secrets").exists():
+    for _ in range(3):
+        if (cwd / ".env").exists() or (cwd / "config").exists() or (cwd / "secrets").exists():
             return cwd
         try:
             cwd = cwd.parent
         except Exception:
             break
 
-    raise FileNotFoundError("No directory with 'config'found")
+    raise FileNotFoundError("No project root (containing '.env' or 'config') found")
+
+
+def _find_env_file(root: Path | None) -> Path:
+    """Locate the dotconfig-generated ``.env`` file.
+
+    Search order (first match wins):
+    1. ``JTL_CONFIG_DIR`` environment variable — look for ``.env`` there.
+    2. ``JTL_APP_DIR`` (or legacy ``JTP_APP_DIR``) — look for ``.env`` there.
+    3. *root* argument (if provided) — look for ``.env`` there.
+    4. Walk up from ``cwd`` up to three levels, looking for ``.env``.
+
+    Raises ``FileNotFoundError`` with a hint if no ``.env`` is found.
+    """
+    candidates: List[Path] = []
+
+    jtl_config_dir = os.getenv("JTL_CONFIG_DIR")
+    if jtl_config_dir:
+        candidates.append(Path(jtl_config_dir) / ".env")
+
+    app_dir = os.getenv("JTL_APP_DIR") or os.getenv("JTP_APP_DIR")
+    if app_dir:
+        candidates.append(Path(app_dir) / ".env")
+
+    if root is not None:
+        candidates.append(Path(root) / ".env")
+
+    # Walk up from cwd
+    cwd = Path.cwd()
+    for _ in range(4):
+        candidates.append(cwd / ".env")
+        if cwd.parent == cwd:
+            break
+        cwd = cwd.parent
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+
+    searched = ", ".join(str(c) for c in candidates)
+    raise FileNotFoundError(
+        f"No .env file found (searched: {searched}). "
+        "Generate one with: dotconfig load -d <deploy> -o .env"
+    )
 
 
 def walk_up(d, f=None) -> List[Path]:
@@ -83,91 +132,50 @@ def walk_up(d, f=None) -> List[Path]:
     return paths
 
 
-def get_config_dirs(cwd=Path.cwd(), root=Path("/"), home=Path().home()) -> List[Path]:
-    """Return possible config dirs in order of precedence:
-
-    JT_CONFIG_DIR env var
-    Current directory
-    $HOME/.jtl
-    /app/config
-    /config
-
-    """
-
-    import os
-
-    jtl_config_dir = os.getenv("JTL_CONFIG_DIR")
-
-    cwd = Path(cwd)
-    root = Path(root) if root else Path("/")
-    home = Path(home)
-
-    return (
-        [Path(jtl_config_dir)]
-        if jtl_config_dir
-        else [] + [home.joinpath(".jtl"), root / "app/config", root / "config", cwd, cwd / "config"]
-    )
-
-
-def get_config_files(dirs: List[Path], config_name="config", deploy: str = "devel") -> List[Path]:
-    """ """
-
-    config_name += ".env"
-
-    def first_config():
-        for d in dirs:
-            if (d / config_name).exists():
-                return d
-
-    cdir = first_config()
-
-    if not cdir:
-        raise FileNotFoundError(f"No config files found for config_name={config_name}  deploy={deploy} in {dirs}")
-
-    f = [(cdir / config_name), cdir / f"{deploy}.env", cdir / "secrets/secret.env", cdir / f"secrets/{deploy}.env"]
-
-    return [p for p in f if p.exists()]
-
-
 def get_config(
-    root: str | Path = "/",
+    root: str | Path = None,
     dirs: List[str] | List[Path] = None,
     file: str | Path | List[str] | List[Path] = None,
     deploy: str = "devel",
 ) -> Config:
-    """Get the first config file found. There must at least be a file 'config.env',
-    and may be a file '{deploy}.env' where deploy is typically 'devel' or 'prod'.
+    """Load application configuration from a single dotconfig-generated ``.env`` file.
 
-    After finding a config file in dir $D, the function will look for a file
-    $D/secrets/secret.env and $D/secrets/{deploy}.env and combine them into a single
-    config object.
+    The ``.env`` file is expected to be produced by::
 
+        dotconfig load -d <deploy> [--no-export] [-e] -o .env
+
+    **File location** (first match wins):
+
+    1. ``JTL_CONFIG_DIR`` env var — ``.env`` is loaded from that directory.
+    2. ``JTL_APP_DIR`` / ``JTP_APP_DIR`` env var — ``.env`` is loaded from there.
+    3. ``root`` argument — ``.env`` is loaded from that directory.
+    4. Walk up from ``cwd`` up to three levels.
+
+    **Precedence** (higher wins):
+
+    - ``os.environ`` values override everything in the ``.env`` file.
+
+    **Keys set on the returned Config**:
+
+    - ``__CONFIG_PATH`` — list containing the resolved path to the ``.env`` file
+      (kept as a list for backward compatibility with CLI callers).
+    - ``CONFIG_DIR`` — parent directory of the ``.env`` file (used by CLI tools
+      that reference ``cloud-init`` files relative to the project root).
+
+    Raises ``FileNotFoundError`` with a hint when no ``.env`` is found.
     """
+    env_path = _find_env_file(Path(root) if root is not None else None)
 
-    if file is None:
-        file = "config"
+    config: Dict[str, Any] = {}
+    config.update(dotenv_values(env_path))
 
-    config = {}
-    loaded = []
-
-    cf = get_config_files(dirs or get_config_dirs(root=root), config_name=file, deploy=deploy)
-
-    for f in cf:
-        if f.exists():
-            config.update(dotenv_values(f))
-            loaded.append(f)
-
-            if '/config/config.env' in str(f):
-                config['CONFIG_DIR'] = str(f.parent)
-
-            if '/config/secrets/secret.env' in str(f):
-                config['SECRETS_DIR'] = str(f.parent)
-
-
+    # os.environ wins over .env values (backward-compatible precedence rule)
     config.update(os.environ)
-    config["__CONFIG_PATH"] = loaded
 
-    
+    # Populate legacy keys that callers depend on
+    config["CONFIG_DIR"] = str(env_path.parent)
+    # __CONFIG_PATH is a list for backward compat (CLI iterates it, checks len())
+    config["__CONFIG_PATH"] = [env_path]
 
     return Config(config)
 

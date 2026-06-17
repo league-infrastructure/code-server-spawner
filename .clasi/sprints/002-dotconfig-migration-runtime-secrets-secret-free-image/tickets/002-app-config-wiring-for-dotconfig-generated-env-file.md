@@ -1,9 +1,11 @@
 ---
 id: '002'
 title: App config wiring for dotconfig-generated env-file
-status: open
-use-cases: [SUC-003]
-depends-on: ['001']
+status: done
+use-cases:
+- SUC-003
+depends-on:
+- '001'
 github-issue: ''
 issue: dotconfig-migration.md
 completes_issue: false
@@ -28,21 +30,21 @@ all**.
 
 ## Acceptance Criteria
 
-- [ ] `cspawn/util/config.py`'s `get_config()` reads a single `.env` file (by
+- [x] `cspawn/util/config.py`'s `get_config()` reads a single `.env` file (by
       default, `.env` in the project root or `JTL_APP_DIR`) and applies
       `os.environ` on top.
-- [ ] `JTL_CONFIG_DIR` env var, when set, is respected to locate the `.env`
+- [x] `JTL_CONFIG_DIR` env var, when set, is respected to locate the `.env`
       file (backward compatibility for any tooling that sets it).
-- [ ] The `Config` class interface is unchanged; all existing callers
+- [x] The `Config` class interface is unchanged; all existing callers
       (`cspawn/auth/`, `cspawn/main/`, `cspawn/cs_docker/`, `cspawn/cli/`)
       continue to work without modification.
-- [ ] App starts without error in devel mode after ticket 001 is done
+- [x] App starts without error in devel mode after ticket 001 is done
       (`dotconfig load -d devel -o .env` followed by `flask run`).
-- [ ] Login flow (Google OAuth or password) completes successfully in devel
+- [x] Login flow (Google OAuth or password) completes successfully in devel
       without missing-config errors.
-- [ ] `DATABASE_URI` and `DOCKER_URI` resolve correctly (verified via startup
+- [x] `DATABASE_URI` and `DOCKER_URI` resolve correctly (verified via startup
       log or a quick `cspawnctl` call).
-- [ ] Optional nice-to-have: a `make dev` (or equivalent) target in the
+- [x] Optional nice-to-have: a `make dev` (or equivalent) target in the
       Makefile that runs `dotconfig load -d devel -o .env && flask run` to
       simplify the local developer workflow.
 
