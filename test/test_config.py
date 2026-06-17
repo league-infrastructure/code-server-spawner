@@ -66,14 +66,14 @@ class TestFindEnvFile:
         found = _find_env_file(tmp_path)
         assert found == (tmp_path / ".env").resolve()
 
-    def test_raises_when_missing(self, tmp_path, monkeypatch):
-        # Point cwd at an empty temp dir so no .env is found walking up
+    def test_returns_none_when_missing(self, tmp_path, monkeypatch):
+        # No .env on disk → returns None so get_config falls back to os.environ
+        # (the container deployment injects config as env vars via env_file:).
         monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("JTL_CONFIG_DIR", raising=False)
         monkeypatch.delenv("JTL_APP_DIR", raising=False)
         monkeypatch.delenv("JTP_APP_DIR", raising=False)
-        with pytest.raises(FileNotFoundError, match="dotconfig load"):
-            _find_env_file(None)
+        assert _find_env_file(None) is None
 
     def test_jtl_config_dir_wins(self, tmp_path, monkeypatch):
         env_dir = tmp_path / "config"
@@ -130,13 +130,16 @@ class TestGetConfig:
         c = get_config(root=tmp_path)
         assert c.get("CONFIG_DIR") == str(tmp_path.resolve())
 
-    def test_raises_when_no_env(self, tmp_path, monkeypatch):
+    def test_falls_back_to_env_when_no_file(self, tmp_path, monkeypatch):
+        # No .env file → config is built from os.environ (container deployment).
         monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("JTL_CONFIG_DIR", raising=False)
         monkeypatch.delenv("JTL_APP_DIR", raising=False)
         monkeypatch.delenv("JTP_APP_DIR", raising=False)
-        with pytest.raises(FileNotFoundError):
-            get_config(root=tmp_path / "nonexistent")
+        monkeypatch.setenv("DATABASE_URI", "postgresql://from-env")
+        c = get_config(root=tmp_path / "nonexistent")
+        assert c.get("DATABASE_URI") == "postgresql://from-env"
+        assert c["__CONFIG_PATH"] == ["<environment>"]
 
     def test_deploy_param_accepted(self, tmp_path):
         """deploy kwarg is accepted (for backward compat) and does not raise."""

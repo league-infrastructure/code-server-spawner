@@ -109,11 +109,11 @@ def _find_env_file(root: Path | None) -> Path:
         if candidate.exists():
             return candidate.resolve()
 
-    searched = ", ".join(str(c) for c in candidates)
-    raise FileNotFoundError(
-        f"No .env file found (searched: {searched}). "
-        "Generate one with: dotconfig load -d <deploy> -o .env"
-    )
+    # No .env file on disk. This is normal in the container deployment, where
+    # config is injected as environment variables via the stack's `env_file:`
+    # (env_file populates the process environment, it does not write a file).
+    # Callers fall back to os.environ in that case.
+    return None
 
 
 def walk_up(d, f=None) -> List[Path]:
@@ -167,15 +167,24 @@ def get_config(
     env_path = _find_env_file(Path(root) if root is not None else None)
 
     config: Dict[str, Any] = {}
-    config.update(dotenv_values(env_path))
+    if env_path is not None:
+        # Local / developer flow: a dotconfig-generated .env on disk.
+        config.update(dotenv_values(env_path))
 
-    # os.environ wins over .env values (backward-compatible precedence rule)
+    # os.environ wins over .env values (backward-compatible precedence rule).
+    # In the container deployment there is no .env file — config arrives here
+    # entirely via os.environ (the stack's env_file: injects the vars).
     config.update(os.environ)
 
-    # Populate legacy keys that callers depend on
-    config["CONFIG_DIR"] = str(env_path.parent)
-    # __CONFIG_PATH is a list for backward compat (CLI iterates it, checks len())
-    config["__CONFIG_PATH"] = [env_path]
+    # Populate legacy keys that callers depend on. When config came from the
+    # environment (no file), anchor CONFIG_DIR to JTL_APP_DIR / cwd so callers
+    # that resolve paths relative to it (e.g. cloud-init files) still work.
+    if env_path is not None:
+        config["CONFIG_DIR"] = str(env_path.parent)
+        config["__CONFIG_PATH"] = [env_path]
+    else:
+        config["CONFIG_DIR"] = config.get("JTL_APP_DIR") or config.get("APP_DIR") or str(Path.cwd())
+        config["__CONFIG_PATH"] = ["<environment>"]
 
     return Config(config)
 
