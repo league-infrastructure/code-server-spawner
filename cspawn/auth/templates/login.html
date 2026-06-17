@@ -65,6 +65,18 @@
                         </a>
                     </div>
 
+                    {% if dev_admin_login %}
+                    <!-- Dev-only admin login bypass (DEV_ADMIN_LOGIN) -->
+                    <div class="text-center mb-4">
+                        <p class="text-danger mb-2"><small>Development only</small></p>
+                        <a href="{{ url_for('auth.dev_admin_login') }}" class="d-grid">
+                            <button type="button" class="btn btn-danger btn-lg">
+                                Log in as Admin
+                            </button>
+                        </a>
+                    </div>
+                    {% endif %}
+
                     <!-- Registration Link -->
                     <div class="text-center mt-3">
                         <p>Don't have an account? <a href="{{ url_for('auth.register') }}">Register a new account</a>

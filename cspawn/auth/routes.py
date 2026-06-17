@@ -3,7 +3,7 @@ Routes for logging in, registering, and managing users.
 """
 
 import uuid
-from flask import current_app, flash, redirect, render_template, request, session, url_for
+from flask import abort, current_app, flash, redirect, render_template, request, session, url_for
 from flask_dance.contrib.google import google
 from flask_login import current_user, login_required, login_user, logout_user
 from oauthlib.oauth2.rfc6749.errors import TokenExpiredError
@@ -21,6 +21,19 @@ def _context():
     from cspawn.init import default_context  # Breaks circular import
 
     return default_context
+
+
+def _dev_admin_login_enabled():
+    """Whether the dev-only "log in as admin" bypass is available.
+
+    Enabled only when the DEV_ADMIN_LOGIN config flag is truthy (see
+    config/*.env) AND we are not running the real 'prod' deployment. Used
+    for remote development where the Google/GitHub OAuth flows can't be
+    completed from the operator's browser.
+    """
+    flag = str(current_app.app_config.get("DEV_ADMIN_LOGIN", "")).strip().lower()
+    enabled = flag in ("1", "true", "yes", "on")
+    return enabled and getattr(current_app, "deployment", None) != "prod"
 
 
 @auth_bp.route("/")
@@ -53,7 +66,39 @@ def login():
     else:
         logger.debug(f"Login form validation errors: {form.errors}")
 
-    return render_template("login.html", form=form, **_context())
+    return render_template(
+        "login.html",
+        form=form,
+        dev_admin_login=_dev_admin_login_enabled(),
+        **_context(),
+    )
+
+
+@auth_bp.route("/login/dev-admin", methods=["POST", "GET"])
+def dev_admin_login():
+    """Dev-only: log in as the root admin user without OAuth.
+
+    Gated by the DEV_ADMIN_LOGIN config flag and disabled on the 'prod'
+    deployment (see _dev_admin_login_enabled). Returns 404 when disabled so
+    the endpoint is invisible in production.
+    """
+    if not _dev_admin_login_enabled():
+        abort(404)
+
+    # Log in as the first real admin (lowest id, excluding the id=0 root
+    # account). A real admin is also an instructor, so it has full access.
+    admin = (
+        User.query.filter(User.is_admin.is_(True), User.id != 0)
+        .order_by(User.id)
+        .first()
+    )
+    if admin is None:
+        flash("No admin user found.", "danger")
+        return redirect(url_for("auth.login"))
+
+    login_user(admin)
+    logger.warning(f"DEV_ADMIN_LOGIN bypass used: logged in as {admin.username} (id={admin.id})")
+    return redirect(url_for("main.index"))
 
 
 @auth_bp.route("/login/google", methods=["POST", "GET"])

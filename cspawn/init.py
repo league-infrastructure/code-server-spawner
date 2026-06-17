@@ -49,6 +49,7 @@ GOOGLE_LOGIN_SCOPES = [
 
 class App(Flask):
     app_config: dict
+    deployment: str
     db: SQLAlchemy
     csm: CodeServerManager
     bootstrap: Bootstrap5
@@ -102,6 +103,7 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
     config = configure_config_tree(config_dir, deploy=deployment)
     app.secret_key = config["SECRET_KEY"]
     app.app_config = config
+    app.deployment = deployment
 
     # Initialize logger
    
