@@ -134,8 +134,12 @@ def register_user_up(username, password, class_code):
 
 @auth_bp.route("/register")
 def register():
-    """Handle user registration."""
-    return register_google()
+    """Handle user registration.
+
+    Default to username/password registration; users can switch to the
+    Google tab from there.
+    """
+    return register_up()
 
 
 @auth_bp.route("/register/google", methods=["POST", "GET"])
