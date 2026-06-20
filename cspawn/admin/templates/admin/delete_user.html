@@ -37,13 +37,6 @@
     {% endif %}
 
     <form method="post" action="{{ url_for('admin.delete_user', user_id=user.id) }}">
-        <div class="mb-3">
-            <label for="confirm" class="form-label">
-                Type <code>DELETE</code> to confirm:
-            </label>
-            <input type="text" class="form-control" id="confirm" name="confirm"
-                   autocomplete="off" style="max-width: 16rem;">
-        </div>
         <div class="form-check mb-3">
             <input class="form-check-input" type="checkbox" id="force" name="force" value="1">
             <label class="form-check-label" for="force">

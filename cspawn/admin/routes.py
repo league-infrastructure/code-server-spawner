@@ -115,9 +115,9 @@ def view_host(host_id):
 def delete_user(user_id):
     """Fully delete a user: stop servers, delete GitHub repos, delete the record.
 
-    GET renders a confirmation page listing what will be torn down. POST (with
-    the confirmation field) performs the destructive teardown synchronously and
-    reports a summary.
+    GET renders a confirmation page listing what will be torn down. POST (the
+    Delete button on that page) performs the destructive teardown synchronously
+    and reports a summary.
     """
     from cspawn.admin.teardown import teardown_user
 
@@ -126,16 +126,12 @@ def delete_user(user_id):
     # Root and self protection: never delete the root user or the logged-in admin.
     if user.id == 0:
         flash("Refusing to delete the root user.", "danger")
-        return redirect(url_for("auth.admin_users"))
+        return redirect(url_for("admin.list_users"))
     if user.id == current_user.id:
         flash("Refusing to delete the currently logged-in admin.", "danger")
-        return redirect(url_for("auth.admin_users"))
+        return redirect(url_for("admin.list_users"))
 
     if request.method == "POST":
-        if request.form.get("confirm") != "DELETE":
-            flash("Type DELETE to confirm; user was not deleted.", "warning")
-            return redirect(url_for("admin.delete_user", user_id=user_id))
-
         force = "force" in request.form
         report = teardown_user(ca, user, force=force)
 
@@ -154,7 +150,7 @@ def delete_user(user_id):
             flash(f"Failure: {f}", "danger")
 
         if report.user_deleted:
-            return redirect(url_for("auth.admin_users"))
+            return redirect(url_for("admin.list_users"))
         return redirect(url_for("admin.delete_user", user_id=user_id))
 
     code_hosts = CodeHost.query.filter_by(user_id=user.id).all()

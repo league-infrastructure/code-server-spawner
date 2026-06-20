@@ -45,6 +45,57 @@ def rm(rm):
     pass
 
 
+@node.command(name="hosts")
+@click.option("-s", "--summary", is_flag=True,
+              help="Only show the count of hosts per node, not the full list.")
+@click.pass_context
+def hosts(ctx, summary):
+    """List running code-server hosts grouped by the swarm node they run on.
+
+    Placement is read live from Swarm (where each task actually runs), so it
+    reflects reschedules/drains rather than possibly-stale DB node_name values.
+    """
+    from collections import defaultdict
+
+    cfg = get_config()
+    docker_uri = cfg.get("DOCKER_URI")
+    if not docker_uri:
+        raise click.ClickException("Missing required config: DOCKER_URI")
+    try:
+        client = docker.DockerClient(base_url=docker_uri, use_ssh_client=True)
+    except Exception as e:
+        raise click.ClickException(f"Failed to connect to docker manager at {docker_uri}: {e}")
+
+    # node id -> short hostname
+    node_name = {}
+    for n in client.nodes.list():
+        hn = n.attrs.get("Description", {}).get("Hostname", "") or n.id
+        node_name[n.id] = hn.split(".")[0]
+
+    per_node = defaultdict(list)
+    for svc in client.services.list(filters={"label": "jtl.codeserver=true"}):
+        labels = svc.attrs.get("Spec", {}).get("Labels", {})
+        uname = labels.get("jtl.codeserver.username") or svc.name
+        for t in svc.tasks(filters={"desired-state": "running"}):
+            if (t.get("Status", {}) or {}).get("State") != "running":
+                continue
+            nid = t.get("NodeID")
+            per_node[node_name.get(nid, nid or "?")].append(uname)
+
+    total = sum(len(v) for v in per_node.values())
+    if summary:
+        click.echo(f"{'NODE':<12} HOSTS")
+        for node in sorted(per_node):
+            click.echo(f"{node:<12} {len(per_node[node])}")
+        click.echo(f"{'TOTAL':<12} {total}")
+    else:
+        for node in sorted(per_node):
+            click.echo(f"\n{node} ({len(per_node[node])}):")
+            for u in sorted(per_node[node]):
+                click.echo(f"  {u}")
+        click.echo(f"\nTotal: {total} hosts on {len(per_node)} node(s)")
+
+
 def _compute_fingerprint(pub_key_str: str) -> str:
     """Compute MD5 fingerprint for an OpenSSH public key string."""
     try:

@@ -381,11 +381,15 @@ class GithubOrg:
             self.app.logger.info(f"Repo {self.org}/{target_name} already exists; skipping fork")
             return StudentRepo(self.config, self.app, self.org, target_name, upstream_name, upstream_url, username)
 
-        # Create a fork under the org, serialized per upstream URL.
-        # GitHub returns 403 "already being forked" when a fork is still in
-        # progress, and 429 under rapid retries.  We acquire a per-upstream
-        # lock so only one thread issues the create_fork POST at a time, then
-        # retry on those two transient conditions.
+        # Fork the upstream DIRECTLY to the per-student target name. GitHub's
+        # create_fork supports a custom `name=`, so each student gets its own
+        # uniquely-named fork with no shared intermediate repo and no rename.
+        # This eliminates the prior fork->rename race: concurrent students used
+        # to collide on a single `<org>/<upstream-name>` repo, so some renames
+        # lost the race, leaving orphaned forks and "<target> not ready in
+        # time" timeouts. The per-upstream lock + retry remain as defense
+        # against 429 (rate limit) / 403 ("already being forked") around the
+        # create_fork POST.
         upstream_repo = self.gh.get_repo(f"{owner}/{name}")
         fork_lock = _get_fork_lock(upstream_url)
         _MAX_FORK_ATTEMPTS = 8
@@ -396,7 +400,7 @@ class GithubOrg:
             for attempt in range(1, _MAX_FORK_ATTEMPTS + 1):
                 try:
                     upstream_repo.create_fork(
-                        organization=self.org, default_branch_only=True
+                        organization=self.org, name=target_name, default_branch_only=True
                     )
                     break  # success
                 except GithubException as exc:
@@ -413,19 +417,14 @@ class GithubOrg:
                     time.sleep(backoff)
                     backoff = min(backoff * 2, _FORK_BACKOFF_CAP)
 
-        # Wait for fork to be ready
-        self._wait_repo_ready(self.org, name)
+        # Wait for the (directly-named) fork to be ready.
+        self._wait_repo_ready(self.org, target_name)
 
-        # If target already exists (a previous run progressed further), treat as done
-        if self._repo_exists(self.org, target_name):
-            self.app.logger.info(f"Repo {self.org}/{target_name} already exists after fork; skipping rename")
-            return StudentRepo(self.config, self.app, self.org, target_name, upstream_name, upstream_url, username)
-
-        # Rename with retries to handle GitHub background operations
-        if name != target_name:
-            self.app.logger.info(f"Renaming {self.org}/{name} to {self.org}/{target_name}")
-            self._rename_with_retry(self.org, name, target_name, private=private)
-            self._wait_repo_ready(self.org, target_name)
+        if private:
+            try:
+                self.gh.get_repo(f"{self.org}/{target_name}").edit(private=True)
+            except Exception as e:
+                self.app.logger.warning(f"Could not set {self.org}/{target_name} private: {e}")
 
         return StudentRepo(self.config, self.app, self.org, target_name, upstream_name, upstream_url, username)
 
