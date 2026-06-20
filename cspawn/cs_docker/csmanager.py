@@ -297,8 +297,15 @@ def define_cs_container(
         
         public_url = f"https://{username}:{password}@{hostname}/"
         public_url_no_auth = f"https://{hostname}/"
-        #vnc_url = public_url_no_auth + "vnc/?scale=true"
-        vnc_url = public_url_no_auth + "proxy/6080/vnc_lite.html?path=proxy/6080/websockify&scale=true"
+        # VNC client URL path appended after https://{host}/. Externalized to
+        # config (VNC_URL_PATH) so it survives deployment switches; the default
+        # below is the direct-Caddy-websockify route with auto-reconnect (see
+        # config/*/public.env for the old /proxy/6080 value and rationale).
+        vnc_path = config.get(
+            "VNC_URL_PATH",
+            "vnc/vnc.html?autoconnect=true&reconnect=true&reconnect_delay=1000&resize=scale&path=websockify",
+        )
+        vnc_url = public_url_no_auth + vnc_path
         ports = None
     else:
         # Running in development mode
