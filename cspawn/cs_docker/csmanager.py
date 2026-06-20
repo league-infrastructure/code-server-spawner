@@ -303,7 +303,7 @@ def define_cs_container(
         # config/*/public.env for the old /proxy/6080 value and rationale).
         vnc_path = config.get(
             "VNC_URL_PATH",
-            "vnc/vnc.html?autoconnect=true&reconnect=true&reconnect_delay=1000&resize=scale&path=websockify",
+            "vnc/vnc.html?autoconnect=true&reconnect=true&reconnect_delay=1000&resize=scale&quality=0&compression=9&path=websockify",
         )
         vnc_url = public_url_no_auth + vnc_path
         ports = None
