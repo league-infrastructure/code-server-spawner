@@ -145,8 +145,24 @@ class ContainersManager(DockerManager):
         return Container(self, container)
 
     def get(self, name_or_id: str) -> Any:
-        """Retrieve a container by name or ID."""
-        container = self.client.containers.get(name_or_id)
+        """Retrieve a container by name or ID.
+
+        The client may be an SSH-tunneled connection to a remote node. If that
+        tunnel went half-open (e.g. a transient network blip dropped it), the
+        first call raises a connection error but the underlying ssh subprocess
+        can be re-established, so retry once with a freshly closed/reopened
+        connection before giving up.
+        """
+        try:
+            container = self.client.containers.get(name_or_id)
+        except (ConnectionError, OSError):
+            # Tear down the stale connection and retry once. close() is safe
+            # even on an already-broken client.
+            try:
+                self.client.close()
+            except Exception:
+                pass
+            container = self.client.containers.get(name_or_id)
         return Container(self, container)
 
     def list(
@@ -316,8 +332,15 @@ class ServicesManager(DockerManager):
         env = self.combine_dicts(self.env, environment)
         env_list = [f"{key}={value}" for key, value in env.items()]
 
-        # No placement constraints: allow the scheduler to place services on any node
+        # Legacy key: never forward a raw 'placement' kwarg to the SDK.
         kwargs.pop("placement", None)
+
+        # Swarm placement constraints (e.g. ["node.role != manager"]). docker-py
+        # accepts a 'constraints' list on services.create() and applies it to the
+        # task template's Placement. Absent/empty means the scheduler picks any node.
+        constraints = kwargs.pop("constraints", None)
+        if constraints:
+            kwargs["constraints"] = list(constraints)
 
         service = self.client.services.create(
             image=image,

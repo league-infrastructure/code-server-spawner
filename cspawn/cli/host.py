@@ -172,12 +172,11 @@ def reap(ctx, dry_run: bool):
         for ch in CodeHost.query.all():
             if ch.is_mia:
                 print(ch.service_name + ": ", end=" ")
-                if not purge:
-                    print("MIA")
+                if dry_run:
+                    print("MIA (would delete)")
                 else:
-                    print("Purge", end=" ")
                     app.db.session.delete(ch)
-                    print(f"; Deleted {ch.service_name}")
+                    print(f"Deleted {ch.service_name}")
 
         if not dry_run:
             app.db.session.commit()
@@ -201,16 +200,21 @@ def purge(ctx, dry_run: bool):
             ch = cast(CodeHost, ch)
 
             if ch.is_mia or ch.is_quiescent:
-                s = app.csm.get(ch)
                 print(ch.service_name + ": ", end=" ")
 
                 if not dry_run:
-                    if s:
-                        s.stop()
+                    # Stopping the service tunnels to the node and can fail if the
+                    # node is unreachable. Don't let one bad host abort the batch;
+                    # still delete the DB record so the orphan doesn't linger.
+                    try:
+                        s = app.csm.get(ch)
+                        if s:
+                            s.stop()
+                    except Exception as e:
+                        print(f"(stop failed: {e})", end=" ")
                     app.db.session.delete(ch)
                     print(f"Stopped and deleted:   {ch.service_name}")
                 else:
-     
                     print(f"Would stop and delete: {ch.service_name}")
 
         if not dry_run:

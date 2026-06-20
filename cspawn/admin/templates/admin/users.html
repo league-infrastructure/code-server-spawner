@@ -46,6 +46,10 @@
                         class="d-inline">
                         <button type="submit" class="btn btn-sm btn-outline-primary">Become</button>
                     </form>
+                    {% if user.id != 0 %}
+                    <a href="{{ url_for('admin.delete_user', user_id=user.id) }}"
+                        class="btn btn-sm btn-outline-danger">Full Delete</a>
+                    {% endif %}
                     {% endif %}
                 </td>
             </tr>

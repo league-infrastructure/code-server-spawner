@@ -33,7 +33,14 @@ write_files:
       ufw default deny incoming
       ufw default allow outgoing
 
-      # Allow SSH
+      # Allow SSH.
+      # NOTE: 'ufw allow' does NOT supersede an existing 'limit 22/tcp' rule
+      # (ufw keys rules by port+action, so they coexist and the rate-limit
+      # wins). The DO base image and older provisioning set 'limit 22/tcp',
+      # which throttles the spawner's per-container SSH Docker tunnels under
+      # load and makes nodes intermittently un-introspectable. Delete any
+      # limit rule first, then allow.
+      ufw delete limit 22/tcp || true
       ufw allow 22/tcp
 
       # Detect VPC iface (10.124.0.0/20) and public iface
@@ -61,6 +68,11 @@ write_files:
 runcmd:
   # Make sure Docker starts
   - systemctl enable --now docker
+
+  # Install the DigitalOcean metrics agent (do-agent). The install script
+  # adds DO's package repo and enables the do-agent service automatically.
+  # See https://docs.digitalocean.com/products/monitoring/how-to/install-metrics-agent/
+  - curl -sSL https://repos.insights.digitalocean.com/install.sh | bash
 
   # Configure firewall for swarm (workers do not need 2377)
   - /usr/local/sbin/configure-ufw-swarm.sh

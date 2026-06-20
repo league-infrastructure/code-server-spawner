@@ -180,7 +180,7 @@ class Service(ProcessBase):
 
             try:
                 n_manager = self.manager._node_manager(node_name)
-            except NoValidConnectionsError as e:
+            except (NoValidConnectionsError, ConnectionError, OSError) as e:
                 logger.error(
                     f"Error connecting to node {node_name} for container {t}: {e}"
                 )
@@ -192,8 +192,39 @@ class Service(ProcessBase):
                 )
                 continue
 
-            cont: Container = n_manager.get(container_id)
-           
+            # The actual Docker inspect call tunnels over SSH to the node. A
+            # transient blip can leave a half-open tunnel that broken-pipes on
+            # every reuse even though the node is healthy and a *fresh* ssh
+            # connects fine. Rebuild the node manager (which constructs a new
+            # ssh subprocess) and retry once before giving up on the container.
+            cont = None
+            for attempt in (1, 2):
+                try:
+                    cont = n_manager.get(container_id)
+                    break
+                except (ConnectionError, OSError) as e:
+                    if attempt == 1:
+                        logger.warning(
+                            f"Stale connection to node {node_name} inspecting "
+                            f"{container_id}; rebuilding and retrying: {e}"
+                        )
+                        try:
+                            n_manager = self.manager._node_manager(node_name)
+                        except (NoValidConnectionsError, ConnectionError, OSError) as e2:
+                            logger.error(
+                                f"Rebuild of node manager for {node_name} failed: {e2}"
+                            )
+                            n_manager = None
+                        if n_manager is None:
+                            break
+                    else:
+                        logger.error(
+                            f"Error inspecting container {container_id} on node "
+                            f"{node_name} after retry: {e}"
+                        )
+            if cont is None:
+                continue
+
             cont.node = node
 
             yield cont

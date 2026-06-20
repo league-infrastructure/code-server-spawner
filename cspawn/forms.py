@@ -46,10 +46,15 @@ class ClassForm(FlaskForm):
             if hasattr(model, field):
                 form._fields[field].data = getattr(model, field)
 
+        # Fall back to the editing user's timezone (then UTC) when the class
+        # has no timezone set, so dates with a missing tz don't crash on
+        # ZoneInfo(None).
+        display_tz = model.timezone or getattr(current_user, "timezone", None) or "UTC"
+        tz = ZoneInfo(display_tz)
         if form.start_date.data:
-            form.start_date.data = form.start_date.data.astimezone(ZoneInfo(model.timezone))
+            form.start_date.data = form.start_date.data.astimezone(tz)
         if form.end_date.data:
-            form.end_date.data = form.end_date.data.astimezone(ZoneInfo(model.timezone))
+            form.end_date.data = form.end_date.data.astimezone(tz)
 
         return form
 

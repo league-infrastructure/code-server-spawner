@@ -1,0 +1,58 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Delete User{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="text-danger">Fully Delete User: {{ user.username }}</h1>
+
+    <div class="alert alert-danger">
+        <strong>This is destructive and cannot be undone.</strong> It will, in order:
+        <ol class="mb-0">
+            <li>Stop and remove all of this user's code servers (and their swarm services).</li>
+            <li>Delete all of this user's GitHub repositories under the org
+                (every repo ending in <code>-{{ user.username }}</code>).</li>
+            <li>Delete the user record from the database.</li>
+        </ol>
+    </div>
+
+    <h3>Code servers to be removed ({{ code_hosts|length }})</h3>
+    {% if code_hosts %}
+    <table class="table table-sm table-striped">
+        <thead>
+            <tr><th>Service</th><th>State</th><th>Node</th></tr>
+        </thead>
+        <tbody>
+            {% for ch in code_hosts %}
+            <tr>
+                <td>{{ ch.service_name or 'N/A' }}</td>
+                <td>{{ ch.state or 'N/A' }}</td>
+                <td>{{ ch.node_name or 'N/A' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">No code servers found for this user.</p>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('admin.delete_user', user_id=user.id) }}">
+        <div class="mb-3">
+            <label for="confirm" class="form-label">
+                Type <code>DELETE</code> to confirm:
+            </label>
+            <input type="text" class="form-control" id="confirm" name="confirm"
+                   autocomplete="off" style="max-width: 16rem;">
+        </div>
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="force" name="force" value="1">
+            <label class="form-check-label" for="force">
+                Force: delete the user record even if stopping servers or deleting
+                repos partially fails (otherwise the user is kept for retry).
+            </label>
+        </div>
+        <button type="submit" class="btn btn-danger">Delete User</button>
+        <a href="{{ url_for('admin.list_users') }}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+{% endblock %}

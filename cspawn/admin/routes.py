@@ -110,6 +110,57 @@ def view_host(host_id):
     return render_template("admin/view_host.html", code_host=code_host, service=service)
 
 
+@admin_bp.route("/user/<int:user_id>/delete", methods=["GET", "POST"])
+@admin_required
+def delete_user(user_id):
+    """Fully delete a user: stop servers, delete GitHub repos, delete the record.
+
+    GET renders a confirmation page listing what will be torn down. POST (with
+    the confirmation field) performs the destructive teardown synchronously and
+    reports a summary.
+    """
+    from cspawn.admin.teardown import teardown_user
+
+    user = User.query.get_or_404(user_id)
+
+    # Root and self protection: never delete the root user or the logged-in admin.
+    if user.id == 0:
+        flash("Refusing to delete the root user.", "danger")
+        return redirect(url_for("auth.admin_users"))
+    if user.id == current_user.id:
+        flash("Refusing to delete the currently logged-in admin.", "danger")
+        return redirect(url_for("auth.admin_users"))
+
+    if request.method == "POST":
+        if request.form.get("confirm") != "DELETE":
+            flash("Type DELETE to confirm; user was not deleted.", "warning")
+            return redirect(url_for("admin.delete_user", user_id=user_id))
+
+        force = "force" in request.form
+        report = teardown_user(ca, user, force=force)
+
+        summary = (
+            f"Servers stopped: {len(report.servers_stopped)}; "
+            f"repos deleted: {len(report.repos_deleted)}."
+        )
+        if report.user_deleted:
+            flash(f"User '{report.username}' fully deleted. {summary}", "success")
+        else:
+            flash(
+                f"User '{report.username}' NOT deleted (kept for retry). {summary}",
+                "warning",
+            )
+        for f in report.failures:
+            flash(f"Failure: {f}", "danger")
+
+        if report.user_deleted:
+            return redirect(url_for("auth.admin_users"))
+        return redirect(url_for("admin.delete_user", user_id=user_id))
+
+    code_hosts = CodeHost.query.filter_by(user_id=user.id).all()
+    return render_template("admin/delete_user.html", user=user, code_hosts=code_hosts)
+
+
 @admin_bp.route("/protos")
 @admin_required
 def list_protos():

@@ -163,10 +163,18 @@ class CSMService(Service):
 
             try:
 
-                c:Container = next(self.containers) # There is nearly always only one. 
-              
+                c:Container = next(self.containers) # There is nearly always only one.
+
             except (KeyError, StopIteration):
                 logger.error("CodeHost.to_model(): No container found for service %s", self.name)
+                c = None
+            except (ConnectionError, OSError) as e:
+                # The node hosting this container is unreachable (broken pipe,
+                # connection reset, etc.). Treat it as no container rather than
+                # letting it abort the caller's whole sync/purge loop.
+                logger.error(
+                    "CodeHost.to_model(): node unreachable for service %s: %s", self.name, e
+                )
                 c = None
 
         # Get class_id from labels and validate it exists in database
@@ -379,8 +387,19 @@ def define_cs_container(
         "environment": env_vars,
         "ports": ports,
         "network": ["caddy", "jtlctl"]
-       
+
     }
+
+    # Optional Swarm placement constraints (e.g. ["node.role != manager"] to keep
+    # code-server services off manager nodes). Read from config so each deployment
+    # can set its own policy; absent/empty means no constraint (scheduler picks any node).
+    placement_constraints = getattr(config, "PLACEMENT_CONSTRAINTS", None)
+    if placement_constraints:
+        if isinstance(placement_constraints, str):
+            placement_constraints = [
+                c.strip() for c in placement_constraints.split(",") if c.strip()
+            ]
+        d["constraints"] = list(placement_constraints)
 
     if config.USER_DIRS:
         d["mounts"] = [f"{str(Path(config.USER_DIRS) / slugify(username))}:/workspace"]

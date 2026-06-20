@@ -27,7 +27,12 @@ ufw default deny incoming
 ufw default allow outgoing
 
 # Allow SSH
-# Plain allow (not 'limit') — no rate-limit on SSH port.
+# Plain allow (not 'limit') — no rate-limit on SSH port. 'ufw allow' does NOT
+# remove an existing 'limit 22/tcp' rule (they coexist and the limit wins), so
+# delete any limit rule first. The spawner opens many short-lived SSH Docker
+# tunnels per node under load, which a rate-limit throttles into intermittent
+# 'connection refused' / broken-pipe introspection failures.
+ufw delete limit 22/tcp || true
 ufw allow 22/tcp
 
 # Allow swarm dataplane from VPC only (on VPC iface)
