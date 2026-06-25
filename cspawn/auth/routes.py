@@ -130,12 +130,16 @@ def google_login():
             username="not_set",  # wll set later, after User constructed.
             user_id="google_" + user_info["id"],
             email=user_info.get("email"),
+            display_name=user_info.get("name"),
             oauth_provider="google",
             avatar_url=user_info["picture"],
         )
 
         set_role_from_email(current_app, user)
         user.username = find_username(user)
+    elif user_info.get("name") and not user.display_name:
+        # Backfill display_name for accounts created before it was captured.
+        user.display_name = user_info.get("name")
 
     if session.get("reg_class_code"):
         class_code = session["reg_class_code"]
