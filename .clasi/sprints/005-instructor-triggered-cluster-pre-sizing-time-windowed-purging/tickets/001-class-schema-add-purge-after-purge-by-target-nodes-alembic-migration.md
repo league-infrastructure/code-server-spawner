@@ -1,13 +1,13 @@
 ---
 id: '001'
-title: "Class schema — add purge_after, purge_by, target_nodes + Alembic migration"
-status: open
+title: "Class schema \u2014 add purge_after, purge_by, target_nodes + Alembic migration"
+status: done
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
-  - SUC-004
-  - SUC-005
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
+- SUC-005
 depends-on: []
 github-issue: ''
 issue: instructor-cluster-presize.md
@@ -56,18 +56,18 @@ reading it.
 
 ## Acceptance Criteria
 
-- [ ] `Class` model in `cspawn/models.py` declares `purge_after`, `purge_by`,
+- [x] `Class` model in `cspawn/models.py` declares `purge_after`, `purge_by`,
       and `target_nodes` as SQLAlchemy `Column` declarations with correct types
       and `nullable=True`.
-- [ ] An Alembic revision file exists in `migrations/versions/` (or equivalent)
+- [x] An Alembic revision file exists in `migrations/versions/` (or equivalent)
       that adds all three columns to the `classes` table.
-- [ ] `flask db upgrade` applies the migration cleanly against an existing DB
+- [x] `flask db upgrade` applies the migration cleanly against an existing DB
       that has the `classes` table without these columns.
-- [ ] `flask db downgrade` removes all three columns without error.
-- [ ] Existing rows after migration have `NULL` for all three new fields.
-- [ ] The `Class` model can be imported and instantiated with the new fields
+- [x] `flask db downgrade` removes all three columns without error.
+- [x] Existing rows after migration have `NULL` for all three new fields.
+- [x] The `Class` model can be imported and instantiated with the new fields
       absent (all nullable — no schema-level `default` needed).
-- [ ] `Class.running` still exists and is unmodified.
+- [x] `Class.running` still exists and is unmodified.
 
 ## Implementation Plan
 

@@ -180,6 +180,11 @@ class Class(db.Model):
     running_at = Column(DateTime, nullable=True)  # Time the class began allowing students to join.
     stops_at = Column(DateTime, nullable=True)  # Time the class ends and students are no longer allowed to join.
 
+    # Sprint 005: purge-window columns for instructor-triggered cluster pre-sizing
+    purge_after = Column(DateTime(timezone=True), nullable=True, index=True)  # Start of reap window; nothing reaped before this.
+    purge_by = Column(DateTime(timezone=True), nullable=True)  # Hard cutoff; all remaining resources force-removed.
+    target_nodes = Column(Integer, nullable=True)  # Requested cluster size computed from roster.
+
     instructors = relationship("User", secondary="class_instructors", back_populates="classes_instructing")
     students = relationship("User", secondary="class_students", back_populates="classes_taking")
 
