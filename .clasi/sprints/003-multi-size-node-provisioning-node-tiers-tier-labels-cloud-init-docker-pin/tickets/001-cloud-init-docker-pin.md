@@ -1,8 +1,9 @@
 ---
 id: '001'
 title: cloud-init docker pin
-status: open
-use-cases: [SUC-003]
+status: done
+use-cases:
+- SUC-003
 depends-on: []
 github-issue: ''
 issue: multi-size-node-provisioning.md
@@ -31,15 +32,15 @@ operational blocker.
 
 ## Acceptance Criteria
 
-- [ ] `packages:` in `swarm-node-init-v2.yaml` no longer lists `docker.io`.
-- [ ] `ufw` and `jq` remain in `packages:`.
-- [ ] `runcmd:` begins with `apt-get update -qq`.
-- [ ] `runcmd:` installs `docker-ce=5:27.4.1-1~ubuntu.20.04~focal` and `docker-ce-cli=5:27.4.1-1~ubuntu.20.04~focal` with `--allow-downgrades --allow-change-held-packages` before `systemctl enable --now docker`.
-- [ ] `runcmd:` runs `apt-mark hold docker-ce docker-ce-cli` before `systemctl enable --now docker`.
-- [ ] `systemctl enable --now docker` is still present (after the pin/hold steps).
-- [ ] All existing `runcmd` steps (do-agent curl, `configure-ufw-swarm.sh`, sshd restart) are preserved in their current order after the docker steps.
-- [ ] A comment in `runcmd` says "Update this version when the manager's docker-ce is upgraded."
-- [ ] The `write_files` section is unchanged.
+- [x] `packages:` in `swarm-node-init-v2.yaml` no longer lists `docker.io`.
+- [x] `ufw` and `jq` remain in `packages:`.
+- [x] `runcmd:` begins with `apt-get update -qq`.
+- [x] `runcmd:` installs `docker-ce=5:27.4.1-1~ubuntu.20.04~focal` and `docker-ce-cli=5:27.4.1-1~ubuntu.20.04~focal` with `--allow-downgrades --allow-change-held-packages` before `systemctl enable --now docker`.
+- [x] `runcmd:` runs `apt-mark hold docker-ce docker-ce-cli` before `systemctl enable --now docker`.
+- [x] `systemctl enable --now docker` is still present (after the pin/hold steps).
+- [x] All existing `runcmd` steps (do-agent curl, `configure-ufw-swarm.sh`, sshd restart) are preserved in their current order after the docker steps.
+- [x] A comment in `runcmd` says "Update this version when the manager's docker-ce is upgraded."
+- [x] The `write_files` section is unchanged.
 
 ## Implementation Plan
 

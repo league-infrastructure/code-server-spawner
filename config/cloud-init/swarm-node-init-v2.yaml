@@ -2,7 +2,6 @@
 package_update: true
 package_upgrade: false
 packages:
-  - docker.io
   - ufw
   - jq
 
@@ -86,7 +85,15 @@ write_files:
       echo "UFW configured for Docker Swarm dataplane (iface='${VPC_IFACE:-<cidr-only>}', ${VPC_CIDR})"
 
 runcmd:
-  # Make sure Docker starts
+  # Pin docker-ce to the manager's version to prevent major-version mismatch at join.
+  # The DO docker-20-04 image ships a newer engine; this downgrades and holds it.
+  # IMPORTANT: Update this version string when the manager's docker-ce is upgraded.
+  - apt-get update -qq
+  - >-
+    apt-get install -y --allow-downgrades --allow-change-held-packages
+    docker-ce=5:27.4.1-1~ubuntu.20.04~focal
+    docker-ce-cli=5:27.4.1-1~ubuntu.20.04~focal
+  - apt-mark hold docker-ce docker-ce-cli
   - systemctl enable --now docker
 
   # Install the DigitalOcean metrics agent (do-agent). The install script
