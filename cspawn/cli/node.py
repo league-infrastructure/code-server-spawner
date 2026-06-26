@@ -46,6 +46,31 @@ def rm(rm):
     pass
 
 
+def _running_hosts_by_node(client: docker.DockerClient) -> dict[str, int]:
+    """Return {short_node_name: running_host_count} for all swarm nodes.
+
+    Counts running tasks for services labeled jtl.codeserver=true.
+    Used by both the 'hosts' command and 'contract' candidate selection.
+    """
+    from collections import defaultdict
+
+    node_name_map: dict[str, str] = {}
+    for n in client.nodes.list():
+        hn = n.attrs.get("Description", {}).get("Hostname", "") or n.id
+        node_name_map[n.id] = hn.split(".")[0]
+
+    per_node: dict[str, int] = defaultdict(int)
+    for svc in client.services.list(filters={"label": "jtl.codeserver=true"}):
+        for t in svc.tasks(filters={"desired-state": "running"}):
+            if (t.get("Status", {}) or {}).get("State") != "running":
+                continue
+            nid = t.get("NodeID")
+            short = node_name_map.get(nid, nid or "?")
+            per_node[short] += 1
+
+    return dict(per_node)
+
+
 @node.command(name="hosts")
 @click.option("-s", "--summary", is_flag=True,
               help="Only show the count of hosts per node, not the full list.")
@@ -72,6 +97,9 @@ def hosts(ctx, summary):
     for n in client.nodes.list():
         hn = n.attrs.get("Description", {}).get("Hostname", "") or n.id
         node_name[n.id] = hn.split(".")[0]
+
+    # Use _running_hosts_by_node for counts; build per_node with usernames for listing
+    running_counts = _running_hosts_by_node(client)
 
     per_node = defaultdict(list)
     for svc in client.services.list(filters={"label": "jtl.codeserver=true"}):
@@ -2024,13 +2052,127 @@ def label_backfill(ctx, do_apply: bool):
         click.echo("\n(Dry run. Re-run with --apply to write labels.)")
 
 
+def _select_contract_candidate(
+    client: docker.DockerClient, cfg
+) -> tuple[int, str] | None:
+    """Return (serial, fqdn) of the best empty worker to remove, or None.
+
+    Selection policy:
+    - Eligible: hostname matches DO_NAMES, not leader, not manager, running_hosts == 0.
+    - Sort key: (capacity ASC, serial DESC) — remove smallest capacity first;
+      among ties, remove the newest (highest serial) to preserve long-lived nodes.
+
+    Returns None if no eligible empty node exists. Never returns a loaded node.
+    """
+    from cspawn.cs_docker.tiers import node_capacity
+
+    name_template = cfg.get("DO_NAMES")
+    if not name_template:
+        return None
+
+    pat = _regex_from_template(name_template)
+    running = _running_hosts_by_node(client)
+
+    candidates = []
+    for n in client.nodes.list():
+        attrs = n.attrs or {}
+        hostname = ((attrs.get("Description") or {}).get("Hostname") or "").strip()
+        if not hostname or not pat.match(hostname):
+            continue
+        short = hostname.split(".")[0]
+        role = ((attrs.get("Spec") or {}).get("Role") or "").lower()
+        is_leader = bool(((attrs.get("ManagerStatus") or {}).get("Leader")) or False)
+        if is_leader or role == "manager":
+            continue
+        host_count = running.get(short, 0)
+        if host_count > 0:
+            continue  # never remove a loaded node in default mode
+
+        m = pat.match(hostname)
+        try:
+            serial = int(m.group(1))
+        except Exception:
+            continue
+
+        cap = node_capacity(attrs, cfg)
+        candidates.append((cap, -serial, serial, hostname))  # -serial for DESC sort
+
+    if not candidates:
+        return None
+
+    candidates.sort()  # (capacity ASC, -serial ASC i.e. serial DESC)
+    _, _, serial, fqdn = candidates[0]
+    return (serial, fqdn)
+
+
+def _select_drain_candidate(
+    client: docker.DockerClient, cfg
+) -> tuple[int, str] | None:
+    """Return (serial, fqdn) of the least-loaded eligible worker, or None.
+
+    Used by --force-drain when no empty node exists. Selection among loaded
+    eligible workers: fewest running_hosts first, then (capacity ASC, serial DESC).
+
+    Still never selects the manager or leader.
+    """
+    from cspawn.cs_docker.tiers import node_capacity
+
+    name_template = cfg.get("DO_NAMES")
+    if not name_template:
+        return None
+
+    pat = _regex_from_template(name_template)
+    running = _running_hosts_by_node(client)
+
+    candidates = []
+    for n in client.nodes.list():
+        attrs = n.attrs or {}
+        hostname = ((attrs.get("Description") or {}).get("Hostname") or "").strip()
+        if not hostname or not pat.match(hostname):
+            continue
+        short = hostname.split(".")[0]
+        role = ((attrs.get("Spec") or {}).get("Role") or "").lower()
+        is_leader = bool(((attrs.get("ManagerStatus") or {}).get("Leader")) or False)
+        if is_leader or role == "manager":
+            continue
+
+        m = pat.match(hostname)
+        try:
+            serial = int(m.group(1))
+        except Exception:
+            continue
+
+        host_count = running.get(short, 0)
+        cap = node_capacity(attrs, cfg)
+        # Sort: fewest hosts first, then capacity ASC, then serial DESC (-serial ASC)
+        candidates.append((host_count, cap, -serial, serial, hostname))
+
+    if not candidates:
+        return None
+
+    candidates.sort()
+    _, _, _, serial, fqdn = candidates[0]
+    return (serial, fqdn)
+
+
 @node.command(name="contract")
 @click.option("-N", "--dry-run", is_flag=True, help="Only print what would be done")
+@click.option("--force-drain", is_flag=True,
+              help="When no empty node exists, gracefully drain the least-loaded eligible worker.")
 @click.pass_context
-def contract_node(ctx, dry_run: bool):
-    """Shrink the cluster by removing the highest-numbered eligible node.
+def contract_node(ctx, dry_run: bool, force_drain: bool):
+    """Shrink the cluster by removing the smallest empty worker node.
 
-    Eligibility: hostname matches DO_NAMES pattern and node is not the swarm leader (and not a manager).
+    Default mode: only removes nodes with zero running code-server hosts. If no
+    empty node exists, exits cleanly without removing anything.
+
+    --force-drain mode: when no empty node exists, selects the least-loaded
+    eligible worker and gracefully drains it (drain → wait tasks drained →
+    remove node → destroy droplet) so live sessions reschedule. Never removes
+    the manager or leader.
+
+    Use --dry-run with either mode to see which node would be selected without
+    making any changes.
     """
     log = get_logger(ctx)
     cfg = get_config()
@@ -2040,59 +2182,41 @@ def contract_node(ctx, dry_run: bool):
     if not (docker_uri and name_template):
         raise click.ClickException("Missing DOCKER_URI or DO_NAMES in configuration")
 
-    # Connect to docker
     try:
         client = docker.DockerClient(base_url=docker_uri, use_ssh_client=True)
     except Exception as e:
         raise click.ClickException(f"Failed to connect to docker manager at {docker_uri}: {e}")
 
-    pat = _regex_from_template(name_template)
-
-    # Find highest-numbered non-leader worker node
-    selected = None  # tuple(serial:int, fqdn:str)
     try:
-        for n in client.nodes.list():
-
-            attrs = n.attrs or {}
-            name = ((attrs.get("Description", {}) or {}).get("Hostname") or "").strip()
-            log.debug(f"[contract] Examining node: {name}")
-            if not name:
-                log.debug(f"[contract] Skipping empty node name")
-                continue
-            m = pat.match(name)
-            if not m:
-                log.debug(f"[contract] Skipping node name `{name}` not matching pattern {pat}")
-                continue
-            short = name.split(".")[0]
-            role = ((attrs.get("Spec", {}) or {}).get("Role") or "").lower()
-            is_leader = bool(((attrs.get("ManagerStatus", {}) or {}).get("Leader")) or False)
-            if is_leader:
-                log.debug(f"[contract] Skipping leader node: {name}")
-                continue
-            # Avoid contracting managers even if not leader
-            if role == "manager":
-                log.debug(f"[contract] Skipping manager node: {name}")
-                continue
-            try:
-                serial = int(m.group(1))
-            except Exception as e:
-                log.debug(f"[contract] Failed to parse serial from node name {name}: {e}")
-                continue
-            if (selected is None) or (serial > selected[0]):
-                selected = (serial, name)
-
+        result = _select_contract_candidate(client, cfg)
     except Exception as e:
-        raise click.ClickException(f"Failed to list swarm nodes: {e}")
+        raise click.ClickException(f"Failed to select contract candidate: {e}")
 
-    if not selected:
-        click.echo("No eligible node to contract.")
+    if result is None and force_drain:
+        # Fall back to least-loaded worker
+        try:
+            result = _select_drain_candidate(client, cfg)
+        except Exception as e:
+            raise click.ClickException(f"Failed to select drain candidate: {e}")
+        if result is None:
+            click.echo("No empty node to contract.")
+            return
+        serial, fqdn = result
+        if dry_run:
+            click.echo(f"Would force-drain node {fqdn} (serial={serial})")
+            return
+        log.info(f"[contract] Force-drain: selected node {fqdn} (serial={serial})")
+        ctx.invoke(stop_node, force=False, dry_run=False, node_spec=fqdn)
         return
 
-    serial, fqdn = selected
+    if result is None:
+        click.echo("No empty node to contract.")
+        return
+
+    serial, fqdn = result
     if dry_run:
         click.echo(f"Would contract by stopping node {fqdn} (serial={serial})")
         return
 
     log.info(f"[contract] Selected node {fqdn} (serial={serial}) for contraction")
-    # Reuse stop flow (non-force, not dry-run)
     ctx.invoke(stop_node, force=False, dry_run=False, node_spec=fqdn)

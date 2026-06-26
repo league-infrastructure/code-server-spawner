@@ -1,11 +1,15 @@
 ---
-id: "005"
-title: "capacity-aware contract"
-status: open
-use-cases: [SUC-005]
-depends-on: ["002", "003", "004"]
-github-issue: ""
-issue: "multi-size-node-provisioning.md"
+id: '005'
+title: capacity-aware contract
+status: done
+use-cases:
+- SUC-005
+depends-on:
+- '002'
+- '003'
+- '004'
+github-issue: ''
+issue: multi-size-node-provisioning.md
 completes_issue: true
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -36,20 +40,20 @@ labels present at join), 004 (labels present on existing nodes).
 
 ## Acceptance Criteria
 
-- [ ] `_running_hosts_by_node(client) -> dict[str, int]` exists as a module-level function that returns `{short_name: count}` of running code-server tasks per node.
-- [ ] The `hosts` command body delegates its per-node count to `_running_hosts_by_node` (behavior identical to before).
-- [ ] `_select_contract_candidate(client, cfg) -> tuple[int, str] | None` exists as a module-level function.
-- [ ] `_select_contract_candidate` returns `None` when no eligible worker node has zero running hosts.
-- [ ] `_select_contract_candidate` selects among empty-only nodes, sorted by `(capacity ASC, serial DESC)` — smallest capacity first, newest (highest serial) as tiebreaker.
-- [ ] `_select_contract_candidate` reads `cs.capacity` from node labels via `node_capacity(node_attrs, cfg)` from `tiers.py`; falls back to `default_capacity(cfg)` for unlabeled nodes.
-- [ ] `contract_node` calls `_select_contract_candidate`; if `None` is returned, prints "No empty node to contract." and exits cleanly (exit code 0).
-- [ ] By default (no `--force-drain`), `contract_node` does NOT remove a node with `running_hosts > 0` under any circumstance.
-- [ ] `contract --dry-run` prints the selected candidate (or "No empty node") without destroying anything.
-- [ ] **`contract --force-drain`** (stakeholder decision 2026-06-26): when no empty node exists, may select and gracefully drain a *loaded* eligible worker. Selection among loaded eligible workers = fewest `running_hosts` first, then `(capacity ASC, serial DESC)`. It uses the existing graceful `stop_node` drain path (drain → wait tasks drained → remove node → destroy droplet) so live sessions are rescheduled, never hard-killed. Still never selects the manager/leader.
-- [ ] `--force-drain` honors `--dry-run` (prints the node that would be drained without draining).
-- [ ] `contract_node` docstring and help text document both modes: default removes only empty nodes; `--force-drain` gracefully drains the least-loaded worker when none are empty.
-- [ ] Unit tests for `_select_contract_candidate` pass (see Testing Plan).
-- [ ] `uv run pytest` passes with no regressions.
+- [x] `_running_hosts_by_node(client) -> dict[str, int]` exists as a module-level function that returns `{short_name: count}` of running code-server tasks per node.
+- [x] The `hosts` command body delegates its per-node count to `_running_hosts_by_node` (behavior identical to before).
+- [x] `_select_contract_candidate(client, cfg) -> tuple[int, str] | None` exists as a module-level function.
+- [x] `_select_contract_candidate` returns `None` when no eligible worker node has zero running hosts.
+- [x] `_select_contract_candidate` selects among empty-only nodes, sorted by `(capacity ASC, serial DESC)` — smallest capacity first, newest (highest serial) as tiebreaker.
+- [x] `_select_contract_candidate` reads `cs.capacity` from node labels via `node_capacity(node_attrs, cfg)` from `tiers.py`; falls back to `default_capacity(cfg)` for unlabeled nodes.
+- [x] `contract_node` calls `_select_contract_candidate`; if `None` is returned, prints "No empty node to contract." and exits cleanly (exit code 0).
+- [x] By default (no `--force-drain`), `contract_node` does NOT remove a node with `running_hosts > 0` under any circumstance.
+- [x] `contract --dry-run` prints the selected candidate (or "No empty node") without destroying anything.
+- [x] **`contract --force-drain`** (stakeholder decision 2026-06-26): when no empty node exists, may select and gracefully drain a *loaded* eligible worker. Selection among loaded eligible workers = fewest `running_hosts` first, then `(capacity ASC, serial DESC)`. It uses the existing graceful `stop_node` drain path (drain → wait tasks drained → remove node → destroy droplet) so live sessions are rescheduled, never hard-killed. Still never selects the manager/leader.
+- [x] `--force-drain` honors `--dry-run` (prints the node that would be drained without draining).
+- [x] `contract_node` docstring and help text document both modes: default removes only empty nodes; `--force-drain` gracefully drains the least-loaded worker when none are empty.
+- [x] Unit tests for `_select_contract_candidate` pass (see Testing Plan).
+- [x] `uv run pytest` passes with no regressions.
 
 ## Implementation Plan
 
