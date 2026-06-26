@@ -1,11 +1,14 @@
 ---
-id: "004"
-title: "node label-backfill command"
-status: open
-use-cases: [SUC-004]
-depends-on: ["002", "003"]
-github-issue: ""
-issue: ""
+id: '004'
+title: node label-backfill command
+status: done
+use-cases:
+- SUC-004
+depends-on:
+- '002'
+- '003'
+github-issue: ''
+issue: ''
 completes_issue: false
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -33,16 +36,16 @@ Default mode is dry-run (read-only). `--apply` is required to write labels.
 
 ## Acceptance Criteria
 
-- [ ] `cspawnctl node label-backfill` runs without `--apply` and prints a table without modifying any labels.
-- [ ] Table columns: `NODE`, `SIZE_SLUG`, `INFERRED_TIER`, `CAPACITY`, `ACTION`.
-- [ ] `ACTION` column shows `would-apply` in dry-run; `applied` or `already-set` in `--apply` mode.
-- [ ] Nodes that already have `cs.tier` set are shown as `already-set` and skipped.
-- [ ] `cspawnctl node label-backfill --apply` stamps `cs.tier` and `cs.capacity` on nodes that lack `cs.tier`.
-- [ ] Backfill is idempotent: running `--apply` twice produces no errors and no duplicate API calls.
-- [ ] When a node's DO droplet has a slug not in `NODE_TIERS`, the node is skipped with a `WARN: unknown slug` in the `ACTION` column and a warning printed to stderr.
-- [ ] Manager nodes (swarm1 if it is the manager) are included in the table and labeled (for completeness) but the existing `PLACEMENT_CONSTRAINTS` prevents them from receiving code-server tasks.
-- [ ] Missing `DO_TOKEN` raises a `ClickException` with a clear message.
-- [ ] The command is registered under the `node` group and appears in `cspawnctl node --help`.
+- [x] `cspawnctl node label-backfill` runs without `--apply` and prints a table without modifying any labels.
+- [x] Table columns: `NODE`, `SIZE_SLUG`, `INFERRED_TIER`, `CAPACITY`, `ACTION`.
+- [x] `ACTION` column shows `would-apply` in dry-run; `applied` or `already-set` in `--apply` mode.
+- [x] Nodes that already have `cs.tier` set are shown as `already-set` and skipped.
+- [x] `cspawnctl node label-backfill --apply` stamps `cs.tier` and `cs.capacity` on nodes that lack `cs.tier`.
+- [x] Backfill is idempotent: running `--apply` twice produces no errors and no duplicate API calls.
+- [x] When a node's DO droplet has a slug not in `NODE_TIERS`, the node is skipped with a `WARN: unknown slug` in the `ACTION` column and a warning printed to stderr.
+- [x] Manager nodes (swarm1 if it is the manager) are included in the table and labeled (for completeness) but the existing `PLACEMENT_CONSTRAINTS` prevents them from receiving code-server tasks.
+- [x] Missing `DO_TOKEN` raises a `ClickException` with a clear message.
+- [x] The command is registered under the `node` group and appears in `cspawnctl node --help`.
 
 ## Implementation Plan
 

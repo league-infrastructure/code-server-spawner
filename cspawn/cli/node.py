@@ -1918,6 +1918,112 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
         pass
 
 
+@node.command(name="label-backfill")
+@click.option("--apply", "do_apply", is_flag=True,
+              help="Write cs.tier and cs.capacity labels (default: dry-run, print only).")
+@click.pass_context
+def label_backfill(ctx, do_apply: bool):
+    """Stamp cs.tier/cs.capacity labels on existing unlabeled swarm nodes.
+
+    Reads each node's DigitalOcean droplet size_slug, maps it to a tier via
+    NODE_TIERS (tier_for_slug), and (with --apply) writes the labels.
+
+    Safe to run multiple times: nodes with cs.tier already set are skipped.
+    """
+    from cspawn.cs_docker.tiers import load_tiers, tier_for_slug
+
+    log = get_logger(ctx)
+    cfg = get_config()
+    docker_uri = cfg.get("DOCKER_URI")
+    do_token = cfg.get("DO_TOKEN")
+    name_template = cfg.get("DO_NAMES")
+    do_tag = cfg.get("DO_TAG")
+
+    if not do_token:
+        raise click.ClickException("Missing DO_TOKEN in configuration")
+    if not (docker_uri and name_template):
+        raise click.ClickException("Missing DOCKER_URI or DO_NAMES in configuration")
+
+    tiers = load_tiers(cfg)
+    if not tiers:
+        raise click.ClickException("No tiers configured; check NODE_TIERS or DO_SIZE.")
+
+    # Connect to swarm manager
+    try:
+        client = docker.DockerClient(base_url=docker_uri, use_ssh_client=True)
+    except Exception as e:
+        raise click.ClickException(f"Failed to connect to docker manager: {e}")
+
+    # Fetch all droplets once via python-digitalocean (need size_slug, not in dict helper)
+    mgr = digitalocean.Manager(token=do_token)
+    try:
+        droplet_objs = mgr.get_all_droplets(tag_name=do_tag) if do_tag else mgr.get_all_droplets()
+    except Exception as e:
+        raise click.ClickException(f"Failed to list DO droplets: {e}")
+
+    # Build short-name -> droplet object map for fast lookup
+    droplet_by_name = {}
+    for d in droplet_objs:
+        name = (getattr(d, "name", None) or "").strip()
+        if name:
+            droplet_by_name[name.split(".")[0]] = d
+
+    pat = _regex_from_template(name_template)
+
+    rows = []  # list of (node_name, slug, tier_name, capacity, action)
+
+    for n in client.nodes.list():
+        attrs = n.attrs or {}
+        hostname = ((attrs.get("Description") or {}).get("Hostname") or "").strip()
+        if not hostname or not pat.match(hostname):
+            continue
+        short = hostname.split(".")[0]
+
+        # Check existing labels — skip if cs.tier already set
+        spec_labels = ((attrs.get("Spec") or {}).get("Labels") or {})
+        if "cs.tier" in spec_labels:
+            rows.append((short, "—", spec_labels.get("cs.tier", "?"),
+                         spec_labels.get("cs.capacity", "?"), "already-set"))
+            continue
+
+        # Resolve droplet
+        droplet = droplet_by_name.get(short)
+        if not droplet:
+            rows.append((short, "?", "?", "?", "WARN: droplet not found"))
+            log.warning(f"[label-backfill] Node {short}: no matching DO droplet found; skipping")
+            continue
+
+        slug = (getattr(droplet, "size_slug", None) or "").strip()
+        tier = tier_for_slug(cfg, slug)
+        if tier is None:
+            rows.append((short, slug, "?", "?", "WARN: unknown slug"))
+            log.warning(
+                f"[label-backfill] Node {short} has slug '{slug}' not in NODE_TIERS; skipping"
+            )
+            continue
+
+        if do_apply:
+            _ensure_node_labels(
+                client, hostname,
+                {"cs.tier": tier.name, "cs.capacity": str(tier.capacity)},
+                log=log,
+            )
+            action = "applied"
+        else:
+            action = "would-apply"
+
+        rows.append((short, slug, tier.name, str(tier.capacity), action))
+
+    # Print table
+    click.echo(f"{'NODE':<12} {'SIZE_SLUG':<24} {'INFERRED_TIER':<16} {'CAPACITY':<10} ACTION")
+    click.echo("-" * 80)
+    for node_name, slug, tier_name, cap, action in rows:
+        click.echo(f"{node_name:<12} {slug:<24} {tier_name:<16} {cap:<10} {action}")
+
+    if not do_apply:
+        click.echo("\n(Dry run. Re-run with --apply to write labels.)")
+
+
 @node.command(name="contract")
 @click.option("-N", "--dry-run", is_flag=True, help="Only print what would be done")
 @click.pass_context
