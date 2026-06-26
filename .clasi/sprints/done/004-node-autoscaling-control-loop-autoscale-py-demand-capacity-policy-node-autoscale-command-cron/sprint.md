@@ -1,14 +1,15 @@
 ---
 id: '004'
-title: "Node autoscaling control loop — autoscale.py, demand/capacity policy, node autoscale command + cron"
-status: planning-docs
+title: "Node autoscaling control loop \u2014 autoscale.py, demand/capacity policy,\
+  \ node autoscale command + cron"
+status: done
 branch: sprint/004-node-autoscaling-control-loop-autoscale-py-demand-capacity-policy-node-autoscale-command-cron
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
+- SUC-001
+- SUC-002
+- SUC-003
 issues:
-  - node-autoscaling-control-loop
+- node-autoscaling-control-loop
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
