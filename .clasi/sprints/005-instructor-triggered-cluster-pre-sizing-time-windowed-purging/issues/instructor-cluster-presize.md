@@ -1,3 +1,10 @@
+---
+status: in-progress
+sprint: '005'
+tickets:
+- 005-001
+- 005-003
+---
 # Instructor-triggered cluster pre-sizing + time-windowed purging
 
 **Audience:** an engineer or agent working on the code-server-spawner's node
