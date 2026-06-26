@@ -1,13 +1,13 @@
 ---
 id: '005'
 title: node autoscale CLI command and cron wiring
-status: open
+status: done
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
+- SUC-001
+- SUC-002
+- SUC-003
 depends-on:
-  - '004'
+- '004'
 github-issue: ''
 issue: node-autoscaling-control-loop.md
 completes_issue: true
@@ -27,29 +27,29 @@ anything until an operator explicitly enables it.
 
 ## Acceptance Criteria
 
-- [ ] `@node.command(name="autoscale")` subcommand is added to the `node` group in
+- [x] `@node.command(name="autoscale")` subcommand is added to the `node` group in
       `cspawn/cli/node.py`.
-- [ ] Command options:
+- [x] Command options:
       - `-N` / `--dry-run` (flag): override `dry_run=True` regardless of config.
       - `--force` (flag): bypass cooldown in `plan_scale_down` (for manual emergency use).
       - `--up-only` / `--down-only` (mutex flag pair, default neither): limit the cycle
         to scale-up actions only or scale-down actions only.
-- [ ] Command body calls `run_autoscale(ctx, dry_run=dry_run, force=force, up_only=up_only)`
+- [x] Command body calls `run_autoscale(ctx, dry_run=dry_run, force=force, up_only=up_only)`
       and calls `click.echo(result.summary())`.
-- [ ] `cspawnctl node autoscale --help` exits 0 and shows all options.
-- [ ] `cspawnctl -d devel node autoscale --dry-run` (or equivalent local invocation)
+- [x] `cspawnctl node autoscale --help` exits 0 and shows all options.
+- [x] `cspawnctl -d devel node autoscale --dry-run` (or equivalent local invocation)
       runs without traceback when `AUTOSCALE_ENABLED=false` (logs "autoscale disabled"
       and exits 0). CRITICAL: do not require live Docker or DO for this check.
-- [ ] `docker/crontab` contains a commented-out autoscale line:
+- [x] `docker/crontab` contains a commented-out autoscale line:
       ```
       # */2 * * * * cspawnctl -d prod node autoscale >/proc/1/fd/1 2>/proc/1/fd/2
       ```
       positioned alongside the existing commented `host reap` line. The comment explains
       that uncommenting activates the autoscaler (which also requires setting
       `AUTOSCALE_ENABLED=true` and `AUTOSCALE_DRY_RUN=false` in config).
-- [ ] `uv run pytest` passes with no regressions.
-- [ ] `AUTOSCALE_ENABLED=false` in all three `public.env` files (verified from ticket 001).
-- [ ] `AUTOSCALE_DRY_RUN=true` in all three `public.env` files (verified from ticket 001).
+- [x] `uv run pytest` passes with no regressions.
+- [x] `AUTOSCALE_ENABLED=false` in all three `public.env` files (verified from ticket 001).
+- [x] `AUTOSCALE_DRY_RUN=true` in all three `public.env` files (verified from ticket 001).
 
 ## CRITICAL Safety Requirement
 

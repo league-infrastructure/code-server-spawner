@@ -173,6 +173,17 @@ class ApplyResult:
     dry_run: bool = False
     errors: list[str] = field(default_factory=list)
 
+    def summary(self) -> str:
+        """Return a single-line structured log string suitable for journald/logfmt."""
+        return (
+            f"autoscale result="
+            f"added={self.added} "
+            f"removed={self.removed} "
+            f"purged={self.purged} "
+            f"dry_run={self.dry_run} "
+            f"errors={len(self.errors)}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Pure functions

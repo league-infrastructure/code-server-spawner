@@ -2280,3 +2280,32 @@ def contract_node(ctx, dry_run: bool, force_drain: bool):
 
     log.info(f"[contract] Selected node {fqdn} (serial={serial}) for contraction")
     ctx.invoke(stop_node, force=False, dry_run=False, node_spec=fqdn)
+
+
+@node.command(name="autoscale")
+@click.option(
+    "-N", "--dry-run",
+    is_flag=True,
+    help="Read-only mode: log the plan but make no changes.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Bypass cooldown check (for manual emergency use).",
+)
+@click.option(
+    "--up-only/--down-only",
+    "up_only",
+    default=None,
+    help="Limit to scale-up-only or scale-down-only actions.",
+)
+@click.pass_context
+def autoscale_cmd(ctx, dry_run: bool, force: bool, up_only):
+    """Run one autoscale cycle: assess cluster demand and scale up or down.
+
+    Respects AUTOSCALE_ENABLED (kill-switch) and AUTOSCALE_DRY_RUN (global
+    dry-run override). Safe to run from cron: exits cleanly when disabled.
+    """
+    from cspawn.cs_docker.autoscale import run_autoscale
+    result = run_autoscale(ctx, dry_run=dry_run, force=force, up_only=up_only)
+    click.echo(result.summary())
