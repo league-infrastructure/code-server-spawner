@@ -1,3 +1,13 @@
+---
+status: done
+---
+
+> **Resolved 2026-06-25:** Layer 1 (websockify `--heartbeat=25`) is deployed and
+> running in production (image `v1.20260619.2`); Layer 2 is N/A for Caddy (no
+> nginx-style idle timeout). The optional Layer 3 client auto-reconnect backstop
+> was deemed non-essential and not implemented. Core symptom (idle drops needing
+> a reload) is fixed.
+
 # Fixing noVNC connection drops / timeouts
 
 **Audience:** an engineer or agent maintaining a service that streams a desktop/app to the browser via **noVNC** (RFB over WebSocket, usually through **websockify**), where **sessions drop and the user has to reload the page to get them back.**

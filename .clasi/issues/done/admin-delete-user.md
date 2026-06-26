@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 ---
 
 # Admin panel: fully delete a user (stop servers, delete repos, delete user)
