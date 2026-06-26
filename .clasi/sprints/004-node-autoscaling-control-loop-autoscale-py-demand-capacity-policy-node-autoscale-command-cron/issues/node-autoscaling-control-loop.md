@@ -1,5 +1,8 @@
 ---
-status: pending
+status: in-progress
+sprint: '004'
+tickets:
+- 004-001
 ---
 
 # Node Autoscaling: control loop & policy
