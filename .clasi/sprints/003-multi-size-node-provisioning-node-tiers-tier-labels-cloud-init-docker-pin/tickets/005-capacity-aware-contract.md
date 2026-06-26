@@ -43,9 +43,11 @@ labels present at join), 004 (labels present on existing nodes).
 - [ ] `_select_contract_candidate` selects among empty-only nodes, sorted by `(capacity ASC, serial DESC)` — smallest capacity first, newest (highest serial) as tiebreaker.
 - [ ] `_select_contract_candidate` reads `cs.capacity` from node labels via `node_capacity(node_attrs, cfg)` from `tiers.py`; falls back to `default_capacity(cfg)` for unlabeled nodes.
 - [ ] `contract_node` calls `_select_contract_candidate`; if `None` is returned, prints "No empty node to contract." and exits cleanly (exit code 0).
-- [ ] `contract_node` does NOT remove a node with `running_hosts > 0` under any circumstance.
+- [ ] By default (no `--force-drain`), `contract_node` does NOT remove a node with `running_hosts > 0` under any circumstance.
 - [ ] `contract --dry-run` prints the selected candidate (or "No empty node") without destroying anything.
-- [ ] `contract_node` docstring and help text note the behavioral change: "only removes empty nodes; use 'cspawnctl node stop <node>' to force-remove a loaded node."
+- [ ] **`contract --force-drain`** (stakeholder decision 2026-06-26): when no empty node exists, may select and gracefully drain a *loaded* eligible worker. Selection among loaded eligible workers = fewest `running_hosts` first, then `(capacity ASC, serial DESC)`. It uses the existing graceful `stop_node` drain path (drain → wait tasks drained → remove node → destroy droplet) so live sessions are rescheduled, never hard-killed. Still never selects the manager/leader.
+- [ ] `--force-drain` honors `--dry-run` (prints the node that would be drained without draining).
+- [ ] `contract_node` docstring and help text document both modes: default removes only empty nodes; `--force-drain` gracefully drains the least-loaded worker when none are empty.
 - [ ] Unit tests for `_select_contract_candidate` pass (see Testing Plan).
 - [ ] `uv run pytest` passes with no regressions.
 
