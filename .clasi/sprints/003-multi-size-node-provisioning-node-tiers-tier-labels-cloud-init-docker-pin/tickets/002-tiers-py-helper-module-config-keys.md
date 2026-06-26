@@ -1,11 +1,13 @@
 ---
-id: "002"
-title: "tiers.py helper module + config keys"
-status: open
-use-cases: [SUC-001, SUC-002]
+id: '002'
+title: tiers.py helper module + config keys
+status: done
+use-cases:
+- SUC-001
+- SUC-002
 depends-on: []
-github-issue: ""
-issue: ""
+github-issue: ''
+issue: ''
 completes_issue: false
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -25,20 +27,20 @@ is the enforcement point.
 
 ## Acceptance Criteria
 
-- [ ] `cspawn/cs_docker/tiers.py` exists and is importable.
-- [ ] `Tier` is a frozen `dataclass(frozen=True)` with fields `name: str`, `slug: str`, `capacity: int`.
-- [ ] `load_tiers(cfg) -> list[Tier]` parses `NODE_TIERS` JSON from config; raises `ValueError` on malformed JSON or entries missing required fields.
-- [ ] `load_tiers(cfg)` falls back to `[Tier(name="default", slug=cfg["DO_SIZE"], capacity=default_capacity(cfg))]` when `NODE_TIERS` is absent or empty.
-- [ ] `default_tier(cfg) -> Tier` returns the tier named by `DEFAULT_TIER`; falls back to `load_tiers(cfg)[0]` if `DEFAULT_TIER` is absent or doesn't match.
-- [ ] `tier_by_name(cfg, name: str) -> Tier | None` returns the matching tier or `None`.
-- [ ] `tier_for_slug(cfg, slug: str) -> Tier | None` returns the tier whose `slug` matches, or `None`.
-- [ ] `default_capacity(cfg) -> int` returns `int(cfg["DEFAULT_CAPACITY"])` if present and valid, else `6`.
-- [ ] `node_capacity(node_attrs: dict, cfg) -> int` reads `Spec.Labels["cs.capacity"]` as int; falls back to `default_capacity(cfg)`.
-- [ ] `config/prod/public.env` has `NODE_TIERS`, `DEFAULT_TIER=small`, `DEFAULT_CAPACITY=6`.
-- [ ] `config/local-prod/public.env` has the same three keys with the same values.
-- [ ] `config/devel/public.env` has the same three keys (may use same or test values).
-- [ ] `DO_SIZE` is retained in all three config files (unchanged).
-- [ ] Unit tests pass (see Testing Plan).
+- [x] `cspawn/cs_docker/tiers.py` exists and is importable.
+- [x] `Tier` is a frozen `dataclass(frozen=True)` with fields `name: str`, `slug: str`, `capacity: int`.
+- [x] `load_tiers(cfg) -> list[Tier]` parses `NODE_TIERS` JSON from config; raises `ValueError` on malformed JSON or entries missing required fields.
+- [x] `load_tiers(cfg)` falls back to `[Tier(name="default", slug=cfg["DO_SIZE"], capacity=default_capacity(cfg))]` when `NODE_TIERS` is absent or empty.
+- [x] `default_tier(cfg) -> Tier` returns the tier named by `DEFAULT_TIER`; falls back to `load_tiers(cfg)[0]` if `DEFAULT_TIER` is absent or doesn't match.
+- [x] `tier_by_name(cfg, name: str) -> Tier | None` returns the matching tier or `None`.
+- [x] `tier_for_slug(cfg, slug: str) -> Tier | None` returns the tier whose `slug` matches, or `None`.
+- [x] `default_capacity(cfg) -> int` returns `int(cfg["DEFAULT_CAPACITY"])` if present and valid, else `6`.
+- [x] `node_capacity(node_attrs: dict, cfg) -> int` reads `Spec.Labels["cs.capacity"]` as int; falls back to `default_capacity(cfg)`.
+- [x] `config/prod/public.env` has `NODE_TIERS`, `DEFAULT_TIER=small`, `DEFAULT_CAPACITY=6`.
+- [x] `config/local-prod/public.env` has the same three keys with the same values.
+- [x] `config/devel/public.env` has the same three keys (may use same or test values).
+- [x] `DO_SIZE` is retained in all three config files (unchanged).
+- [x] Unit tests pass (see Testing Plan).
 
 ## Implementation Plan
 
