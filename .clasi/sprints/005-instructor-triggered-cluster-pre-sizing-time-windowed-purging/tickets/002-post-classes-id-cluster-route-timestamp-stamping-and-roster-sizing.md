@@ -1,12 +1,12 @@
 ---
 id: '002'
-title: "POST /classes/id/cluster route — timestamp stamping and roster sizing"
-status: open
+title: "POST /classes/id/cluster route \u2014 timestamp stamping and roster sizing"
+status: done
 use-cases:
-  - SUC-001
-  - SUC-005
+- SUC-001
+- SUC-005
 depends-on:
-  - '001'
+- '001'
 github-issue: ''
 issue: ''
 completes_issue: false
@@ -89,20 +89,20 @@ zone for now.)
 
 ## Acceptance Criteria
 
-- [ ] `POST /classes/<id>/cluster` returns HTTP 200 JSON `{"success": true}`
+- [x] `POST /classes/<id>/cluster` returns HTTP 200 JSON `{"success": true}`
       immediately without any Docker or DO API calls.
-- [ ] After the POST, `class_.purge_after` equals
+- [x] After the POST, `class_.purge_after` equals
       `max(today @ time-of-day(end_date), click_time + 1h)` when `end_date` is
       set, or `click_time + 1h` when `end_date` is None.
-- [ ] After the POST, `class_.purge_by` equals `purge_after + 1h`.
-- [ ] After the POST, `class_.target_nodes` equals
+- [x] After the POST, `class_.purge_by` equals `purge_after + 1h`.
+- [x] After the POST, `class_.target_nodes` equals
       `ceil(len(class_.students) / tier_capacity)`.
-- [ ] A second POST while the window is active recomputes all three fields
+- [x] A second POST while the window is active recomputes all three fields
       from the new click time and current roster (idempotent re-arm).
-- [ ] Route is gated by `@instructor_required`; a non-instructor receives 403.
-- [ ] `GET /classes/<id>/cluster/status` returns the correct zone string for
+- [x] Route is gated by `@instructor_required`; a non-instructor receives 403.
+- [x] `GET /classes/<id>/cluster/status` returns the correct zone string for
       each of the four states (`unarmed`, `provisioning`, `active`, `expired`).
-- [ ] No call to `run_autoscale`, `expand_node`, or any Docker/DO primitive
+- [x] No call to `run_autoscale`, `expand_node`, or any Docker/DO primitive
       occurs in either route.
 
 ## Implementation Plan
