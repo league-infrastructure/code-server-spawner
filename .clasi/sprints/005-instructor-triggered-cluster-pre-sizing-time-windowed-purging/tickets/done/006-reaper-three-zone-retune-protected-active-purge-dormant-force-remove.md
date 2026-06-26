@@ -1,10 +1,10 @@
 ---
 id: '006'
-title: "SUPERSEDED — see ticket 005 (Reaper three-zone retune)"
-status: open
+title: "SUPERSEDED \u2014 see ticket 005 (Reaper three-zone retune)"
+status: done
 use-cases: []
 depends-on:
-  - '005'
+- '005'
 github-issue: ''
 issue: ''
 completes_issue: false
@@ -22,4 +22,4 @@ ticket 005 is complete (no additional work required).
 
 ## Acceptance Criteria
 
-- [ ] Ticket 005 is complete. No independent work is needed for this ticket.
+- [x] Ticket 005 is complete. No independent work is needed for this ticket.
