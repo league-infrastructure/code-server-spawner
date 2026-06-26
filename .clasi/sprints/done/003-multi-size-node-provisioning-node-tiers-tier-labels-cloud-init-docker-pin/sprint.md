@@ -2,10 +2,16 @@
 id: '003'
 title: "Multi-size node provisioning \u2014 NODE_TIERS, tier labels, cloud-init docker\
   \ pin"
-status: planning-docs
+status: done
 branch: sprint/003-multi-size-node-provisioning-node-tiers-tier-labels-cloud-init-docker-pin
-use-cases: [SUC-001, SUC-002, SUC-003, SUC-004, SUC-005]
-issues: [multi-size-node-provisioning]
+use-cases:
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
+- SUC-005
+issues:
+- multi-size-node-provisioning
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
