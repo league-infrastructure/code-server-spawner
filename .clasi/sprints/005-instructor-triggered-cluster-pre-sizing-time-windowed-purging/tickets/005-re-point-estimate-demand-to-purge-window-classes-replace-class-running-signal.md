@@ -1,13 +1,13 @@
 ---
 id: '005'
-title: "Reaper three-zone retune — protected, active-purge, dormant force-remove"
-status: open
+title: "Reaper three-zone retune \u2014 protected, active-purge, dormant force-remove"
+status: done
 use-cases:
-  - SUC-003
-  - SUC-004
+- SUC-003
+- SUC-004
 depends-on:
-  - '001'
-  - '004'
+- '001'
+- '004'
 github-issue: ''
 issue: ''
 completes_issue: false
@@ -90,20 +90,20 @@ complex to wire, document the simplification as a known limitation.)
 
 ## Acceptance Criteria
 
-- [ ] A class in the protected zone (`now < purge_after`): no CodeHosts are
+- [x] A class in the protected zone (`now < purge_after`): no CodeHosts are
       stopped, no nodes are selected for removal, regardless of idle state.
-- [ ] A class in the active-purge zone (`purge_after <= now < purge_by`):
+- [x] A class in the active-purge zone (`purge_after <= now < purge_by`):
       CodeHosts idle for >= 15 minutes are stopped and their DB records deleted.
-- [ ] A class in the dormant zone (`now >= purge_by`): ALL remaining CodeHosts
+- [x] A class in the dormant zone (`now >= purge_by`): ALL remaining CodeHosts
       for the class are force-removed (no idle check); `purge_after`, `purge_by`,
       and `target_nodes` are set to `None` on the `Class` row.
-- [ ] After dormant force-remove, the class no longer appears in `gather_cluster_state`
+- [x] After dormant force-remove, the class no longer appears in `gather_cluster_state`
       results (because `purge_after` and `purge_by` are now NULL).
-- [ ] `plan_scale_down` does not remove nodes that belong to protected-zone classes.
-- [ ] The `host purge` CLI command (`node.py:1603`) is unchanged.
-- [ ] `AUTOSCALE_ENABLED` default remains `false`; the entire reaper path is
+- [x] `plan_scale_down` does not remove nodes that belong to protected-zone classes.
+- [x] The `host purge` CLI command (`node.py:1603`) is unchanged.
+- [x] `AUTOSCALE_ENABLED` default remains `false`; the entire reaper path is
       gated by the kill-switch in `run_autoscale`.
-- [ ] Unit tests cover all three zones for the `apply_reaper_zones` logic (inject
+- [x] Unit tests cover all three zones for the `apply_reaper_zones` logic (inject
       `now` as a parameter; mock DB rows; no Docker/DO calls needed).
 
 ## Implementation Plan

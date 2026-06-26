@@ -31,6 +31,7 @@ from cspawn.cs_docker.autoscale import (
     estimate_demand,
     gather_cluster_state,
     apply_plan,
+    apply_reaper_zones,
     run_autoscale,
     plan_scale_down,
     plan_scale_up,
@@ -1212,3 +1213,518 @@ class TestRunAutoscale:
             finally:
                 fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
                 holder.close()
+
+
+# ---------------------------------------------------------------------------
+# apply_reaper_zones — three-zone reaper logic
+# ---------------------------------------------------------------------------
+#
+# All tests inject `now` and mock the Flask app + DB to avoid any live I/O.
+# The three zones under test:
+#   Protected   (now < purge_after)  → no mutations
+#   Active-purge (purge_after <= now < purge_by) → stop idle hosts only
+#   Dormant     (now >= purge_by)   → force-remove all, clear class fields
+#
+
+
+def _make_reaper_flask_app():
+    """Create a minimal in-memory Flask app wired to cspawn models for reaper tests."""
+    from flask import Flask
+    from cspawn.models import db as _db
+
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SECRET_KEY"] = "test-reaper-secret"
+    app.config["TESTING"] = True
+
+    _db.init_app(app)
+
+    with app.app_context():
+        _db.create_all()
+
+    return app, _db
+
+
+class TestApplyReaperZones:
+    """Unit tests for the three-zone reaper (apply_reaper_zones).
+
+    Strategy: use an in-memory SQLite DB with real cspawn models.  Create
+    Class and CodeHost rows, inject `now` to place the class in each zone,
+    and verify what was (or was not) mutated.
+
+    The Flask ``csm`` attribute is mocked with a MagicMock so no Docker calls
+    are attempted during the stop step.
+    """
+
+    # ── Shared helpers ───────────────────────────────────────────────────────
+
+    _host_counter = 0  # ensure unique service_id across tests
+
+    def _make_class_and_host(self, app, db, purge_after, purge_by, updated_at):
+        """Create one ClassProto, User, Class, and CodeHost row linked together.
+
+        Returns (class_id, host_id).
+        """
+        from cspawn.models import Class, ClassProto, CodeHost, User
+
+        TestApplyReaperZones._host_counter += 1
+        suffix = TestApplyReaperZones._host_counter
+
+        with app.app_context():
+            # Minimal ClassProto (required FK on Class)
+            proto = ClassProto(
+                name=f"Test Proto {suffix}",
+                image_uri="test-image:latest",
+                hash=f"deadbeef{suffix:04d}",
+            )
+            db.session.add(proto)
+            db.session.flush()
+
+            # Minimal user (required FK on CodeHost)
+            user = User(
+                user_id=f"uid-student{suffix}",
+                email=f"student{suffix}@example.com",
+                username=f"student{suffix}",
+                is_active=True,
+            )
+            db.session.add(user)
+            db.session.flush()
+
+            cls = Class(
+                name=f"Test Class {suffix}",
+                proto_id=proto.id,
+                start_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                purge_after=purge_after,
+                purge_by=purge_by,
+            )
+            db.session.add(cls)
+            db.session.flush()
+
+            host = CodeHost(
+                user_id=user.id,
+                service_id=f"svc-test-{suffix}",
+                service_name=f"cs-student{suffix}",
+                class_id=cls.id,
+                app_state="ready",
+            )
+            # Force updated_at to the desired time
+            host.updated_at = updated_at
+            db.session.add(host)
+            db.session.commit()
+
+            return cls.id, host.id
+
+    def _make_app_with_mock_csm(self):
+        """Return (app, db) with app.csm mocked to avoid Docker calls."""
+        app, db = _make_reaper_flask_app()
+        mock_csm = MagicMock()
+        app.csm = mock_csm
+        return app, db, mock_csm
+
+    # ── 1. Protected zone — nothing reaped ───────────────────────────────────
+
+    def test_protected_zone_no_host_removed(self):
+        """Protected zone (now < purge_after): no CodeHost is stopped or deleted."""
+        from cspawn.models import CodeHost
+
+        app, db, mock_csm = self._make_app_with_mock_csm()
+
+        now = datetime(2026, 6, 25, 12, 0, 0, tzinfo=timezone.utc)
+        purge_after = now + timedelta(hours=2)   # future — protected
+        purge_by = now + timedelta(hours=4)
+        updated_at = now - timedelta(hours=1)    # idle but protected
+
+        cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        result = apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+
+        # Zone classified as protected
+        assert result[cls_id] == "protected"
+
+        # CodeHost must still be in the DB
+        with app.app_context():
+            host = CodeHost.query.get(host_id)
+            assert host is not None
+
+        # csm.get must never have been called
+        mock_csm.get.assert_not_called()
+
+    def test_protected_zone_exactly_at_boundary(self):
+        """Boundary check: now exactly equal to purge_after is active-purge, not protected."""
+        from cspawn.models import CodeHost, Class
+
+        app, db, mock_csm = self._make_app_with_mock_csm()
+
+        now = datetime(2026, 6, 25, 12, 0, 0, tzinfo=timezone.utc)
+        # purge_after == now → active-purge zone starts
+        purge_after = now
+        purge_by = now + timedelta(hours=2)
+        # Host has been idle for 30 minutes → should be reaped
+        updated_at = now - timedelta(minutes=30)
+
+        cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+
+        # Zone is active-purge (not protected) at the boundary
+        with app.app_context():
+            host = CodeHost.query.get(host_id)
+            assert host is None, "Idle host should have been removed at purge_after boundary"
+
+    # ── 2. Active-purge zone — idle hosts only ───────────────────────────────
+
+    def test_active_purge_idle_host_removed(self):
+        """Active-purge zone: host idle >= 15 min is stopped and deleted."""
+        from cspawn.models import CodeHost
+
+        app, db, mock_csm = self._make_app_with_mock_csm()
+
+        now = datetime(2026, 6, 25, 14, 0, 0, tzinfo=timezone.utc)
+        purge_after = now - timedelta(hours=1)   # past → active-purge
+        purge_by = now + timedelta(hours=1)       # future
+        updated_at = now - timedelta(minutes=20)  # idle 20 min → above threshold
+
+        cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
+
+        # Set up mock csm.get to return a mock service
+        mock_svc = MagicMock()
+        mock_csm.get.return_value = mock_svc
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        result = apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+
+        assert result[cls_id] == "active-purge"
+
+        # stop() must have been called on the service
+        mock_svc.stop.assert_called_once()
+
+        # DB record must be gone
+        with app.app_context():
+            host = CodeHost.query.get(host_id)
+            assert host is None, "Idle host should have been deleted"
+
+    def test_active_purge_non_idle_host_kept(self):
+        """Active-purge zone: host idle < 15 min is NOT touched."""
+        from cspawn.models import CodeHost
+
+        app, db, mock_csm = self._make_app_with_mock_csm()
+
+        now = datetime(2026, 6, 25, 14, 0, 0, tzinfo=timezone.utc)
+        purge_after = now - timedelta(hours=1)
+        purge_by = now + timedelta(hours=1)
+        updated_at = now - timedelta(minutes=5)  # only 5 min idle — below threshold
+
+        cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+
+        # Host must still be in the DB (not idle enough)
+        with app.app_context():
+            host = CodeHost.query.get(host_id)
+            assert host is not None, "Non-idle host must not be deleted"
+
+        mock_csm.get.assert_not_called()
+
+    def test_active_purge_exactly_15min_idle_removed(self):
+        """Active-purge zone: host at exactly 15 min idle threshold is removed."""
+        from cspawn.models import CodeHost
+
+        app, db, mock_csm = self._make_app_with_mock_csm()
+
+        now = datetime(2026, 6, 25, 14, 0, 0, tzinfo=timezone.utc)
+        purge_after = now - timedelta(hours=1)
+        purge_by = now + timedelta(hours=1)
+        updated_at = now - timedelta(minutes=15)  # exactly 15 minutes
+
+        cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
+        mock_csm.get.return_value = MagicMock()
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+
+        with app.app_context():
+            host = CodeHost.query.get(host_id)
+            assert host is None, "Host at exactly 15 min idle should be removed"
+
+    # ── 3. Dormant zone — force-remove all, clear class fields ───────────────
+
+    def test_dormant_zone_all_hosts_removed(self):
+        """Dormant zone: ALL hosts are force-removed regardless of idle state."""
+        from cspawn.models import CodeHost
+
+        app, db, mock_csm = self._make_app_with_mock_csm()
+
+        now = datetime(2026, 6, 25, 18, 0, 0, tzinfo=timezone.utc)
+        purge_after = now - timedelta(hours=3)
+        purge_by = now - timedelta(hours=1)  # past → dormant
+        # Host is NOT idle (updated just 2 minutes ago) but zone is dormant
+        updated_at = now - timedelta(minutes=2)
+
+        cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
+        mock_svc = MagicMock()
+        mock_csm.get.return_value = mock_svc
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        result = apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+
+        assert result[cls_id] == "dormant"
+
+        # Service must be stopped (no idle check in dormant zone)
+        mock_svc.stop.assert_called_once()
+
+        # DB record must be gone
+        with app.app_context():
+            host = CodeHost.query.get(host_id)
+            assert host is None, "Dormant-zone host must be force-removed"
+
+    def test_dormant_zone_class_fields_cleared(self):
+        """Dormant zone: Class.purge_after, purge_by, and target_nodes set to None."""
+        from cspawn.models import Class
+
+        app, db, mock_csm = self._make_app_with_mock_csm()
+
+        now = datetime(2026, 6, 25, 18, 0, 0, tzinfo=timezone.utc)
+        purge_after = now - timedelta(hours=3)
+        purge_by = now - timedelta(hours=1)
+        updated_at = now - timedelta(hours=2)
+
+        cls_id, _ = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
+
+        # Set target_nodes on the class
+        with app.app_context():
+            cls = Class.query.get(cls_id)
+            cls.target_nodes = 5
+            db.session.commit()
+
+        mock_csm.get.return_value = MagicMock()
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+
+        with app.app_context():
+            cls = Class.query.get(cls_id)
+            assert cls.purge_after is None, "purge_after must be cleared in dormant zone"
+            assert cls.purge_by is None, "purge_by must be cleared in dormant zone"
+            assert cls.target_nodes is None, "target_nodes must be cleared in dormant zone"
+
+    def test_dormant_zone_class_no_longer_in_gather_results(self):
+        """After dormant cleanup, class has purge_after=None so gather_cluster_state excludes it.
+
+        This is verified by querying Class directly and confirming purge_after is NULL,
+        which is the filter condition in gather_cluster_state.
+        """
+        from cspawn.models import Class
+
+        app, db, mock_csm = self._make_app_with_mock_csm()
+
+        now = datetime(2026, 6, 25, 18, 0, 0, tzinfo=timezone.utc)
+        purge_after = now - timedelta(hours=3)
+        purge_by = now - timedelta(hours=1)
+        updated_at = now - timedelta(hours=2)
+
+        cls_id, _ = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
+        mock_csm.get.return_value = MagicMock()
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+
+        # The class must have purge_after=None so gather_cluster_state excludes it
+        with app.app_context():
+            remaining = Class.query.filter(
+                Class.purge_after.isnot(None),
+                Class.purge_by.isnot(None),
+            ).all()
+            cls_ids = [c.id for c in remaining]
+            assert cls_id not in cls_ids, "Dormant class must not appear in purge-window query"
+
+    # ── 4. Dry-run — no mutations ─────────────────────────────────────────────
+
+    def test_dry_run_active_purge_no_mutations(self):
+        """dry_run=True in active-purge zone: nothing stopped or deleted."""
+        from cspawn.models import CodeHost
+
+        app, db, mock_csm = self._make_app_with_mock_csm()
+
+        now = datetime(2026, 6, 25, 14, 0, 0, tzinfo=timezone.utc)
+        purge_after = now - timedelta(hours=1)
+        purge_by = now + timedelta(hours=1)
+        updated_at = now - timedelta(minutes=30)  # clearly idle
+
+        cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        apply_reaper_zones(app, class_rows, [], now, dry_run=True)
+
+        # DB record must still exist
+        with app.app_context():
+            host = CodeHost.query.get(host_id)
+            assert host is not None, "dry_run must not delete hosts"
+
+        mock_csm.get.assert_not_called()
+
+    def test_dry_run_dormant_no_mutations(self):
+        """dry_run=True in dormant zone: nothing force-removed, class fields unchanged."""
+        from cspawn.models import CodeHost, Class
+
+        app, db, mock_csm = self._make_app_with_mock_csm()
+
+        now = datetime(2026, 6, 25, 18, 0, 0, tzinfo=timezone.utc)
+        purge_after = now - timedelta(hours=3)
+        purge_by = now - timedelta(hours=1)
+        updated_at = now - timedelta(hours=2)
+
+        cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        apply_reaper_zones(app, class_rows, [], now, dry_run=True)
+
+        # Host still exists
+        with app.app_context():
+            host = CodeHost.query.get(host_id)
+            assert host is not None, "dry_run must not delete hosts"
+
+        # Class fields unchanged
+        with app.app_context():
+            cls = Class.query.get(cls_id)
+            assert cls.purge_after is not None, "dry_run must not clear purge_after"
+            assert cls.purge_by is not None, "dry_run must not clear purge_by"
+
+        mock_csm.get.assert_not_called()
+
+    # ── 5. Manager/leader node safety ─────────────────────────────────────────
+
+    def test_reaper_does_not_remove_manager_hosts_by_node(self):
+        """apply_reaper_zones operates on CodeHost records only, not Swarm nodes.
+
+        Manager-node safety is the responsibility of plan_scale_down.  This test
+        confirms the reaper correctly removes a dormant host even when a node_name
+        is present — node role is irrelevant to host-level reaping.
+        """
+        from cspawn.models import CodeHost
+
+        app, db, mock_csm = self._make_app_with_mock_csm()
+
+        now = datetime(2026, 6, 25, 18, 0, 0, tzinfo=timezone.utc)
+        purge_after = now - timedelta(hours=2)
+        purge_by = now - timedelta(hours=1)
+        updated_at = now - timedelta(hours=2)
+
+        cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
+        mock_csm.get.return_value = MagicMock()
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        result = apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+
+        assert result[cls_id] == "dormant"
+        with app.app_context():
+            assert CodeHost.query.get(host_id) is None
+
+    # ── 6. Protected-zone guard in plan_scale_down ────────────────────────────
+
+    def test_plan_scale_down_protected_node_skipped(self):
+        """plan_scale_down skips nodes in protected_node_fqdns."""
+        # Two workers: swarm2 is protected (carries protected-zone hosts),
+        # swarm3 is large and provides excess.  swarm2 should never be selected.
+        protected = make_worker(short="swarm2", fqdn="swarm2.net", capacity=6, serial=2)
+        large = make_worker(short="swarm3", fqdn="swarm3.net", capacity=100, serial=3)
+        state = ClusterState(nodes=[protected, large], pending_hosts=0)
+
+        # Plenty of excess (106 total capacity), both nodes cooled down
+        empty_since = {
+            "swarm2.net": NOW - timedelta(hours=2),
+            "swarm3.net": NOW - timedelta(hours=2),
+        }
+        cfg = {
+            "NODE_TIERS": NODE_TIERS_JSON,
+            "DEFAULT_CAPACITY": "6",
+            "AUTOSCALE_HEADROOM": "2",
+            "AUTOSCALE_MAX_REMOVE_PER_CYCLE": "2",
+            "AUTOSCALE_SCALEDOWN_COOLDOWN_MIN": "30",
+            "AUTOSCALE_MIN_WORKER_NODES": "1",
+        }
+
+        result = plan_scale_down(
+            state, demand=0, cfg=cfg, now=NOW, empty_since=empty_since,
+            protected_node_fqdns=frozenset(["swarm2.net"]),
+        )
+
+        # swarm2 must NOT be in the result
+        fqdns = [n.fqdn for n in result]
+        assert "swarm2.net" not in fqdns, "Protected-zone node must not be selected for removal"
+
+    def test_plan_scale_down_no_protected_fqdns_unchanged_behavior(self):
+        """Passing protected_node_fqdns=None keeps original behavior."""
+        small = make_worker(short="swarm2", fqdn="swarm2.net", capacity=6, serial=2)
+        large = make_worker(short="swarm3", fqdn="swarm3.net", capacity=100, serial=3)
+        state = ClusterState(nodes=[small, large], pending_hosts=0)
+        empty_since = {
+            "swarm2.net": NOW - timedelta(hours=2),
+            "swarm3.net": NOW - timedelta(hours=2),
+        }
+
+        cfg = {
+            "NODE_TIERS": NODE_TIERS_JSON,
+            "DEFAULT_CAPACITY": "6",
+            "AUTOSCALE_HEADROOM": "2",
+            "AUTOSCALE_MAX_REMOVE_PER_CYCLE": "1",
+            "AUTOSCALE_SCALEDOWN_COOLDOWN_MIN": "30",
+            "AUTOSCALE_MIN_WORKER_NODES": "1",
+        }
+
+        result = plan_scale_down(
+            state, demand=0, cfg=cfg, now=NOW, empty_since=empty_since,
+            protected_node_fqdns=None,
+        )
+        # swarm3 (highest serial) should be selected when not protected
+        assert len(result) == 1
+        assert result[0].fqdn == "swarm3.net"
+
+    # ── 7. Zone boundary at purge_by ─────────────────────────────────────────
+
+    def test_dormant_boundary_exactly_at_purge_by(self):
+        """now exactly equal to purge_by → dormant zone."""
+        from cspawn.models import CodeHost, Class
+
+        app, db, mock_csm = self._make_app_with_mock_csm()
+
+        now = datetime(2026, 6, 25, 16, 0, 0, tzinfo=timezone.utc)
+        purge_after = now - timedelta(hours=2)
+        purge_by = now  # exactly now → dormant (>= check)
+        updated_at = now - timedelta(minutes=1)  # not idle — only dormant would remove
+
+        cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
+        mock_csm.get.return_value = MagicMock()
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        result = apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+
+        assert result[cls_id] == "dormant"
+        with app.app_context():
+            assert CodeHost.query.get(host_id) is None, "Host at purge_by must be force-removed"
+
+        with app.app_context():
+            cls = Class.query.get(cls_id)
+            assert cls.purge_after is None
+
+    # ── 8. Row missing id / purge_after → skipped ────────────────────────────
+
+    def test_class_row_without_id_skipped(self):
+        """Class row missing 'id' key is silently skipped."""
+        app, db, mock_csm = self._make_app_with_mock_csm()
+        now = datetime(2026, 6, 25, 12, 0, 0, tzinfo=timezone.utc)
+
+        class_rows = [{"purge_after": now - timedelta(hours=1), "purge_by": now + timedelta(hours=1)}]
+        # Should not raise
+        result = apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+        assert result == {}
+
+    def test_class_row_without_purge_after_skipped(self):
+        """Class row with purge_after=None is skipped (no window set)."""
+        app, db, mock_csm = self._make_app_with_mock_csm()
+        now = datetime(2026, 6, 25, 12, 0, 0, tzinfo=timezone.utc)
+
+        class_rows = [{"id": 42, "purge_after": None, "purge_by": now + timedelta(hours=1)}]
+        result = apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+        assert result == {}

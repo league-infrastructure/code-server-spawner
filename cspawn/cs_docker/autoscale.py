@@ -72,6 +72,7 @@ __all__ = [
     "build_plan",
     # Orchestrator (I/O layer)
     "gather_cluster_state",
+    "apply_reaper_zones",
     "apply_plan",
     "run_autoscale",
 ]
@@ -396,12 +397,16 @@ def plan_scale_down(
     cfg,
     now: datetime,
     empty_since: dict[str, datetime],
+    protected_node_fqdns: "frozenset[str] | None" = None,
 ) -> list[NodeView]:
     """Select zero-load, cooled-down, non-manager worker nodes to remove.
 
     Selection criteria (all must be true):
       - Not a manager, not a leader.
       - ``running_hosts == 0``.
+      - Not in ``protected_node_fqdns`` (nodes carrying hosts for protected-zone
+        classes are excluded from removal even if their running_hosts count is 0,
+        because hosts may still be starting up).
       - Has been empty for at least ``AUTOSCALE_SCALEDOWN_COOLDOWN_MIN`` minutes
         (looked up by fqdn in *empty_since*; nodes not in the dict are skipped).
       - Removing it would still leave ``excess_capacity > candidate.capacity +
@@ -412,16 +417,21 @@ def plan_scale_down(
     At most ``AUTOSCALE_MAX_REMOVE_PER_CYCLE`` nodes are returned.
 
     Args:
-        state:       Current cluster snapshot.
-        demand:      Estimated demand (used implicitly via excess_capacity dead-band).
-        cfg:         App config.
-        now:         Current UTC datetime (injected for testability).
-        empty_since: ``{fqdn: datetime_became_empty}`` — tracked by the orchestrator.
+        state:                  Current cluster snapshot.
+        demand:                 Estimated demand (used implicitly via excess_capacity dead-band).
+        cfg:                    App config.
+        now:                    Current UTC datetime (injected for testability).
+        empty_since:            ``{fqdn: datetime_became_empty}`` — tracked by the orchestrator.
+        protected_node_fqdns:   Optional set of node fqdns that must not be removed
+                                because they carry (or may carry) hosts for protected-zone
+                                classes (``now < purge_after``).
     """
     cooldown_min = _cfg_int(cfg, "AUTOSCALE_SCALEDOWN_COOLDOWN_MIN", 30)
     min_workers = _cfg_int(cfg, "AUTOSCALE_MIN_WORKER_NODES", 1)
     max_remove = _cfg_int(cfg, "AUTOSCALE_MAX_REMOVE_PER_CYCLE", 1)
     headroom = _cfg_int(cfg, "AUTOSCALE_HEADROOM", 2)
+
+    _protected = protected_node_fqdns or frozenset()
 
     # Count total workers (non-managers) before removal
     total_workers = sum(1 for n in state.nodes if not n.is_manager)
@@ -440,6 +450,10 @@ def plan_scale_down(
     for node in candidates:
         if len(selected) >= max_remove:
             break
+
+        # Protected-zone guard: skip nodes associated with protected classes
+        if node.fqdn in _protected:
+            continue
 
         # Check cooldown
         became_empty = empty_since.get(node.fqdn)
@@ -473,6 +487,7 @@ def build_plan(
     cfg,
     now: datetime,
     empty_since: dict[str, datetime],
+    protected_node_fqdns: "frozenset[str] | None" = None,
 ) -> ScalePlan:
     """Decide what the orchestrator should do this cycle.
 
@@ -482,11 +497,13 @@ def build_plan(
       3. Else → hold (within dead-band).
 
     Args:
-        state:       Current cluster snapshot.
-        demand:      Estimated demand from ``estimate_demand``.
-        cfg:         App config.
-        now:         Current UTC datetime (injected for testability).
-        empty_since: ``{fqdn: datetime_became_empty}`` for scale-down cooldown.
+        state:                  Current cluster snapshot.
+        demand:                 Estimated demand from ``estimate_demand``.
+        cfg:                    App config.
+        now:                    Current UTC datetime (injected for testability).
+        empty_since:            ``{fqdn: datetime_became_empty}`` for scale-down cooldown.
+        protected_node_fqdns:   Optional set of node fqdns to exclude from scale-down
+                                (nodes carrying hosts for protected-zone classes).
 
     Returns:
         A ``ScalePlan`` with either adds, removes, or neither.
@@ -503,7 +520,7 @@ def build_plan(
             reason=f"scale-up: deficit={deficit} add_large={add_large} add_small={add_small}",
         )
 
-    removals = plan_scale_down(state, demand, cfg, now, empty_since)
+    removals = plan_scale_down(state, demand, cfg, now, empty_since, protected_node_fqdns)
     if removals:
         return ScalePlan(
             add_large=0,
@@ -636,12 +653,14 @@ def gather_cluster_state(
                 "is_purgeable": bool(getattr(h, "is_purgeable", False)),
                 "app_state": getattr(h, "app_state", None),
                 "node_name": getattr(h, "node_name", None),
+                "class_id": getattr(h, "class_id", None),
             }
             for h in CodeHost.query.all()
         ]
 
         class_rows: list[dict] = [
             {
+                "id": getattr(c, "id", None),
                 "purge_after": getattr(c, "purge_after", None),
                 "purge_by": getattr(c, "purge_by", None),
                 "students": list(getattr(c, "students", []) or []),
@@ -691,6 +710,193 @@ def gather_cluster_state(
             del empty_since[fqdn]
 
     return (node_dicts, host_counts, pending_count, class_rows, host_rows, empty_since)
+
+
+def apply_reaper_zones(app, class_rows, host_rows, now: datetime, *, dry_run: bool) -> dict:
+    """Classify class resources by zone and apply appropriate reaping actions.
+
+    This function is the time-windowed reaper for the autoscaler.  It is the
+    only place in the codebase that force-removes CodeHost records based on the
+    active/dormant purge window.  The ``host purge`` CLI command (node.py) is a
+    separate manual override and is NOT changed by this function.
+
+    **Safety gate:** This function must only be called when ``AUTOSCALE_ENABLED``
+    is ``true``.  The kill-switch in ``run_autoscale`` enforces this; callers
+    must not bypass it.  ``dry_run=True`` logs actions but makes no mutations.
+
+    Zones (classified per-class, based on ``purge_after`` / ``purge_by``):
+
+    Protected zone  (``now < purge_after``):
+        No action on any CodeHost or Class for this class.  Students who step
+        away keep their slot.
+
+    Active-purge zone  (``purge_after <= now < purge_by``):
+        CodeHosts whose ``updated_at`` is >= 15 minutes old (idle) are stopped
+        and their DB records deleted.  Non-idle hosts are untouched.
+
+    Dormant zone  (``now >= purge_by``):
+        ALL remaining CodeHosts for the class are force-removed regardless of
+        idle state.  ``Class.purge_after``, ``Class.purge_by``, and
+        ``Class.target_nodes`` are set to ``None`` on the Class row so that
+        the class no longer appears in ``gather_cluster_state`` results on the
+        next cycle.
+
+    Re-check before destroy (safety):
+        The ``class_id`` is used to fetch a fresh list of hosts from the DB
+        immediately before each batch of destructive actions.  This prevents
+        double-removes if the same host appears in multiple passes.
+
+    Manager/leader nodes are never touched by this function — reaping is
+    applied to CodeHost DB records and their swarm services, not directly to
+    Swarm nodes.  Node draining for newly empty nodes is handled by
+    ``plan_scale_down`` on the next cycle (existing mechanism).
+
+    Args:
+        app:        Flask application instance (for ``app_context()`` and ``app.csm``).
+        class_rows: List of class dicts as returned by ``gather_cluster_state``
+                    (fields: ``id``, ``purge_after``, ``purge_by``).  Any
+                    class without both timestamps is skipped.
+        host_rows:  List of host dicts from ``gather_cluster_state``
+                    (fields: ``id``, ``class_id``, ``updated_at``,
+                    ``service_id``, ``service_name``).  Used for zone logic.
+        now:        Current UTC datetime (injected for testability).
+        dry_run:    When ``True``, log intended actions but make no mutations.
+
+    Returns:
+        A summary dict: ``{class_id: zone_name}`` for each class processed.
+        Zone names are ``"protected"``, ``"active-purge"``, or ``"dormant"``.
+    """
+    import logging
+    from cspawn.models import CodeHost, Class, db
+
+    IDLE_THRESHOLD_MINUTES = 15
+
+    log = logging.getLogger("cspawn.autoscale.reaper")
+    zone_summary: dict = {}
+
+    for cls_row in class_rows:
+        cls_id = cls_row.get("id")
+        purge_after = cls_row.get("purge_after")
+        purge_by = cls_row.get("purge_by")
+
+        if purge_after is None or purge_by is None or cls_id is None:
+            continue
+
+        # Normalise to timezone-aware datetimes
+        if isinstance(purge_after, str):
+            purge_after = datetime.fromisoformat(purge_after)
+        if isinstance(purge_by, str):
+            purge_by = datetime.fromisoformat(purge_by)
+        if purge_after.tzinfo is None:
+            purge_after = purge_after.replace(tzinfo=timezone.utc)
+        if purge_by.tzinfo is None:
+            purge_by = purge_by.replace(tzinfo=timezone.utc)
+
+        # ── Classify zone ──────────────────────────────────────────────────
+        if now < purge_after:
+            # PROTECTED — nothing to do
+            zone_summary[cls_id] = "protected"
+            log.debug("[reaper] class_id=%s zone=protected (purge_after=%s)", cls_id, purge_after)
+            continue
+
+        with app.app_context():
+            if now >= purge_by:
+                # ── DORMANT — force-remove all remaining hosts ───────────────
+                zone_summary[cls_id] = "dormant"
+                log.info(
+                    "[reaper] class_id=%s zone=dormant purge_by=%s — force-removing all hosts",
+                    cls_id, purge_by,
+                )
+
+                # Re-fetch from DB immediately before destructive action
+                hosts = CodeHost.query.filter_by(class_id=cls_id).all()
+                for ch in hosts:
+                    svc_name = ch.service_name or ch.service_id or f"id:{ch.id}"
+                    if dry_run:
+                        log.info("[reaper] dry-run: would force-remove host %s (dormant)", svc_name)
+                        continue
+                    try:
+                        s = app.csm.get(ch)
+                        if s:
+                            s.stop()
+                    except Exception as exc:
+                        log.warning("[reaper] stop failed for host %s: %s", svc_name, exc)
+                    try:
+                        db.session.delete(ch)
+                    except Exception as exc:
+                        log.warning("[reaper] db delete failed for host %s: %s", svc_name, exc)
+
+                # Clear purge window and target_nodes on the Class row
+                cls_obj = Class.query.get(cls_id)
+                if cls_obj is not None:
+                    if dry_run:
+                        log.info(
+                            "[reaper] dry-run: would clear purge_after/purge_by/target_nodes "
+                            "on class_id=%s", cls_id,
+                        )
+                    else:
+                        cls_obj.purge_after = None
+                        cls_obj.purge_by = None
+                        cls_obj.target_nodes = None
+
+                if not dry_run:
+                    try:
+                        db.session.commit()
+                        log.info("[reaper] class_id=%s dormant cleanup committed", cls_id)
+                    except Exception as exc:
+                        db.session.rollback()
+                        log.error("[reaper] commit failed for class_id=%s: %s", cls_id, exc)
+
+            else:
+                # ── ACTIVE-PURGE — stop idle hosts (idle >= 15 min) ─────────
+                zone_summary[cls_id] = "active-purge"
+                log.debug("[reaper] class_id=%s zone=active-purge", cls_id)
+
+                # Re-fetch from DB immediately before destructive action
+                hosts = CodeHost.query.filter_by(class_id=cls_id).all()
+                any_removed = False
+                for ch in hosts:
+                    # Compute idle duration from updated_at
+                    updated = ch.updated_at
+                    if updated is None:
+                        continue
+                    if updated.tzinfo is None:
+                        updated = updated.replace(tzinfo=timezone.utc)
+                    idle_minutes = (now - updated).total_seconds() / 60
+                    if idle_minutes < IDLE_THRESHOLD_MINUTES:
+                        continue  # not yet idle
+
+                    svc_name = ch.service_name or ch.service_id or f"id:{ch.id}"
+                    if dry_run:
+                        log.info(
+                            "[reaper] dry-run: would stop idle host %s (idle=%.1f min, active-purge)",
+                            svc_name, idle_minutes,
+                        )
+                        continue
+                    try:
+                        s = app.csm.get(ch)
+                        if s:
+                            s.stop()
+                    except Exception as exc:
+                        log.warning("[reaper] stop failed for idle host %s: %s", svc_name, exc)
+                    try:
+                        db.session.delete(ch)
+                        any_removed = True
+                        log.info(
+                            "[reaper] stopped and deleted idle host %s (idle=%.1f min)",
+                            svc_name, idle_minutes,
+                        )
+                    except Exception as exc:
+                        log.warning("[reaper] db delete failed for host %s: %s", svc_name, exc)
+
+                if any_removed and not dry_run:
+                    try:
+                        db.session.commit()
+                    except Exception as exc:
+                        db.session.rollback()
+                        log.error("[reaper] commit failed for class_id=%s active-purge: %s", cls_id, exc)
+
+    return zone_summary
 
 
 def apply_plan(
@@ -960,8 +1166,15 @@ def run_autoscale(
             gather_cluster_state(_app, _manager_client, cfg)
         )
 
-        # 5. Assess and build plan
         now = datetime.now(timezone.utc)
+
+        # 4b. Run the time-windowed reaper before building the scale plan.
+        #     This runs inside the kill-switch (AUTOSCALE_ENABLED=true) and
+        #     respects dry_run.  It must run before build_plan so that dormant
+        #     hosts are already removed when demand is re-estimated next cycle.
+        apply_reaper_zones(_app, class_rows, host_rows, now, dry_run=dry_run)
+
+        # 5. Assess and build plan
         state = assess_cluster(node_dicts, host_counts, pending_count, cfg)
         demand = estimate_demand(class_rows, host_rows, cfg)
 
@@ -976,7 +1189,39 @@ def run_autoscale(
                 for fqdn, ts in empty_since.items()
             }
 
-        plan = build_plan(state, demand, cfg, now, effective_empty_since)
+        # Compute protected-zone node fqdns: nodes carrying hosts for classes
+        # where now < purge_after.  These must not be selected for scale-down
+        # even if they appear empty of running tasks (hosts may still be starting).
+        # host_rows contain node_name (short hostname); map to fqdn via node_dicts.
+        short_to_fqdn: dict[str, str] = {}
+        for attrs in node_dicts:
+            desc = attrs.get("Description") or {}
+            hostname = desc.get("Hostname") or ""
+            if hostname:
+                short = hostname.split(".")[0]
+                short_to_fqdn[short] = hostname
+
+        protected_class_ids: set = set()
+        for cr in class_rows:
+            pa = cr.get("purge_after")
+            if pa is None:
+                continue
+            if isinstance(pa, str):
+                pa = datetime.fromisoformat(pa)
+            if pa.tzinfo is None:
+                pa = pa.replace(tzinfo=timezone.utc)
+            if now < pa:
+                if cr.get("id") is not None:
+                    protected_class_ids.add(cr["id"])
+
+        protected_node_fqdns: frozenset[str] = frozenset(
+            short_to_fqdn.get(hr.get("node_name", ""), "")
+            for hr in host_rows
+            if hr.get("class_id") in protected_class_ids
+            and hr.get("node_name") is not None
+        ) - frozenset([""])
+
+        plan = build_plan(state, demand, cfg, now, effective_empty_since, protected_node_fqdns)
 
         # 6. up_only / down-only filter
         if up_only is True:
