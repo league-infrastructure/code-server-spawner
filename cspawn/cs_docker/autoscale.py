@@ -18,11 +18,10 @@ The companion orchestrator (at the bottom of this file) handles all I/O:
 Demand-signal seam (``estimate_demand``)
 -----------------------------------------
 ``estimate_demand`` is designed as a clean, swappable seam. All I/O happens in
-the caller (``gather_cluster_state``); this function only does math. The next
-sprint (instructor-cluster-presize) will swap the demand source from
-``Class.running`` to purge-window timestamps by changing only what the caller
-fetches and how the class dicts are populated — the function signature and call
-site do not change.
+the caller (``gather_cluster_state``); this function only does math. The prescale
+term is driven by purge-window timestamps (``purge_after``/``purge_by``) on
+``Class`` rows — only classes whose active-purge window contains ``now`` contribute
+to prescale. ``Class.running`` is no longer used as a scaling input.
 
 ``empty_since`` persistence
 ----------------------------
@@ -278,16 +277,19 @@ def estimate_demand(classes: list[dict], hosts: list[dict], cfg) -> int:
         pending     = count of host dicts where app_state not in ('ready',)
                       and not is_mia
         prescale    = sum(ceil(len(c['students']) * ROSTER_FRACTION)
-                          for c in classes if c['running'] and c['stops_at'] > now)
+                          for c in classes
+                          if purge_after <= now < purge_by)
         demand      = max(live_load + pending, prescale) + HEADROOM
+
+    The prescale term counts only classes inside their active purge window
+    (``purge_after <= now < purge_by``).  Classes in the protected zone
+    (``now < purge_after``) or dormant zone (``now >= purge_by``) contribute
+    zero prescale.  ``Class.running`` and ``stops_at`` are no longer used as
+    scaling inputs.
 
     Config keys:
         AUTOSCALE_HEADROOM          (int,   default 2)
         AUTOSCALE_ROSTER_FRACTION   (float, default 0.8)
-
-    The next sprint (instructor-cluster-presize) will change what the caller
-    puts in ``classes`` (purge-window timestamps instead of ``Class.running``),
-    but the signature and math here stay identical.
     """
     headroom = _cfg_int(cfg, "AUTOSCALE_HEADROOM", 2)
     roster_fraction = _cfg_float(cfg, "AUTOSCALE_ROSTER_FRACTION", 0.8)
@@ -305,21 +307,22 @@ def estimate_demand(classes: list[dict], hosts: list[dict], cfg) -> int:
 
     prescale = 0
     for c in classes:
-        if not c.get("running"):
-            continue
-        stops_at = c.get("stops_at")
-        if stops_at is None:
+        purge_after = c.get("purge_after")
+        purge_by = c.get("purge_by")
+        if purge_after is None or purge_by is None:
             continue
         # Accept both datetime objects and ISO strings (caller may pass either)
-        if isinstance(stops_at, str):
-            try:
-                stops_at = datetime.fromisoformat(stops_at)
-            except ValueError:
-                continue
+        if isinstance(purge_after, str):
+            purge_after = datetime.fromisoformat(purge_after)
+        if isinstance(purge_by, str):
+            purge_by = datetime.fromisoformat(purge_by)
         # Make timezone-aware if naive
-        if stops_at.tzinfo is None:
-            stops_at = stops_at.replace(tzinfo=timezone.utc)
-        if stops_at > now:
+        if purge_after.tzinfo is None:
+            purge_after = purge_after.replace(tzinfo=timezone.utc)
+        if purge_by.tzinfo is None:
+            purge_by = purge_by.replace(tzinfo=timezone.utc)
+        # Only count classes in the active-purge window (purge_after <= now < purge_by)
+        if purge_after <= now < purge_by:
             student_count = len(c.get("students") or [])
             prescale += ceil(student_count * roster_fraction)
 
@@ -610,7 +613,9 @@ def gather_cluster_state(
         host_counts      – ``{short_hostname: running_task_count}`` from
                            ``count_hosts_per_node``
         pending_count    – count of CodeHost rows not yet in a ready/mia state
-        class_rows       – list of class dicts (fields: running, stops_at, students)
+        class_rows       – list of class dicts (fields: purge_after, purge_by, students)
+                           for all classes that have a purge window set; the active-window
+                           filter is applied later by ``estimate_demand``
         host_rows        – list of host dicts (fields: is_mia, is_purgeable, app_state,
                            node_name)
         empty_since      – ``{fqdn: datetime_became_empty}`` tracking across cycles
@@ -637,11 +642,14 @@ def gather_cluster_state(
 
         class_rows: list[dict] = [
             {
-                "running": bool(getattr(c, "running", False)),
-                "stops_at": getattr(c, "stops_at", None),
+                "purge_after": getattr(c, "purge_after", None),
+                "purge_by": getattr(c, "purge_by", None),
                 "students": list(getattr(c, "students", []) or []),
             }
-            for c in Class.query.filter_by(running=True).all()
+            for c in Class.query.filter(
+                Class.purge_after.isnot(None),
+                Class.purge_by.isnot(None),
+            ).all()
         ]
 
     # Count pending hosts: not yet ready, not MIA

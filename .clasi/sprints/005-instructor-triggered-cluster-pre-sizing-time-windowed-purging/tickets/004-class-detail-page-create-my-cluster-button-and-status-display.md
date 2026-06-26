@@ -1,12 +1,12 @@
 ---
 id: '004'
-title: "Re-point estimate_demand to purge-window classes in autoscale.py"
-status: open
+title: Re-point estimate_demand to purge-window classes in autoscale.py
+status: done
 use-cases:
-  - SUC-002
-  - SUC-004
+- SUC-002
+- SUC-004
 depends-on:
-  - '001'
+- '001'
 github-issue: ''
 issue: ''
 completes_issue: false
@@ -93,25 +93,25 @@ autoscaler *would* do when enabled — it does not enable it.
 
 ## Acceptance Criteria
 
-- [ ] `gather_cluster_state` queries `Class` by `purge_after IS NOT NULL AND
+- [x] `gather_cluster_state` queries `Class` by `purge_after IS NOT NULL AND
       purge_by IS NOT NULL`; the resulting dicts have `purge_after` and
       `purge_by` keys, not `running` / `stops_at`.
-- [ ] `estimate_demand` counts only classes where `purge_after <= now < purge_by`
+- [x] `estimate_demand` counts only classes where `purge_after <= now < purge_by`
       toward `prescale`; classes in the protected zone (`now < purge_after`) or
       dormant zone (`now >= purge_by`) contribute 0 to `prescale`.
-- [ ] `estimate_demand` still adds `AUTOSCALE_HEADROOM` and returns
+- [x] `estimate_demand` still adds `AUTOSCALE_HEADROOM` and returns
       `max(live_load + pending, prescale) + headroom` (formula unchanged).
-- [ ] The function signature of `estimate_demand` is unchanged: `(classes, hosts, cfg)`.
-- [ ] Unit test: inject class rows with `purge_after` in the past and `purge_by`
+- [x] The function signature of `estimate_demand` is unchanged: `(classes, hosts, cfg)`.
+- [x] Unit test: inject class rows with `purge_after` in the past and `purge_by`
       in the future → confirm demand includes prescale.
-- [ ] Unit test: inject class rows with `purge_after` in the future (protected
+- [x] Unit test: inject class rows with `purge_after` in the future (protected
       zone) → confirm prescale contribution is 0.
-- [ ] Unit test: inject class rows with `purge_by` in the past (dormant zone)
+- [x] Unit test: inject class rows with `purge_by` in the past (dormant zone)
       → confirm prescale contribution is 0.
-- [ ] Unit test: inject class rows with `purge_after=None` → confirm skipped.
-- [ ] All existing `estimate_demand` tests are updated or replaced (old tests
+- [x] Unit test: inject class rows with `purge_after=None` → confirm skipped.
+- [x] All existing `estimate_demand` tests are updated or replaced (old tests
       using `running`/`stops_at` dict keys must be ported to the new keys).
-- [ ] `AUTOSCALE_ENABLED` default remains `false`; the kill-switch in
+- [x] `AUTOSCALE_ENABLED` default remains `false`; the kill-switch in
       `run_autoscale` (line 917) is not modified.
 
 ## Implementation Plan

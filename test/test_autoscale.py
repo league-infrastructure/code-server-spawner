@@ -255,30 +255,52 @@ class TestEstimateDemand:
     Formula:
         live_load = non-MIA non-purgeable hosts
         pending   = non-ready, non-MIA hosts
-        prescale  = sum(ceil(students * ROSTER_FRACTION)) for running, future classes
+        prescale  = sum(ceil(students * ROSTER_FRACTION))
+                    for classes where purge_after <= now < purge_by
         demand    = max(live_load + pending, prescale) + HEADROOM
+
+    Prescale source: purge-window timestamps (purge_after/purge_by).
+    Class.running and stops_at are no longer used.
     """
 
-    def _future(self, minutes: int = 120) -> datetime:
-        return NOW + timedelta(minutes=minutes)
+    def _active_window(self, students: list | None = None) -> dict:
+        """Class inside its active purge window (purge_after past, purge_by future)."""
+        return {
+            "purge_after": NOW - timedelta(minutes=30),
+            "purge_by": NOW + timedelta(hours=2),
+            "students": students if students is not None else [],
+        }
 
-    def _past(self, minutes: int = 10) -> datetime:
-        return NOW - timedelta(minutes=minutes)
+    def _protected_window(self, students: list | None = None) -> dict:
+        """Class in protected zone (purge_after in the future — window not yet open)."""
+        return {
+            "purge_after": NOW + timedelta(hours=1),
+            "purge_by": NOW + timedelta(hours=3),
+            "students": students if students is not None else [],
+        }
+
+    def _dormant_window(self, students: list | None = None) -> dict:
+        """Class in dormant zone (purge_by in the past — window already closed)."""
+        return {
+            "purge_after": NOW - timedelta(hours=3),
+            "purge_by": NOW - timedelta(hours=1),
+            "students": students if students is not None else [],
+        }
 
     def test_headroom_always_added_when_no_hosts_no_classes(self, cfg):
         demand = estimate_demand([], [], cfg)
         assert demand == 2  # 0 + HEADROOM(2)
 
     def test_prescale_dominates_when_larger(self, cfg):
-        """10 students * 0.8 = 8 prescale > 0 live_load → demand = 8 + 2 = 10."""
-        classes = [{"running": True, "stops_at": self._future(), "students": list(range(10))}]
+        """10 students in active window * 0.8 = 8 prescale > 0 live_load → demand = 8 + 2 = 10."""
+        classes = [self._active_window(students=list(range(10)))]
         demand = estimate_demand(classes, [], cfg)
         assert demand == 10
 
     def test_live_load_dominates_when_larger(self, cfg):
         """4 live hosts > prescale of 1 student → demand = 4 + 2 = 6."""
         hosts = [{"app_state": "ready"} for _ in range(4)]
-        classes = [{"running": True, "stops_at": self._future(), "students": [1]}]
+        classes = [self._active_window(students=[1])]
         demand = estimate_demand(classes, hosts, cfg)
         # prescale = ceil(1 * 0.8) = 1; live_load = 4; max(4, 1) + 2 = 6
         assert demand == 6
@@ -301,25 +323,27 @@ class TestEstimateDemand:
         demand = estimate_demand([], hosts, cfg)
         assert demand == 1 + 2
 
-    def test_classes_past_stops_at_excluded_from_prescale(self, cfg):
-        """Classes whose stops_at is in the past don't contribute to prescale."""
-        classes = [
-            {"running": True, "stops_at": self._past(), "students": list(range(10))},
-        ]
+    def test_dormant_zone_classes_excluded_from_prescale(self, cfg):
+        """Classes whose purge_by is in the past (dormant zone) don't contribute to prescale."""
+        classes = [self._dormant_window(students=list(range(10)))]
         demand = estimate_demand(classes, [], cfg)
         assert demand == 0 + 2  # no prescale, just headroom
 
-    def test_non_running_classes_excluded_from_prescale(self, cfg):
-        """Classes with running=False don't contribute to prescale."""
-        classes = [
-            {"running": False, "stops_at": self._future(), "students": list(range(10))},
-        ]
+    def test_protected_zone_classes_excluded_from_prescale(self, cfg):
+        """Classes whose purge_after is in the future (protected zone) don't contribute."""
+        classes = [self._protected_window(students=list(range(10)))]
         demand = estimate_demand(classes, [], cfg)
-        assert demand == 0 + 2
+        assert demand == 0 + 2  # no prescale, just headroom
+
+    def test_no_purge_window_classes_excluded_from_prescale(self, cfg):
+        """Classes with purge_after=None are skipped entirely."""
+        classes = [{"purge_after": None, "purge_by": None, "students": list(range(10))}]
+        demand = estimate_demand(classes, [], cfg)
+        assert demand == 0 + 2  # no prescale
 
     def test_roster_fraction_applied_and_ceil(self, cfg):
         """10 students * 0.8 = 8.0 → ceil(8.0) = 8."""
-        classes = [{"running": True, "stops_at": self._future(), "students": list(range(10))}]
+        classes = [self._active_window(students=list(range(10)))]
         demand = estimate_demand(classes, [], cfg)
         assert demand == 8 + 2  # 8 prescale + 2 headroom
 
@@ -329,24 +353,33 @@ class TestEstimateDemand:
             "AUTOSCALE_HEADROOM": "0",
             "AUTOSCALE_ROSTER_FRACTION": "0.8",
         }
-        classes = [{"running": True, "stops_at": NOW + timedelta(hours=1), "students": list(range(7))}]
+        classes = [{
+            "purge_after": NOW - timedelta(minutes=30),
+            "purge_by": NOW + timedelta(hours=2),
+            "students": list(range(7)),
+        }]
         demand = estimate_demand(classes, [], cfg)
         assert demand == 6  # ceil(5.6)=6, no headroom
 
-    def test_multiple_running_classes_summed(self, cfg):
-        """Two classes both running and future → prescale is sum of both."""
+    def test_multiple_active_window_classes_summed(self, cfg):
+        """Two classes both in active window → prescale is sum of both."""
         classes = [
-            {"running": True, "stops_at": self._future(), "students": list(range(5))},
-            {"running": True, "stops_at": self._future(), "students": list(range(10))},
+            self._active_window(students=list(range(5))),
+            self._active_window(students=list(range(10))),
         ]
         # ceil(5*0.8) + ceil(10*0.8) = 4 + 8 = 12 prescale
         demand = estimate_demand(classes, [], cfg)
         assert demand == 12 + 2
 
-    def test_stops_at_as_iso_string(self, cfg):
-        """stops_at can be an ISO string — the function parses it."""
-        future_str = (NOW + timedelta(hours=1)).isoformat()
-        classes = [{"running": True, "stops_at": future_str, "students": list(range(10))}]
+    def test_purge_after_as_iso_string(self, cfg):
+        """purge_after and purge_by can be ISO strings — the function parses them."""
+        purge_after_str = (NOW - timedelta(minutes=30)).isoformat()
+        purge_by_str = (NOW + timedelta(hours=2)).isoformat()
+        classes = [{
+            "purge_after": purge_after_str,
+            "purge_by": purge_by_str,
+            "students": list(range(10)),
+        }]
         demand = estimate_demand(classes, [], cfg)
         assert demand == 8 + 2
 
@@ -356,8 +389,7 @@ class TestEstimateDemand:
             {"app_state": "starting", "is_mia": False},  # pending: not ready, not MIA
             {"app_state": "ready", "is_mia": False},     # live
         ]
-        # live_load=1 (only the ready one), pending=1 (starting)
-        # Wait: per code: live_load = not mia and not purgeable = 2
+        # live_load = not mia and not purgeable = 2
         # pending = not ready and not mia = 1
         # demand = max(live_load + pending, prescale) + headroom
         # = max(2 + 1, 0) + 2 = 5
@@ -373,6 +405,26 @@ class TestEstimateDemand:
         ]
         demand = estimate_demand([], hosts, cfg)
         assert demand == 0 + 2
+
+    def test_running_field_ignored(self, cfg):
+        """The old 'running' field has no effect — only purge window matters."""
+        # A class with running=False but inside an active purge window still contributes
+        classes = [dict(self._active_window(students=list(range(10))), running=False)]
+        demand = estimate_demand(classes, [], cfg)
+        assert demand == 8 + 2  # prescale from purge window, not running flag
+
+    def test_class_running_no_longer_a_scaling_input(self, cfg):
+        """Class.running is no longer the prescale source.
+
+        A class with purge_after/purge_by in active window contributes prescale
+        regardless of any 'running' field; a class without a purge window
+        does NOT contribute even if running=True is present.
+        """
+        active = self._active_window(students=list(range(5)))
+        no_window = {"purge_after": None, "purge_by": None, "students": list(range(10)), "running": True}
+        demand = estimate_demand([active, no_window], [], cfg)
+        # only active contributes: ceil(5*0.8)=4; no_window skipped
+        assert demand == 4 + 2
 
 
 # ---------------------------------------------------------------------------
