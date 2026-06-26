@@ -1,13 +1,13 @@
 ---
 id: '004'
 title: 'Orchestrator: gather_cluster_state, apply_plan, and run_autoscale'
-status: open
+status: done
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
+- SUC-001
+- SUC-002
+- SUC-003
 depends-on:
-  - '002'
+- '002'
 github-issue: ''
 issue: ''
 completes_issue: false
@@ -26,7 +26,7 @@ tests only.
 
 ## Acceptance Criteria
 
-- [ ] `gather_cluster_state(app, manager_client: DockerClient, cfg) -> tuple[list[dict], dict[str,int], int, list[dict], list[dict], dict[str,datetime]]`
+- [x] `gather_cluster_state(app, manager_client: DockerClient, cfg) -> tuple[list[dict], dict[str,int], int, list[dict], list[dict], dict[str,datetime]]`
       performs read-only operations:
       - Calls `count_hosts_per_node(manager_client)` (from `cspawn.cli.node`) for
         per-node Swarm task counts.
@@ -43,7 +43,7 @@ tests only.
       - Returns `(node_dicts, host_counts, pending_count, class_rows, host_rows, empty_since)`.
       - Is **read-only**: no mutations to DB, Swarm, or DO.
 
-- [ ] `apply_plan(ctx, plan: ScalePlan, cfg, *, dry_run: bool) -> ApplyResult`
+- [x] `apply_plan(ctx, plan: ScalePlan, cfg, *, dry_run: bool) -> ApplyResult`
       where `ApplyResult` is a simple dataclass `(added: int, removed: int, purged: bool, dry_run: bool, errors: list[str])`:
       - When `dry_run=True`: logs the plan and returns immediately with no side effects.
       - Scale-up path (when `plan.add_large + plan.add_small > 0`):
@@ -60,7 +60,7 @@ tests only.
           - Call `graceful_remove_node(ctx, manager_client, mgr, fqdn, dry_run=False, log=log)`
             (imported from `cspawn.cli.node`).
 
-- [ ] `run_autoscale(ctx, *, dry_run: bool, force: bool, up_only: bool | None = None) -> ApplyResult`
+- [x] `run_autoscale(ctx, *, dry_run: bool, force: bool, up_only: bool | None = None) -> ApplyResult`
       is the single entry point:
       1. Read `AUTOSCALE_ENABLED` from config; if `false`, log "autoscale disabled" and
          return empty `ApplyResult`.
@@ -83,7 +83,7 @@ tests only.
       11. Release flock (in a `finally` block so lock is always released on exception).
       12. Return `ApplyResult`.
 
-- [ ] `empty_since` persistence: module-level `dict[str, datetime]` in `autoscale.py` that
+- [x] `empty_since` persistence: module-level `dict[str, datetime]` in `autoscale.py` that
       accumulates across cron invocations within the same process. (Each `cspawnctl` invocation
       is a fresh process, so this dict starts empty each cycle. The `SCALEDOWN_COOLDOWN_MIN`
       must be understood accordingly: cooldown is tracked across cycles only if the same
@@ -97,7 +97,7 @@ tests only.
       that persists `empty_since` across runs. The file is written atomically (write to
       temp then rename).
 
-- [ ] Thin mocked tests in `test/test_autoscale.py`:
+- [x] Thin mocked tests in `test/test_autoscale.py`:
       - `gather_cluster_state` with `MagicMock` Docker client (nodes.list returns two fake
         node dicts, services.list returns empty) and a minimal Flask app with an in-memory
         DB. Verify it returns the correct tuple structure without errors.
@@ -106,7 +106,7 @@ tests only.
       - `run_autoscale` with `AUTOSCALE_ENABLED=false`: verify it returns early without
         calling `gather_cluster_state`.
 
-- [ ] `uv run pytest` passes.
+- [x] `uv run pytest` passes.
 
 ## Implementation Plan
 

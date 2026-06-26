@@ -1,27 +1,37 @@
 """
-Unit tests for cspawn/cs_docker/autoscale.py — pure decision functions.
+Unit tests for cspawn/cs_docker/autoscale.py — pure decision functions and
+thin mocked orchestrator tests.
 
-No Docker, DigitalOcean, or database I/O.  All tests work with plain dicts
-and dataclasses.  Run with::
+No live Docker, DigitalOcean, or database I/O in any test here.
+Run with::
 
     uv run pytest test/test_autoscale.py -v
 """
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, patch, call
 
 import pytest
 
 from cspawn.cs_docker.autoscale import (
+    ApplyResult,
     ClusterState,
     NodeView,
     ScalePlan,
+    _load_empty_since_sidecar,
+    _save_empty_since_sidecar,
     assess_cluster,
     build_plan,
     capacity_for_node,
     compute_deficit,
     estimate_demand,
+    gather_cluster_state,
+    apply_plan,
+    run_autoscale,
     plan_scale_down,
     plan_scale_up,
 )
@@ -781,3 +791,372 @@ class TestScalePlanSummary:
         assert "add_large=1" in s
         assert "add_small=0" in s
         assert "remove=0" in s
+
+
+# ---------------------------------------------------------------------------
+# empty_since sidecar persistence
+# ---------------------------------------------------------------------------
+
+class TestEmptySinceSidecar:
+    """Test round-trip persistence of the empty_since sidecar file."""
+
+    def test_load_returns_empty_when_missing(self):
+        """Loading a nonexistent sidecar returns an empty dict."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = _load_empty_since_sidecar(tmpdir)
+            assert result == {}
+
+    def test_save_and_load_roundtrip(self):
+        """Saved dict is loaded back with correct datetime values."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            now = datetime.now(timezone.utc).replace(microsecond=0)
+            empty_since = {"swarm2.example.com": now}
+            _save_empty_since_sidecar(tmpdir, empty_since)
+            loaded = _load_empty_since_sidecar(tmpdir)
+            assert "swarm2.example.com" in loaded
+            # datetimes should be equal (ISO roundtrip)
+            assert loaded["swarm2.example.com"] == now
+
+    def test_malformed_json_returns_empty(self):
+        """Malformed sidecar returns an empty dict without raising."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sidecar = os.path.join(tmpdir, ".autoscale_state.json")
+            with open(sidecar, "w") as f:
+                f.write("not-valid-json{{{")
+            result = _load_empty_since_sidecar(tmpdir)
+            assert result == {}
+
+    def test_save_is_atomic(self):
+        """Atomic write: if the sidecar already exists it is replaced cleanly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            t1 = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+            t2 = datetime(2026, 6, 26, 12, 0, 0, tzinfo=timezone.utc)
+            _save_empty_since_sidecar(tmpdir, {"swarm2.x": t1})
+            _save_empty_since_sidecar(tmpdir, {"swarm3.x": t2})
+            loaded = _load_empty_since_sidecar(tmpdir)
+            assert "swarm2.x" not in loaded
+            assert loaded["swarm3.x"] == t2
+
+
+# ---------------------------------------------------------------------------
+# gather_cluster_state — mocked Docker client + minimal Flask app
+# ---------------------------------------------------------------------------
+
+def _make_swarm_node_mock(hostname: str, role: str = "worker", is_leader: bool = False) -> MagicMock:
+    """Create a mock Swarm node object with realistic attrs."""
+    node = MagicMock()
+    node.attrs = {
+        "Spec": {"Role": role, "Labels": {"cs.capacity": "6"}},
+        "Description": {"Hostname": hostname},
+        "ManagerStatus": {"Leader": is_leader} if role == "manager" else {},
+    }
+    return node
+
+
+def _make_minimal_flask_app():
+    """Create a minimal Flask app with in-memory SQLite and the required models."""
+    from flask import Flask
+    from flask_sqlalchemy import SQLAlchemy
+    from cspawn.models import db as _db
+
+    # Use a standalone SQLite in-memory DB so we don't touch the real DB
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SECRET_KEY"] = "test-secret"
+    app.config["TESTING"] = True
+
+    _db.init_app(app)
+
+    with app.app_context():
+        _db.create_all()
+
+    return app, _db
+
+
+class TestGatherClusterState:
+    """Thin mocked tests for gather_cluster_state.
+
+    We verify the return tuple structure and that the function is read-only
+    (no write calls on the mock client).
+    """
+
+    def test_returns_correct_tuple_structure(self):
+        """gather_cluster_state returns a 6-tuple with correct types."""
+        app, db = _make_minimal_flask_app()
+
+        # Build a mock Docker client with two swarm nodes
+        mgr_node = _make_swarm_node_mock("swarm1.example.com", role="manager", is_leader=True)
+        wkr_node = _make_swarm_node_mock("swarm2.example.com", role="worker")
+
+        mock_client = MagicMock()
+        mock_client.nodes.list.return_value = [mgr_node, wkr_node]
+        # services.list returns empty — no tasks → host_counts will be {}
+        mock_client.services.list.return_value = []
+
+        cfg = {
+            "NODE_TIERS": NODE_TIERS_JSON,
+            "DATA_DIR": tempfile.mkdtemp(),
+            "DEFAULT_CAPACITY": "6",
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg["DATA_DIR"] = tmpdir
+            node_dicts, host_counts, pending, class_rows, host_rows, empty_since = (
+                gather_cluster_state(app, mock_client, cfg)
+            )
+
+        # node_dicts should have the raw attrs of both nodes
+        assert len(node_dicts) == 2
+        assert isinstance(host_counts, dict)
+        assert isinstance(pending, int)
+        assert isinstance(class_rows, list)
+        assert isinstance(host_rows, list)
+        assert isinstance(empty_since, dict)
+
+    def test_no_mutations_on_docker_client(self):
+        """gather_cluster_state must not call any mutating Docker methods."""
+        app, db = _make_minimal_flask_app()
+
+        mock_client = MagicMock()
+        mock_client.nodes.list.return_value = []
+        mock_client.services.list.return_value = []
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = {"DATA_DIR": tmpdir, "DEFAULT_CAPACITY": "6"}
+            gather_cluster_state(app, mock_client, cfg)
+
+        # Assert that no mutating methods were called
+        mock_client.nodes.remove.assert_not_called()
+        mock_client.services.create.assert_not_called()
+        mock_client.services.delete.assert_not_called()
+        mock_client.swarm.leave.assert_not_called()
+
+    def test_empty_since_populated_for_empty_nodes(self):
+        """Nodes with zero host count are added to empty_since."""
+        app, db = _make_minimal_flask_app()
+
+        wkr_node = _make_swarm_node_mock("swarm2.example.com", role="worker")
+        mock_client = MagicMock()
+        mock_client.nodes.list.return_value = [wkr_node]
+        mock_client.services.list.return_value = []
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = {"DATA_DIR": tmpdir, "DEFAULT_CAPACITY": "6"}
+            _, _, _, _, _, empty_since = gather_cluster_state(app, mock_client, cfg)
+
+        # swarm2.example.com has 0 hosts → should be in empty_since
+        assert "swarm2.example.com" in empty_since
+
+
+# ---------------------------------------------------------------------------
+# apply_plan — mocked infrastructure calls
+# ---------------------------------------------------------------------------
+
+class TestApplyPlan:
+    """Verify that dry_run=True suppresses all side effects."""
+
+    def test_dry_run_makes_no_mutating_calls(self):
+        """apply_plan with dry_run=True must call no Docker or DO primitives."""
+        plan = ScalePlan(
+            add_large=1,
+            add_small=0,
+            remove_nodes=["swarm5.example.com"],
+            purge_first=True,
+            reason="test",
+        )
+        ctx = MagicMock()
+        cfg = {"NODE_TIERS": NODE_TIERS_JSON, "DEFAULT_CAPACITY": "6"}
+
+        with (
+            patch("cspawn.cli.node._create_droplet") as mock_create,
+            patch("cspawn.cli.node._configure_node") as mock_configure,
+            patch("cspawn.cli.node._join_swarm") as mock_join,
+            patch("cspawn.cli.node.graceful_remove_node") as mock_remove,
+        ):
+            result = apply_plan(ctx, plan, cfg, dry_run=True)
+
+        assert result.dry_run is True
+        assert result.added == 0
+        assert result.removed == 0
+        mock_create.assert_not_called()
+        mock_configure.assert_not_called()
+        mock_join.assert_not_called()
+        mock_remove.assert_not_called()
+
+    def test_dry_run_returns_apply_result(self):
+        """apply_plan(dry_run=True) returns an ApplyResult with dry_run=True."""
+        plan = ScalePlan(add_large=0, add_small=0, remove_nodes=[], reason="hold")
+        ctx = MagicMock()
+        cfg = {"NODE_TIERS": NODE_TIERS_JSON, "DEFAULT_CAPACITY": "6"}
+
+        result = apply_plan(ctx, plan, cfg, dry_run=True)
+
+        assert isinstance(result, ApplyResult)
+        assert result.dry_run is True
+
+    def test_scale_down_rechecks_emptiness_before_drain(self):
+        """apply_plan re-checks host count immediately before graceful_remove_node.
+
+        When the re-check shows hosts appeared (race), the node is skipped.
+        """
+        plan = ScalePlan(
+            add_large=0,
+            add_small=0,
+            remove_nodes=["swarm5.example.com"],
+            purge_first=False,
+            reason="scale-down",
+        )
+        ctx = MagicMock()
+        cfg = {
+            "NODE_TIERS": NODE_TIERS_JSON,
+            "DEFAULT_CAPACITY": "6",
+            "DO_TOKEN": "tok",
+            "DO_NAMES": "swarm{serial}.example.com",
+            "DOCKER_URI": "ssh://fake",
+        }
+
+        mock_client = MagicMock()
+        mock_client.nodes.list.return_value = []
+        mock_client.services.list.return_value = [
+            # Simulate a task appearing on swarm5 mid-cycle
+        ]
+
+        # count_hosts_per_node will return non-zero for swarm5 → should skip
+        with (
+            patch(
+                "cspawn.cli.node.count_hosts_per_node",
+                return_value={"swarm5": 3},
+            ) as mock_count,
+            patch("cspawn.cli.node.graceful_remove_node") as mock_remove,
+            patch("digitalocean.Manager") as mock_do_mgr,
+        ):
+            result = apply_plan(
+                ctx, plan, cfg, dry_run=False,
+                manager_client=mock_client,
+            )
+
+        # graceful_remove_node must NOT have been called (node was not empty)
+        mock_remove.assert_not_called()
+        assert result.removed == 0
+        assert len(result.errors) > 0  # should record the skip as an error
+
+
+# ---------------------------------------------------------------------------
+# run_autoscale — kill-switch and dry-run enforcement
+# ---------------------------------------------------------------------------
+
+class TestRunAutoscale:
+    """Verify kill-switch and AUTOSCALE_DRY_RUN enforcement."""
+
+    def test_autoscale_disabled_returns_early(self):
+        """When AUTOSCALE_ENABLED=false, run_autoscale returns without calling gather."""
+        ctx = MagicMock()
+
+        with (
+            patch("cspawn.cs_docker.autoscale._get_config", create=True),
+            patch(
+                "cspawn.cs_docker.autoscale.gather_cluster_state",
+            ) as mock_gather,
+            patch(
+                "cspawn.cli.util.get_config",
+                return_value={
+                    "AUTOSCALE_ENABLED": "false",
+                    "DATA_DIR": tempfile.mkdtemp(),
+                },
+            ),
+        ):
+            result = run_autoscale(ctx, dry_run=False, force=False)
+
+        assert isinstance(result, ApplyResult)
+        mock_gather.assert_not_called()
+
+    def test_autoscale_dry_run_config_forces_dry_run(self):
+        """AUTOSCALE_DRY_RUN=true in config prevents all mutations even if CLI dry_run=False."""
+        ctx = MagicMock()
+
+        fake_node_dicts = []
+        fake_host_counts = {}
+        fake_pending = 0
+        fake_class_rows = []
+        fake_host_rows = []
+        fake_empty_since = {}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_cfg = {
+                "AUTOSCALE_ENABLED": "true",
+                "AUTOSCALE_DRY_RUN": "true",
+                "DATA_DIR": tmpdir,
+                "NODE_TIERS": NODE_TIERS_JSON,
+                "DEFAULT_CAPACITY": "6",
+                "DOCKER_URI": "ssh://fake",
+                "DO_TOKEN": "fake-token",
+            }
+
+            fake_app = MagicMock()
+            fake_manager_client = MagicMock()
+            fake_manager_client.nodes.list.return_value = []
+            fake_manager_client.services.list.return_value = []
+
+            with (
+                patch("cspawn.cli.util.get_config", return_value=fake_cfg),
+                patch(
+                    "cspawn.cs_docker.autoscale.gather_cluster_state",
+                    return_value=(
+                        fake_node_dicts,
+                        fake_host_counts,
+                        fake_pending,
+                        fake_class_rows,
+                        fake_host_rows,
+                        fake_empty_since,
+                    ),
+                ),
+                patch("cspawn.cs_docker.autoscale.apply_plan") as mock_apply,
+                patch("digitalocean.Manager"),
+            ):
+                mock_apply.return_value = ApplyResult(dry_run=True)
+                result = run_autoscale(
+                    ctx,
+                    dry_run=False,  # CLI says not dry-run
+                    force=False,
+                    app=fake_app,
+                    manager_client=fake_manager_client,
+                )
+
+            # apply_plan must have been called with dry_run=True (overridden by config)
+            mock_apply.assert_called_once()
+            call_kwargs = mock_apply.call_args
+            assert call_kwargs.kwargs["dry_run"] is True
+
+    def test_concurrent_lock_aborts_second_run(self):
+        """When the lock is already held, run_autoscale returns empty ApplyResult."""
+        ctx = MagicMock()
+
+        import fcntl
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lock_path = os.path.join(tmpdir, ".autoscale.lock")
+            # Pre-acquire the lock
+            holder = open(lock_path, "w")
+            fcntl.flock(holder.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+            try:
+                fake_cfg = {
+                    "AUTOSCALE_ENABLED": "true",
+                    "AUTOSCALE_DRY_RUN": "false",
+                    "DATA_DIR": tmpdir,
+                    "NODE_TIERS": NODE_TIERS_JSON,
+                    "DEFAULT_CAPACITY": "6",
+                    "DOCKER_URI": "ssh://fake",
+                    "DO_TOKEN": "fake-token",
+                }
+                with (
+                    patch("cspawn.cli.util.get_config", return_value=fake_cfg),
+                    patch("cspawn.cs_docker.autoscale.gather_cluster_state") as mock_gather,
+                ):
+                    result = run_autoscale(ctx, dry_run=False, force=False)
+
+                assert isinstance(result, ApplyResult)
+                mock_gather.assert_not_called()
+            finally:
+                fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
+                holder.close()
