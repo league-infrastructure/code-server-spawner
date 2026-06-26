@@ -733,21 +733,29 @@ class CodeServerManager(ServicesManager):
             (CodeHost.state != HostState.RUNNING.value) | (CodeHost.app_state != HostState.READY.value)
         ).all()
 
-        # Update remaining services.
+        # Update remaining services. Isolate per-host failures: a single
+        # unreachable host or a transient SSH/docker drop must not abort the
+        # whole sync (which would leave the rest of the DB stale and crash
+        # callers like `host purge`).
         logger.info(f"Syncing not-ready hosts: {len(not_ready_hosts)}")
         for ch in not_ready_hosts:
             if ch.state == HostState.MIA.value:
                 continue
-            s: CSMService = self.get(ch.service_id)
-            logger.info("Syncing service %s", s.name)
-            s.sync_to_db(check_ready=check_ready)
+            try:
+                s: CSMService = self.get(ch.service_id)
+                logger.info("Syncing service %s", s.name)
+                s.sync_to_db(check_ready=check_ready)
+            except Exception as e:
+                logger.warning("Skipping host %s during sync: %s", ch.service_name, e)
 
         logger.info(f"Syncing not-in-db hosts: {len(not_in_db)}")
         # Create the missing services
         for service_id in not_in_db:
-            s: CSMService = self.get(service_id)
-
-            s.sync_to_db(check_ready=check_ready)
+            try:
+                s: CSMService = self.get(service_id)
+                s.sync_to_db(check_ready=check_ready)
+            except Exception as e:
+                logger.warning("Skipping service %s during sync: %s", service_id, e)
 
     def remove_all(self):
         """Remove all Code Server instances."""

@@ -246,20 +246,97 @@ def sync(ctx, username: str, dry_run: bool):
 
 
 @host.command()
-@click.argument("username")
+@click.argument("username", required=False)
+@click.option("-a", "--all", "all_hosts", is_flag=True, help="Push every host to GitHub.")
 @click.option("--branch", default=None, help="Branch to push.")
+@click.option("--timeout", "timeout_s", default=90, show_default=True, type=int,
+              help="Per-host timeout in seconds for --all (the docker-over-SSH "
+                   "round-trips can stall under node SSH rate-limiting).")
 @click.pass_context
-def push(ctx, username, branch):
-    """Push local changes from the user's code host to GitHub."""
+def push(ctx, username, all_hosts, branch, timeout_s):
+    """Push local changes from a user's code host to GitHub (or all hosts with --all)."""
     app = get_app(ctx)
     from cspawn.cs_github.repo import CodeHostRepo
+
     with app.app_context():
+        if all_hosts:
+            # Don't filter by DB state — it drifts (a "shutdown" row is often a
+            # live 1/1 service). Collect every non-MIA host's name up front.
+            names = [ch.service_name for ch in CodeHost.query.order_by(CodeHost.service_name).all()
+                     if not ch.is_mia]
+            _push_all(ctx, names, branch, timeout_s)
+            return
+
+        if not username:
+            print("Provide a username, or use --all to push every host.")
+            return
+
         try:
             ch_repo = CodeHostRepo.new_codehostrepo(app, username)
             ch_repo.push(branch=branch)
             print(f"Push completed for {username} on branch {branch}")
         except Exception as e:
             raise
+
+
+def _push_all(ctx, names, branch, timeout_s):
+    """Push every host, one isolated subprocess per host.
+
+    Each push must be its own process: the docker-over-SSH client caches a
+    persistent connection on app.csm, and when the swarm-manager SSH tunnel
+    drops (node SSH rate-limiting), that broken pipe poisons every subsequent
+    in-process call — so an in-process loop fails the whole batch after the
+    first drop. A fresh `cspawnctl host push <name>` per host gets a fresh
+    connection, is hard-killable on timeout, and one host's failure can't
+    cascade. Failures/timeouts are retried once, then reported.
+    """
+    import subprocess
+    import sys
+
+    deploy = ctx.obj.get("deploy") if isinstance(ctx.obj, dict) else None
+    base = [sys.argv[0]]
+    if deploy:
+        base += ["-d", deploy]
+    base += ["host", "push"]
+    if branch:
+        base += ["--branch", branch]
+
+    print(f"Pushing {len(names)} hosts to GitHub "
+          f"(isolated process, {timeout_s}s timeout, 1 retry each)...")
+
+    ok, failed = 0, []
+    for name in names:
+        result = None
+        for attempt in (1, 2):
+            try:
+                proc = subprocess.run(base + [name], capture_output=True, text=True,
+                                      timeout=timeout_s)
+                if proc.returncode == 0:
+                    result = ("ok", None)
+                    break
+                tail = (proc.stderr or proc.stdout or "").strip().splitlines()
+                result = ("fail", tail[-1] if tail else f"exit {proc.returncode}")
+            except subprocess.TimeoutExpired:
+                result = ("timeout", f"timed out after {timeout_s}s")
+            if attempt == 1:
+                print(f"  … {name}: {result[1]} — retrying")
+        status, detail = result
+        if status == "ok":
+            ok += 1
+            print(f"  ✓ {name}")
+        elif status == "timeout":
+            failed.append((name, detail))
+            print(f"  ⏱ {name}: {detail}")
+        else:
+            failed.append((name, detail))
+            print(f"  ✗ {name}: {detail}")
+
+    print(f"\nPush complete: {ok} succeeded, {len(failed)} failed.")
+    for name, detail in failed:
+        print(f"  failed: {name}: {detail}")
+    if failed:
+        print("\nRe-run `host push --all` to retry failures "
+              "(already-pushed hosts return instantly).")
 
 
 @host.command()

@@ -72,43 +72,48 @@ class CodeHostRepo:
 
     def push(self, branch: str = "master") -> int:
         """Push local changes from the codehost's container to GitHub."""
+        import subprocess
 
         service, container = self._get_service_container()
         env = self._git_environment()
-   
+
         repo = service.env['JTL_REPO']
-
         owner, repo_name = _parse_repo(repo)
-        remote = f"https://x-access-token:{env['GITHUB_TOKEN']}@github.com/{owner}/{repo_name}.git"
+        # Token comes in via `docker exec -e GITHUB_TOKEN=...`, referenced as a
+        # shell var so it never appears in the process argument list.
+        remote = f"https://x-access-token:${{GITHUB_TOKEN}}@github.com/{owner}/{repo_name}.git"
 
-     
         refspec = f" {branch}" if branch else ""
 
-        cmd = f'cd "$WORKSPACE_FOLDER" && git commit -a -m"Automated commit" || true && git push "{remote}"{refspec}'
-        self.app.logger.info(f"Executing git push for {self.username}: {cmd}")
-     
-        result = container.o.exec_run(
-            cmd=["sh", "-c", cmd],
-            environment=env,
-            user="vscode",
-            stream=True,
-            demux=True,
+        # GIT_TERMINAL_PROMPT=0 prevents git from blocking on an interactive
+        # username prompt if the token is ever rejected.
+        cmd = (
+            f'cd "$WORKSPACE_FOLDER" && export GIT_TERMINAL_PROMPT=0 && '
+            f'git commit -a -m"Automated commit" || true && git push "{remote}"{refspec}'
         )
-        if result.output:
-            for stdout, stderr in result.output:
-                if stdout:
-                    print(stdout.decode().rstrip())
-                if stderr:
-                    msg = stderr.decode().rstrip()
-                    if msg:
-                        print(f"ERROR: {msg}")
-        exit_code = getattr(result, "exit_code", None)
-        if exit_code is None:
-            exit_code = 0
-        if exit_code != 0:
-            raise RuntimeError(f"git push failed with exit code {exit_code}")
-        
-        return exit_code
+
+        # Exec via the docker CLI, not docker-py's exec_run: exec_run over the
+        # SSH transport throws BrokenPipeError (the connection dies between the
+        # service inspect and the exec hijack). The docker CLI handles SSH
+        # robustly — this is the same `docker -H ssh://... exec` that works by
+        # hand. The container's node was attached in CodeServerManager.containers().
+        node_host = container.node.attrs["Description"]["Hostname"]
+        node_uri = f"ssh://root@{self.app.app_config['NODE_HOSTNAME_TEMPLATE'].format(nodename=node_host)}"
+        self.app.logger.info(f"Executing git push for {self.username} on {node_host} ({node_uri})")
+
+        argv = [
+            "docker", "-H", node_uri, "exec", "-u", "vscode",
+            "-e", f"GITHUB_TOKEN={env['GITHUB_TOKEN']}",
+            container.id, "sh", "-c", cmd,
+        ]
+        proc = subprocess.run(argv, capture_output=True, text=True)
+        if proc.stdout and proc.stdout.strip():
+            print(proc.stdout.strip())
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or "").strip()
+            raise RuntimeError(f"git push failed (rc={proc.returncode}): {err[-500:]}")
+
+        return proc.returncode
 
     def pull(self, branch: str = "master", rebase: bool = True, dry_run: bool = False) -> int:
         """Pull changes from GitHub into the codehost's container."""

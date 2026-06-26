@@ -264,18 +264,33 @@ class Service(ProcessBase):
 
     @property
     def container_tasks(self):
-        """Return the tasks associated with the service."""
+        """Tasks for this service that have a container, ordered so the task
+        swarm currently wants running comes first (newest as tiebreak).
 
+        Swarm retains historical Shutdown tasks after a reschedule, so a 1/1
+        service can have several container-bearing tasks. Without this ordering,
+        consumers that take the first task (`status`, `_get_single_task`,
+        `next(self.containers)` in `to_model`) could latch onto a stale Shutdown
+        task and mislabel a live service as 'shutdown' on the wrong node.
+        """
+
+        tasks = []
         for t in self._object.tasks():
             try:
-                container_id = t["Status"]["ContainerStatus"]["ContainerID"]
-                if container_id:
-                    yield t
+                if t["Status"]["ContainerStatus"]["ContainerID"]:
+                    tasks.append(t)
             except KeyError:
                 logger.error(
                     f"Task {t['ID']} in service {self.name} does not have a ContainerStatus."
                 )
                 continue
+
+        def _rank(t):
+            live = t.get("DesiredState") == "running" or t["Status"]["State"] == "running"
+            return (live, t["Status"].get("Timestamp", ""))
+
+        tasks.sort(key=_rank, reverse=True)
+        yield from tasks
 
     def _get_single_task(self):
         """Fetch the single task associated with this service."""

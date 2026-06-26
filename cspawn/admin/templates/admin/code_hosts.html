@@ -32,7 +32,7 @@
                 <td>{{ code_host.class_proto.name }}</td>
                 <td><a href="{{ code_host.public_url }}" target="_blank">{{ code_host.public_url }}</a></td>
                 <td>{{ code_host.user_activity_rate|round(3) }}</td>
-                <td>{{ code_host.heart_beat_ago}} s</td>
+                <td>{{ code_host.heart_beat_ago}} m</td>
                 <td>
                     <a href="{{ url_for('admin.view_host', host_id=code_host.id) }}"
                         class="btn btn-sm btn-primary">View</a>
