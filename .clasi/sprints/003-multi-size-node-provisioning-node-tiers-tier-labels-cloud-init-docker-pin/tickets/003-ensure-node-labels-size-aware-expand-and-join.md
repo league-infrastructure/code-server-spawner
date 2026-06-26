@@ -1,11 +1,14 @@
 ---
-id: "003"
-title: "_ensure_node_labels + size-aware expand and join"
-status: open
-use-cases: [SUC-001, SUC-002]
-depends-on: ["002"]
-github-issue: ""
-issue: ""
+id: '003'
+title: _ensure_node_labels + size-aware expand and join
+status: done
+use-cases:
+- SUC-001
+- SUC-002
+depends-on:
+- '002'
+github-issue: ''
+issue: ''
 completes_issue: false
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
@@ -35,21 +38,21 @@ has three closely coupled changes that must be delivered together:
 
 ## Acceptance Criteria
 
-- [ ] `_ensure_node_labels(manager_client, node_name, labels: dict[str, str], log=None) -> bool` exists in `node.py`, idempotently merges all key=value pairs into `Spec.Labels`, and returns `True` if any label was changed.
-- [ ] `_ensure_node_labels` skips keys whose existing value already matches (no spurious swarm API calls).
-- [ ] `_ensure_label_on_node` is unchanged (still used by `SWARM_NODE_LABEL` path).
-- [ ] `expand` accepts `--tier <name>` (option name `tier_name`, not required).
-- [ ] `expand --tier large` resolves to the `large` tier from `NODE_TIERS` and creates a droplet with the large slug.
-- [ ] `expand` without `--tier` uses `default_tier(cfg)` (respects `DEFAULT_TIER` config or first tier).
-- [ ] `expand --tier <unknown>` raises a `ClickException` with a descriptive message listing valid tier names.
-- [ ] `do_size` in `expand` is derived from `tier.slug` (line ~1708 replaced).
-- [ ] `_create_droplet` accepts a `tier: Tier | None = None` keyword argument; uses `tier.slug` as `do_size` when provided.
-- [ ] `_join_swarm` accepts a `tier: Tier | None = None` keyword argument.
-- [ ] After the existing `SWARM_NODE_LABEL` block in `_join_swarm` (line ~1073), `_ensure_node_labels` is called with `{"cs.tier": tier.name, "cs.capacity": str(tier.capacity)}` when `tier is not None`.
-- [ ] `_join_swarm` skips `cs.*` labeling when `tier is None` (standalone `expand --join` path).
-- [ ] The IP-to-node match loop used for `SWARM_NODE_LABEL` (line ~1081-1093) is reused for `cs.*` labels — no separate node list walk.
-- [ ] `cspawnctl node expand --tier small` end-to-end (with mocked DO + swarm) stamps correct labels.
-- [ ] Unit tests for `_ensure_node_labels` pass (see Testing Plan).
+- [x] `_ensure_node_labels(manager_client, node_name, labels: dict[str, str], log=None) -> bool` exists in `node.py`, idempotently merges all key=value pairs into `Spec.Labels`, and returns `True` if any label was changed.
+- [x] `_ensure_node_labels` skips keys whose existing value already matches (no spurious swarm API calls).
+- [x] `_ensure_label_on_node` is unchanged (still used by `SWARM_NODE_LABEL` path).
+- [x] `expand` accepts `--tier <name>` (option name `tier_name`, not required).
+- [x] `expand --tier large` resolves to the `large` tier from `NODE_TIERS` and creates a droplet with the large slug.
+- [x] `expand` without `--tier` uses `default_tier(cfg)` (respects `DEFAULT_TIER` config or first tier).
+- [x] `expand --tier <unknown>` raises a `ClickException` with a descriptive message listing valid tier names.
+- [x] `do_size` in `expand` is derived from `tier.slug` (line ~1708 replaced).
+- [x] `_create_droplet` accepts a `tier: Tier | None = None` keyword argument; uses `tier.slug` as `do_size` when provided.
+- [x] `_join_swarm` accepts a `tier: Tier | None = None` keyword argument.
+- [x] After the existing `SWARM_NODE_LABEL` block in `_join_swarm` (line ~1073), `_ensure_node_labels` is called with `{"cs.tier": tier.name, "cs.capacity": str(tier.capacity)}` when `tier is not None`.
+- [x] `_join_swarm` skips `cs.*` labeling when `tier is None` (standalone `expand --join` path).
+- [x] The IP-to-node match loop used for `SWARM_NODE_LABEL` (line ~1081-1093) is reused for `cs.*` labels — no separate node list walk.
+- [x] `cspawnctl node expand --tier small` end-to-end (with mocked DO + swarm) stamps correct labels.
+- [x] Unit tests for `_ensure_node_labels` pass (see Testing Plan).
 
 ## Implementation Plan
 

@@ -16,6 +16,7 @@ import paramiko
 from .root import cli
 from .util import get_config, get_logger
 from cspawn.util.config import find_parent_dir
+from cspawn.cs_docker.tiers import Tier, load_tiers, default_tier, tier_by_name
 
 # Suppress Paramiko's verbose host key logging
 logging.getLogger("paramiko.transport").setLevel(logging.WARNING)
@@ -568,6 +569,47 @@ def _ensure_label_on_node(manager_client: docker.DockerClient, node_name: str, l
         return False
 
 
+def _ensure_node_labels(
+    manager_client: docker.DockerClient,
+    node_name: str,
+    labels: dict[str, str],
+    log=None,
+) -> bool:
+    """Merge key=value labels into the swarm node's Spec.Labels. Idempotent.
+
+    Returns True if any label was changed, False if all were already present
+    with matching values. Skips gracefully on errors (logs warning).
+
+    Uses the same low-level API as _ensure_label_on_node for SDK 2.0 compat.
+    """
+    if not labels:
+        return False
+    try:
+        short = node_name.split(".")[0] if node_name else node_name
+        node_obj = _find_swarm_node(manager_client, node_name, short)
+        if not node_obj:
+            return False
+        info = manager_client.api.inspect_node(node_obj.id)  # type: ignore[attr-defined]
+        version = ((info or {}).get("Version", {}) or {}).get("Index")
+        spec = ((info or {}).get("Spec", {}) or {}).copy()
+        existing = (spec.get("Labels") or {}).copy()
+        # Check which labels actually need updating
+        to_set = {k: v for k, v in labels.items() if existing.get(k) != v}
+        if not to_set:
+            return False  # all already set correctly
+        existing.update(to_set)
+        spec["Labels"] = existing
+        manager_client.api.update_node(node_obj.id, version, spec)  # type: ignore[attr-defined]
+        if log:
+            for k, v in to_set.items():
+                log.info(f"[expand] Applied node label '{k}={v}' on {node_name}")
+        return True
+    except Exception as e:
+        if log:
+            log.warning(f"[expand] Failed to apply node labels on {node_name}: {e}")
+        return False
+
+
 def _find_project_id_for_droplet(token: str, droplet_id: int, log=None) -> str | None:
     """Find the Project ID that contains the given droplet using python-digitalocean."""
     urn = f"do:droplet:{droplet_id}"
@@ -718,8 +760,11 @@ def _collect_do_ssh_keys(mgr: digitalocean.Manager, do_token: str, pub_key_path:
 
 def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.DockerClient, name_template: str,
                     do_token: str, do_region: str, do_size: str, do_image: str, project_selector: str | None,
-                    desired_serial: int | None, docker_uri: str, do_tag: str | None = None) -> tuple[digitalocean.Droplet, str, str, str]:
+                    desired_serial: int | None, docker_uri: str, do_tag: str | None = None,
+                    tier: "Tier | None" = None) -> tuple[digitalocean.Droplet, str, str, str]:
     """Create droplet for next or specific serial. Idempotent if desired_serial provided.
+
+    When ``tier`` is provided it takes precedence over ``do_size`` for the droplet slug.
 
     Returns (droplet, ip, fqdn, shortname)
     """
@@ -784,20 +829,21 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
         except Exception as e:
             log.warning(f"[expand] Error reading CLOUD_INIT_FILE: {e}")
 
-        # Create droplet
+        # Create droplet — tier.slug takes precedence over do_size when provided
+        effective_size = tier.slug if tier is not None else do_size
         droplet = digitalocean.Droplet(
             token=do_token,
             name=fqdn,
             region=do_region,
             image=do_image,
-            size_slug=do_size,
+            size_slug=effective_size,
             ssh_keys=list(ssh_keys_param or []),
             backups=False,
             ipv6=False,
             tags=[do_tag] if do_tag else None,
             user_data=user_data,
         )
-        log.info(f"[expand] Creating droplet {fqdn} in {do_region} with size {do_size} and image {do_image}")
+        log.info(f"[expand] Creating droplet {fqdn} in {do_region} with size {effective_size} and image {do_image}")
         try:
             droplet.create()
         except Exception as e:
@@ -895,8 +941,12 @@ def _configure_node(ctx, target: str, desired_shortname: str | None = None, ssh_
     return ip, shortname
 
 
-def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_uri: str, ssh_timeout: int | None = None) -> None:
-    """Join the node to the swarm as worker. Idempotent."""
+def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_uri: str, ssh_timeout: int | None = None, tier: "Tier | None" = None) -> None:
+    """Join the node to the swarm as worker. Idempotent.
+
+    When ``tier`` is provided, stamps ``cs.tier`` and ``cs.capacity`` labels on the
+    node after it joins the swarm.
+    """
     log = get_logger(ctx)
     priv_key_path, _ = _ensure_priv_key()
     manager_host = urlparse(docker_uri).hostname or ""
@@ -1102,6 +1152,35 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
                     _ensure_label_on_node(manager_client, name_guess, label, log=log)
     except Exception:
         pass
+
+    # Apply cs.tier and cs.capacity labels if tier is known
+    if tier is not None:
+        try:
+            deadline_labels = time.time() + 90
+            cs_applied = False
+            while time.time() < deadline_labels and not cs_applied:
+                try:
+                    for n in manager_client.nodes.list():
+                        try:
+                            info = manager_client.api.inspect_node(n.id)  # type: ignore[attr-defined]
+                            addr = ((info or {}).get("Status", {}) or {}).get("Addr")
+                            if addr == ip:
+                                name = ((info or {}).get("Description", {}) or {}).get("Hostname") or ""
+                                if name:
+                                    cs_applied = _ensure_node_labels(
+                                        manager_client, name,
+                                        {"cs.tier": tier.name, "cs.capacity": str(tier.capacity)},
+                                        log=log,
+                                    ) or cs_applied
+                                    break
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+                if not cs_applied:
+                    time.sleep(3)
+        except Exception:
+            pass
 
 
 # ----- Node info and purge commands -----
@@ -1692,20 +1771,35 @@ def stop_node(ctx, force: bool, dry_run: bool, node_spec: str):
 @click.option("--join", "join_name", required=False, type=str, help="Only join the node to the swarm (by name or IP)")
 @click.option("--domains", "domains_only", is_flag=True, help="Only sync domain A records for swarm nodes (create missing, remove stale)")
 @click.option("--ssh-timeout", "ssh_timeout_opt", required=False, type=int, help="Seconds to wait for SSH during configure/join (overrides config)")
+@click.option("--tier", "tier_name", required=False, type=str,
+              help="Node size tier from NODE_TIERS (default: DEFAULT_TIER). "
+                   "See 'cspawnctl node tiers' or NODE_TIERS config key.")
 @click.pass_context
-def expand(ctx, project_selector: str | None, create_only: bool, create_serial: int | None, configure_name: str | None, join_name: str | None, domains_only: bool, ssh_timeout_opt: int | None):
+def expand(ctx, project_selector: str | None, create_only: bool, create_serial: int | None, configure_name: str | None, join_name: str | None, domains_only: bool, ssh_timeout_opt: int | None, tier_name: str | None):
     """Provision and/or configure and/or join a node.
 
     If none of --create/--configure/--join are supplied, performs all three in order.
+    Use --tier to select a node size tier defined in NODE_TIERS config (e.g. --tier large).
     """
     log = get_logger(ctx)
     log.info("[expand] Starting node expansion")
     cfg = get_config()
 
+    # Resolve tier: --tier <name> takes precedence, otherwise use DEFAULT_TIER / first tier.
+    if tier_name:
+        tier = tier_by_name(cfg, tier_name)
+        if tier is None:
+            valid = [t.name for t in load_tiers(cfg)]
+            raise click.ClickException(
+                f"Unknown tier '{tier_name}'. Valid tiers: {', '.join(valid)}"
+            )
+    else:
+        tier = default_tier(cfg)
+
     # Read DigitalOcean config
     do_token = cfg.get("DO_TOKEN")
-  
-    do_size = cfg.get("DO_SIZE", "s-1vcpu-1gb")
+
+    do_size = tier.slug  # derived from tier; do_size kept for backward-compat log messages
     do_image = cfg.get("DO_IMAGE", "docker-20-04")
     do_region = cfg.get("DO_REGION") or cfg.get("DO_REGIOIN") or "sfo3"
     name_template = cfg.get("DO_NAMES")
@@ -1718,7 +1812,7 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
     if not (do_token and name_template):
         raise click.ClickException("Missing DO_TOKEN or DO_NAMES in configuration")
 
-    log.info(f"[expand] Using DO region={do_region} size={do_size} image={do_image}")
+    log.info(f"[expand] Using DO region={do_region} tier={tier.name} size={do_size} image={do_image}")
 
     docker_uri = cfg.get("DOCKER_URI")
     if not docker_uri:
@@ -1765,6 +1859,7 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
             desired_serial=create_serial,
             docker_uri=docker_uri,
             do_tag=do_tag,
+            tier=tier,
         )
         last_ip, last_shortname, last_fqdn = ip, shortname, fqdn
 
@@ -1783,7 +1878,10 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
         if not target_for_join:
             raise click.ClickException("No target to join; please provide --join <name>")
         log.info(f"[expand] SSH wait timeout used for join: {ssh_timeout_effective}s")
-        _join_swarm(ctx, target_for_join, manager_client, docker_uri, ssh_timeout=ssh_timeout_effective)
+        # Pass tier only for full flow or --create+join; skip cs.* labeling for standalone --join
+        # (standalone --join means we're joining a pre-existing node whose tier is unknown)
+        join_tier = None if (join_name and not do_all) else tier
+        _join_swarm(ctx, target_for_join, manager_client, docker_uri, ssh_timeout=ssh_timeout_effective, tier=join_tier)
 
     # Verify membership when we know the shortname
     if last_shortname:
