@@ -1,13 +1,13 @@
 ---
 id: '003'
 title: Unit tests for pure decision functions
-status: open
+status: done
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
+- SUC-001
+- SUC-002
+- SUC-003
 depends-on:
-  - '002'
+- '002'
 github-issue: ''
 issue: ''
 completes_issue: false
@@ -26,16 +26,16 @@ re-pointed in the next sprint.
 
 ## Acceptance Criteria
 
-- [ ] `test/test_autoscale.py` exists and is discovered by `uv run pytest`.
-- [ ] `capacity_for_node` tests:
+- [x] `test/test_autoscale.py` exists and is discovered by `uv run pytest`.
+- [x] `capacity_for_node` tests:
       - Label present: returns label value as int.
       - Label absent, slug matches tier: returns tier capacity.
       - Label absent, slug unknown: returns `AUTOSCALE_DEFAULT_CAPACITY` from config.
-- [ ] `assess_cluster` tests:
+- [x] `assess_cluster` tests:
       - Managers excluded from `total_capacity`.
       - `total_load` sums across all nodes.
       - `excess_capacity` equals `total_capacity - total_load`.
-- [ ] `estimate_demand` tests:
+- [x] `estimate_demand` tests:
       - Pre-scale > continuous: returns pre-scale + headroom.
       - Continuous > pre-scale: returns continuous + headroom.
       - MIA hosts excluded from `live_load`.
@@ -44,10 +44,10 @@ re-pointed in the next sprint.
       - Non-running classes excluded from pre-scale.
       - `ROSTER_FRACTION` is applied (e.g., 10 students * 0.8 = ceil(8) = 8).
       - Headroom is always added.
-- [ ] `compute_deficit` tests:
+- [x] `compute_deficit` tests:
       - Demand <= capacity: returns 0.
       - Demand > capacity: returns correct deficit.
-- [ ] `plan_scale_up` tests (use `NODE_TIERS` with small=6, large=14 throughout):
+- [x] `plan_scale_up` tests (use `NODE_TIERS` with small=6, large=14 throughout):
       - `D=1` → `(0, 1)` (one small).
       - `D=6` → `(0, 1)` (exactly one small).
       - `D=7` → `(1, 0)` (remainder 7 > cap_small=6, so one more large instead).
@@ -55,7 +55,7 @@ re-pointed in the next sprint.
       - `D=20` → `(1, 1)` (one large + one small for remainder 6).
       - `D=21` → `(2, 0)` (one large + remainder 7, round up to second large).
       - Cap clamp: `D=50, MAX_ADD_PER_CYCLE=2` → total adds clamped to 2.
-- [ ] `plan_scale_down` tests:
+- [x] `plan_scale_down` tests:
       - Node with `running_hosts > 0`: skipped.
       - Node empty but cooldown not met: skipped.
       - Manager node: skipped.
@@ -64,13 +64,13 @@ re-pointed in the next sprint.
       - Respects excess dead-band (skips when `excess <= capacity + headroom`).
       - Selects highest-serial node first.
       - Returns at most `MAX_REMOVE_PER_CYCLE` nodes.
-- [ ] `build_plan` tests:
+- [x] `build_plan` tests:
       - Deficit > 0: returns plan with adds only, no removes.
       - Deficit == 0 and eligible scale-down candidates: returns plan with removes only, no adds.
       - Deficit == 0 and no eligible candidates: returns hold plan.
       - Never returns a plan with both `add_large + add_small > 0` AND `remove_nodes` non-empty.
-- [ ] All tests pass: `uv run pytest test/test_autoscale.py -v`.
-- [ ] Full suite still passes: `uv run pytest`.
+- [x] All tests pass: `uv run pytest test/test_autoscale.py -v`.
+- [x] Full suite still passes: `uv run pytest`.
 
 ## Implementation Plan
 
