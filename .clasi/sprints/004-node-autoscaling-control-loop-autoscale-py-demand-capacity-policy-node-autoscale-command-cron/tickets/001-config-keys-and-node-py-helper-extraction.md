@@ -1,11 +1,11 @@
 ---
 id: '001'
 title: Config keys and node.py helper extraction
-status: open
+status: done
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
+- SUC-001
+- SUC-002
+- SUC-003
 depends-on: []
 github-issue: ''
 issue: node-autoscaling-control-loop.md
@@ -24,25 +24,25 @@ to any existing CLI command.
 
 ## Acceptance Criteria
 
-- [ ] `AUTOSCALE_ENABLED=false` added to `config/prod/public.env`, `config/local-prod/public.env`,
+- [x] `AUTOSCALE_ENABLED=false` added to `config/prod/public.env`, `config/local-prod/public.env`,
       and `config/devel/public.env`.
-- [ ] `AUTOSCALE_DRY_RUN=true` added to all three `public.env` files.
-- [ ] The following `AUTOSCALE_*` keys are present in all three files:
+- [x] `AUTOSCALE_DRY_RUN=true` added to all three `public.env` files.
+- [x] The following `AUTOSCALE_*` keys are present in all three files:
       `AUTOSCALE_HEADROOM=2`, `AUTOSCALE_ROSTER_FRACTION=0.8`,
       `AUTOSCALE_MAX_ADD_PER_CYCLE=2`, `AUTOSCALE_MAX_REMOVE_PER_CYCLE=1`,
       `AUTOSCALE_SCALEDOWN_COOLDOWN_MIN=30`, `AUTOSCALE_MIN_WORKER_NODES=1`,
       `AUTOSCALE_DEFAULT_CAPACITY=6`.
-- [ ] `count_hosts_per_node(client: DockerClient) -> dict[str, int]` is a module-level
+- [x] `count_hosts_per_node(client: DockerClient) -> dict[str, int]` is a module-level
       function in `cspawn/cli/node.py`. Its implementation is the same query as
       `_running_hosts_by_node` (already there at lines 49-71) — rename/alias or unify.
       The `hosts` command and `contract` command continue to use the same underlying
       logic without regression.
-- [ ] `graceful_remove_node(ctx, manager_client, mgr, fqdn, *, dry_run: bool, log) -> None`
+- [x] `graceful_remove_node(ctx, manager_client, mgr, fqdn, *, dry_run: bool, log) -> None`
       is a module-level function in `cspawn/cli/node.py`. It encapsulates the drain →
       wait-tasks-drained → remove-swarm-node → destroy-droplet sequence extracted from
       `stop_node`'s non-force path (current lines ~1739-1791). `stop_node` calls
       `graceful_remove_node` rather than containing the logic inline; behavior is identical.
-- [ ] `uv run pytest` passes with no regressions (existing `test_node_contract.py`,
+- [x] `uv run pytest` passes with no regressions (existing `test_node_contract.py`,
       `test_node_labels.py`, `test_node_backfill.py`, `test_tiers.py`).
 
 ## Implementation Plan

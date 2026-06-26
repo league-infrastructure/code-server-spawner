@@ -46,11 +46,16 @@ def rm(rm):
     pass
 
 
-def _running_hosts_by_node(client: docker.DockerClient) -> dict[str, int]:
+# ---------------------------------------------------------------------------
+# Shared helpers — used by both CLI commands and cspawn/cs_docker/autoscale.py
+# ---------------------------------------------------------------------------
+
+def count_hosts_per_node(client: docker.DockerClient) -> dict[str, int]:
     """Return {short_node_name: running_host_count} for all swarm nodes.
 
     Counts running tasks for services labeled jtl.codeserver=true.
-    Used by both the 'hosts' command and 'contract' candidate selection.
+    Shared between the 'hosts' command, 'contract' candidate selection,
+    and the autoscale control loop (autoscale.py).
     """
     from collections import defaultdict
 
@@ -69,6 +74,10 @@ def _running_hosts_by_node(client: docker.DockerClient) -> dict[str, int]:
             per_node[short] += 1
 
     return dict(per_node)
+
+
+# Backward-compatible alias — existing callers (tests, CLI) can use either name.
+_running_hosts_by_node = count_hosts_per_node
 
 
 @node.command(name="hosts")
@@ -1690,6 +1699,101 @@ def expand_purge(ctx, dry_run: bool):
     click.echo("Purge completed successfully")
 
 
+def graceful_remove_node(
+    ctx,
+    manager_client: docker.DockerClient,
+    mgr,
+    fqdn: str,
+    *,
+    dry_run: bool,
+    log,
+) -> None:
+    """Drain → wait-tasks-drained → remove-swarm-node → destroy-droplet for a named node.
+
+    Shared between the 'stop' CLI command and cspawn/cs_docker/autoscale.py so that
+    autoscale.py can remove nodes without duplicating the drain/remove/destroy sequence.
+
+    Parameters
+    ----------
+    ctx:
+        Click context (passed through to helpers that need it).
+    manager_client:
+        Docker client connected to the swarm manager.
+    mgr:
+        DigitalOcean Manager object (python-digitalocean).
+    fqdn:
+        Fully-qualified (or short) node name to remove.
+    dry_run:
+        When True, print the planned actions and return without making changes.
+    log:
+        Logger instance (from get_logger).
+    """
+    import digitalocean as _do
+
+    cfg = get_config()
+    do_token = cfg.get("DO_TOKEN")
+    do_names = cfg.get("DO_NAMES")
+    do_tag = cfg.get("DO_TAG")
+    do_project = cfg.get("DO_PROJECT")
+
+    # Resolve the droplet from the FQDN spec
+    droplet, resolved_fqdn = _resolve_droplet_by_spec(
+        mgr=mgr,
+        token=do_token,
+        do_names=do_names,
+        do_tag=do_tag,
+        do_project=do_project,
+        spec=fqdn,
+        log=log,
+    )
+
+    short = resolved_fqdn.split(".")[0]
+    node_obj = _find_swarm_node(manager_client, resolved_fqdn, short)
+
+    if dry_run:
+        actions = []
+        if node_obj:
+            actions.append(f"drain swarm node {resolved_fqdn}")
+            actions.append(f"wait for tasks to drain on {resolved_fqdn}")
+            actions.append(f"remove swarm node {resolved_fqdn}")
+        else:
+            actions.append(f"(node {resolved_fqdn} not in swarm; skip drain/remove)")
+        actions.append(f"destroy droplet {resolved_fqdn} (id={droplet.id})")
+        click.echo("Would perform (in order):")
+        for a in actions:
+            click.echo(f"  - {a}")
+        return
+
+    if node_obj:
+        log.info(f"[stop] Draining swarm node {resolved_fqdn}")
+        _drain_swarm_node(manager_client, node_obj, log=log)
+        try:
+            _wait_node_tasks_drained(manager_client, node_obj.id, log=log)
+        except Exception as e:
+            # If timeout, proceed but warn
+            log.warning(f"[stop] Proceeding to remove despite drain timeout: {e}")
+        try:
+            log.info(f"[stop] Removing swarm node {resolved_fqdn}")
+            try:
+                node_obj.remove(force=True)
+            except Exception:
+                # Try low-level API remove as fallback (Docker SDK 2.0 compatible)
+                manager_client.api.remove_node(node_obj.id, force=True)  # type: ignore[attr-defined]
+        except Exception as e:
+            # It's possible the node is down; proceed to droplet destroy
+            log.warning(f"[stop] Failed to remove node cleanly: {e}")
+    else:
+        log.info(f"[stop] Node {resolved_fqdn} not found in swarm; skipping drain/remove")
+
+    # Finally, destroy the droplet
+    try:
+        log.info(f"[stop] Destroying droplet {resolved_fqdn} (id={droplet.id})")
+        droplet.destroy()
+        click.echo(f"Stopped droplet: {resolved_fqdn}")
+    except Exception as e:
+        raise click.ClickException(f"Failed to destroy droplet {resolved_fqdn}: {e}")
+
+
 @node.command(name="stop")
 @click.option("-F", "--force", is_flag=True, help="Force stop immediately (required until drain/remove is implemented)")
 @click.option("-N", "--dry-run", is_flag=True, help="Only print what would be done")
@@ -1736,7 +1840,7 @@ def stop_node(ctx, force: bool, dry_run: bool, node_spec: str):
             raise click.ClickException(f"Failed to destroy droplet {fqdn}: {e}")
         return
 
-    # Non-force path: drain -> wait -> remove from swarm -> destroy droplet
+    # Non-force path: delegate to graceful_remove_node
     if not docker_uri:
         raise click.ClickException("Missing DOCKER_URI in configuration for graceful stop")
     try:
@@ -1744,51 +1848,7 @@ def stop_node(ctx, force: bool, dry_run: bool, node_spec: str):
     except Exception as e:
         raise click.ClickException(f"Failed to connect to docker manager at {docker_uri}: {e}")
 
-    short = fqdn.split(".")[0]
-    node_obj = _find_swarm_node(manager_client, fqdn, short)
-
-    if dry_run:
-        actions = []
-        if node_obj:
-            actions.append(f"drain swarm node {fqdn}")
-            actions.append(f"wait for tasks to drain on {fqdn}")
-            actions.append(f"remove swarm node {fqdn}")
-        else:
-            actions.append(f"(node {fqdn} not in swarm; skip drain/remove)")
-        actions.append(f"destroy droplet {fqdn} (id={droplet.id})")
-        click.echo("Would perform (in order):")
-        for a in actions:
-            click.echo(f"  - {a}")
-        return
-
-    if node_obj:
-        log.info(f"[stop] Draining swarm node {fqdn}")
-        _drain_swarm_node(manager_client, node_obj, log=log)
-        try:
-            _wait_node_tasks_drained(manager_client, node_obj.id, log=log)
-        except Exception as e:
-            # If timeout, proceed but warn
-            log.warning(f"[stop] Proceeding to remove despite drain timeout: {e}")
-        try:
-            log.info(f"[stop] Removing swarm node {fqdn}")
-            try:
-                node_obj.remove(force=True)
-            except Exception:
-                # Try low-level API remove as fallback (Docker SDK 2.0 compatible)
-                manager_client.api.remove_node(node_obj.id, force=True)  # type: ignore[attr-defined]
-        except Exception as e:
-            # It's possible the node is down; proceed to droplet destroy
-            log.warning(f"[stop] Failed to remove node cleanly: {e}")
-    else:
-        log.info(f"[stop] Node {fqdn} not found in swarm; skipping drain/remove")
-
-    # Finally, destroy the droplet
-    try:
-        log.info(f"[stop] Destroying droplet {fqdn} (id={droplet.id})")
-        droplet.destroy()
-        click.echo(f"Stopped droplet: {fqdn}")
-    except Exception as e:
-        raise click.ClickException(f"Failed to destroy droplet {fqdn}: {e}")
+    graceful_remove_node(ctx, manager_client, mgr, fqdn, dry_run=dry_run, log=log)
 
 
 @node.command()
