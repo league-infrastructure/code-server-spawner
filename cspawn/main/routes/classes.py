@@ -144,6 +144,25 @@ def which_host_buttons(state: str) -> Tuple[str]:
 context["which_host_buttons"] = which_host_buttons
 
 
+def _class_cluster_zone(class_: Class) -> str:
+    """Return the current cluster zone string for a class (mirrors class_cluster_status logic)."""
+    if class_.purge_after is None:
+        return "unarmed"
+    now = datetime.now(timezone.utc)
+    pa = class_.purge_after
+    pb = class_.purge_by
+    if pa.tzinfo is None:
+        pa = pa.replace(tzinfo=timezone.utc)
+    if pb is not None and pb.tzinfo is None:
+        pb = pb.replace(tzinfo=timezone.utc)
+    if now < pa:
+        return "provisioning"
+    elif pb is not None and now < pb:
+        return "active"
+    else:
+        return "expired"
+
+
 @main_bp.route("/class/<int:class_id>/details")
 @instructor_required
 def detail_class(class_id):
@@ -154,6 +173,7 @@ def detail_class(class_id):
         "classes/detail.html",
         class_=class_,
         host=host,
+        cluster_zone=_class_cluster_zone(class_),
         return_url=url_for("main.detail_class", class_id=class_id),
         **context,
     )

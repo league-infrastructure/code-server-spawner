@@ -1,12 +1,12 @@
 ---
 id: '003'
-title: "Class detail page — Create my cluster button and status display"
-status: open
+title: "Class detail page \u2014 Create my cluster button and status display"
+status: done
 use-cases:
-  - SUC-001
-  - SUC-005
+- SUC-001
+- SUC-005
 depends-on:
-  - '002'
+- '002'
 github-issue: ''
 issue: ''
 completes_issue: false
@@ -50,20 +50,20 @@ On button click:
 
 ## Acceptance Criteria
 
-- [ ] The class detail page shows the cluster section only to instructors of
+- [x] The class detail page shows the cluster section only to instructors of
       the class (not to students, not to other instructors not on the class).
-- [ ] The "Create my cluster" button is present when `class.purge_after` is
+- [x] The "Create my cluster" button is present when `class.purge_after` is
       None (unarmed) or `now >= class.purge_by` (expired).
-- [ ] Clicking the button POSTs to `/classes/<id>/cluster` and updates the
+- [x] Clicking the button POSTs to `/classes/<id>/cluster` and updates the
       status display from the JSON response without a page reload.
-- [ ] Status text reflects the four zone states correctly.
-- [ ] `purge_after` and `purge_by` are shown in a human-readable format
+- [x] Status text reflects the four zone states correctly.
+- [x] `purge_after` and `purge_by` are shown in a human-readable format
       (e.g. "6:00 PM" using the class timezone or UTC).
-- [ ] `target_nodes` is displayed in the provisioning/active status (e.g. "3
+- [x] `target_nodes` is displayed in the provisioning/active status (e.g. "3
       nodes requested").
-- [ ] The button is disabled (or removed) while the request is in-flight to
+- [x] The button is disabled (or removed) while the request is in-flight to
       prevent double-submission.
-- [ ] The cluster section is absent entirely when the viewing user is not an
+- [x] The cluster section is absent entirely when the viewing user is not an
       instructor for this class.
 
 ## Implementation Plan
