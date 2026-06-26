@@ -2,13 +2,15 @@
 
 **Audience:** an engineer or agent working on the code-server-spawner's node
 autoscaling. This issue defines *when* the cluster scales up and down. It builds
-on two prior planning docs and replaces part of their demand model:
+on two prior issues and replaces part of their demand model:
 
-- `.clasi/log/018-Plan.md` — Node Autoscaling: control loop & policy
-- `.clasi/log/019-Plan.md` — Multi-Size Node Provisioning + `NODE_TIERS` config
+- [[node-autoscaling-control-loop]] — Node Autoscaling: control loop & policy
+- [[multi-size-node-provisioning]] — Multi-Size Node Provisioning + `NODE_TIERS` config
 
-This document is self-contained for the *scaling-signal* decision. Read the two
-plans above for the provisioning/reaping/contraction mechanics it reuses.
+This document is self-contained for the *scaling-signal* decision. See the two
+issues above for the provisioning/reaping/contraction mechanics it reuses.
+(Both were originally captured only as Plan-agent transcripts at
+`.clasi/log/018-Plan.md` / `.clasi/log/019-Plan.md`; they are now tracked issues.)
 
 ---
 
@@ -54,7 +56,7 @@ and starting the session before class.
 - **Idempotent:** a second click on an active cluster re-arms the window rather
   than duplicating.
 - **Sizing is auto from roster:** `target_nodes = ceil(len(class.students) /
-  tier_capacity)`, tiers from `NODE_TIERS` (plan 019). No size input from the
+  tier_capacity)`, tiers from `NODE_TIERS` ([[multi-size-node-provisioning]]). No size input from the
   instructor.
 
 ### 2. Two new `Class` timestamp fields gate purging
@@ -112,10 +114,10 @@ here. The historical per-session window lived in `running_at` / `stops_at`;
 - **Reaper** (`cspawn/cli/node.py` `host reap` / `purge`) — retune idle
   threshold to 15 min; gate reaping by `now > purge_after`; force-remove past
   `purge_by`.
-- **`cspawn/cs_docker/autoscale.py`** (plan 018) — `estimate_demand` reads
-  classes with a live purge window instead of `Class.running`; node contraction
-  gated by the same window logic.
-- Tier sizing from `NODE_TIERS` per plan 019.
+- **`cspawn/cs_docker/autoscale.py`** ([[node-autoscaling-control-loop]]) —
+  `estimate_demand` reads classes with a live purge window instead of
+  `Class.running`; node contraction gated by the same window logic.
+- Tier sizing from `NODE_TIERS` per [[multi-size-node-provisioning]].
 
 This collapses the previously-proposed `ClusterRequest` table into three fields
 on `Class`.
