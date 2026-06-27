@@ -1,8 +1,12 @@
 ---
 id: '001'
 title: NodeOp model and migration
-status: open
-use-cases: [SUC-001, SUC-002, SUC-003, SUC-004]
+status: done
+use-cases:
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
 depends-on: []
 github-issue: ''
 issue: admin-nodes-tab-manual-swarm-node-management.md
@@ -19,13 +23,13 @@ Add the `NodeOp` SQLAlchemy model to `cspawn/models.py` and a hand-written idemp
 
 ## Acceptance Criteria
 
-- [ ] `NodeOp` class is added to `cspawn/models.py` with all required columns: `id` (UUID string PK), `kind` (`'expand'` or `'remove'`), `tier` (nullable String), `target_fqdn` (nullable String), `status` (String, default `'pending'`), `exit_code` (nullable Integer), `log_path` (nullable String), `message` (nullable Text), `created_by` (nullable Integer FK → `users.id`), `created_at` (DateTime UTC), `started_at` (nullable DateTime), `finished_at` (nullable DateTime).
-- [ ] `from cspawn.models import NodeOp` succeeds in a Python shell without error.
-- [ ] Migration file `migrations/versions/v006_add_node_op_table.py` exists with `revision = "v006_add_node_op_table"` and `down_revision = "v001_add_class_purge_window_fields"`.
-- [ ] `flask db upgrade` on a fresh SQLite database (dev) creates the `node_ops` table without error.
-- [ ] `flask db upgrade` on a PostgreSQL database (or a Postgres-dialect test) creates the `node_ops` table without error; the migration is idempotent (`CREATE TABLE IF NOT EXISTS`).
-- [ ] `flask db downgrade` removes the `node_ops` table cleanly.
-- [ ] A `NodeOp` instance can be created, committed, re-queried, and updated in a unit test using the SQLite test database.
+- [x] `NodeOp` class is added to `cspawn/models.py` with all required columns: `id` (UUID string PK), `kind` (`'expand'` or `'remove'`), `tier` (nullable String), `target_fqdn` (nullable String), `status` (String, default `'pending'`), `exit_code` (nullable Integer), `log_path` (nullable String), `message` (nullable Text), `created_by` (nullable Integer FK → `users.id`), `created_at` (DateTime UTC), `started_at` (nullable DateTime), `finished_at` (nullable DateTime).
+- [x] `from cspawn.models import NodeOp` succeeds in a Python shell without error.
+- [x] Migration file `migrations/versions/v006_add_node_op_table.py` exists with `revision = "v006_add_node_op_table"` and `down_revision = "v001_add_class_purge_window_fields"`.
+- [x] `flask db upgrade` on a fresh SQLite database (dev) creates the `node_ops` table without error.
+- [x] `flask db upgrade` on a PostgreSQL database (or a Postgres-dialect test) creates the `node_ops` table without error; the migration is idempotent (`CREATE TABLE IF NOT EXISTS`).
+- [x] `flask db downgrade` removes the `node_ops` table cleanly.
+- [x] A `NodeOp` instance can be created, committed, re-queried, and updated in a unit test using the SQLite test database.
 
 ## Implementation Plan
 
