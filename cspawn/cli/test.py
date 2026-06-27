@@ -67,23 +67,46 @@ def _get_or_create_proto(app) -> ClassProto:
     return proto
 
 
-def _get_or_create_class(app, proto: ClassProto) -> Class:
-    """Find the load-test class by class_code, creating it if absent."""
-    class_ = Class.query.filter_by(class_code=TEST_CLASS_CODE).first()
-    if class_:
-        return class_
+def _ensure_admin_instructors(class_: Class) -> list[str]:
+    """Add all admin users as instructors of the class (idempotent).
 
-    now = datetime.now(timezone.utc)
-    class_ = Class(
-        name=TEST_CLASS_NAME,
-        proto_id=proto.id,
-        start_date=now - timedelta(hours=1),
-        end_date=now + timedelta(days=1),
-        active=True,
-        class_code=TEST_CLASS_CODE,
-    )
-    db.session.add(class_)
-    db.session.commit()
+    The load-test class is created by a CLI command with no logged-in user, so
+    without this it ends up with zero instructors — and the instructor-only UI
+    (e.g. the Cluster Pre-sizing / "Create my cluster" card, gated on
+    ``current_user in class_.instructors``) never appears. Adding the admins
+    makes the fixture usable for testing instructor features.
+    """
+    added: list[str] = []
+    for admin in User.query.filter_by(is_admin=True).all():
+        if admin not in class_.instructors:
+            class_.instructors.append(admin)
+            added.append(admin.username)
+    if added:
+        db.session.commit()
+    return added
+
+
+def _get_or_create_class(app, proto: ClassProto) -> Class:
+    """Find the load-test class by class_code, creating it if absent.
+
+    Always ensures admin users are instructors (idempotent), so re-running
+    ``test setup`` also heals a pre-existing class that has no instructors.
+    """
+    class_ = Class.query.filter_by(class_code=TEST_CLASS_CODE).first()
+    if not class_:
+        now = datetime.now(timezone.utc)
+        class_ = Class(
+            name=TEST_CLASS_NAME,
+            proto_id=proto.id,
+            start_date=now - timedelta(hours=1),
+            end_date=now + timedelta(days=1),
+            active=True,
+            class_code=TEST_CLASS_CODE,
+        )
+        db.session.add(class_)
+        db.session.commit()
+
+    _ensure_admin_instructors(class_)
     return class_
 
 
