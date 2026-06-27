@@ -1,0 +1,136 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Admin — Swarm Nodes{% endblock %}
+
+{% block header %}
+<div class="text-center">
+    <h1 class="mb-4">Swarm Nodes</h1>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+
+    {# Flash messages #}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    {# Node table #}
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header"><strong>Swarm Nodes</strong></div>
+        <div class="card-body p-0">
+            <table class="table table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th>Hostname</th>
+                        <th>IP</th>
+                        <th>Role</th>
+                        <th>Tier</th>
+                        <th>Capacity</th>
+                        <th>Hosts</th>
+                        <th>Availability</th>
+                        <th>Remove</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for row in node_rows %}
+                <tr>
+                    <td>{{ row.hostname }}</td>
+                    <td>{{ row.ip }}</td>
+                    <td>
+                        {% if row.is_leader %}
+                        <span class="badge bg-warning text-dark">leader</span>
+                        {% elif row.is_manager %}
+                        <span class="badge bg-primary">manager</span>
+                        {% else %}
+                        <span class="badge bg-secondary">worker</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ row.tier or "---" }}</td>
+                    <td>{{ row.capacity or "---" }}</td>
+                    <td>{{ row.host_count }}</td>
+                    <td>{{ row.availability }}</td>
+                    <td>
+                        {% if not row.is_manager and not row.is_leader %}
+                        <form method="post" action="{{ url_for('admin.nodes_remove') }}">
+                            <input type="hidden" name="fqdn" value="{{ row.hostname }}">
+                            <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+                        </form>
+                        {% else %}
+                        <span class="text-muted">---</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-center text-muted">No nodes found.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {# Start node form #}
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header"><strong>Start a New Node</strong></div>
+        <div class="card-body">
+            <form method="post" action="{{ url_for('admin.nodes_start') }}">
+                <div class="row g-2 align-items-end">
+                    <div class="col-auto">
+                        <label for="tierSelect" class="form-label">Tier</label>
+                        <select id="tierSelect" name="tier" class="form-select">
+                            {% for tier in tiers %}
+                            <option value="{{ tier.name }}">{{ tier.name }} ({{ tier.slug }}, cap={{ tier.capacity }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-success">Start Node</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {# Recent operations #}
+    <div class="card shadow-sm">
+        <div class="card-header"><strong>Recent Node Operations</strong></div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Kind</th>
+                        <th>Tier / FQDN</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Log</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for op in recent_ops %}
+                <tr id="op-row-{{ op.id }}">
+                    <td><small>{{ op.id[:8] }}</small></td>
+                    <td>{{ op.kind }}</td>
+                    <td>{{ op.tier or op.target_fqdn or "---" }}</td>
+                    <td>{{ op.status }}</td>
+                    <td><small>{{ op.created_at.strftime('%Y-%m-%d %H:%M') if op.created_at else "---" }}</small></td>
+                    <td><a href="{{ url_for('admin.node_op_log', op_id=op.id) }}" target="_blank" class="btn btn-sm btn-outline-secondary">Log</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-center text-muted">No operations yet.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

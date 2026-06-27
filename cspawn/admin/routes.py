@@ -1,13 +1,18 @@
 import json
-from datetime import datetime
+import shutil
+import subprocess
+import sys
+from datetime import datetime, timezone
 from functools import wraps
 from operator import is_
+from subprocess import DEVNULL
 
-from flask import current_app, flash, redirect, render_template, request, session, url_for
+import docker
+from flask import Response, abort, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from cspawn.init import cast_app
-from cspawn.models import Class, CodeHost, ClassProto, User, db
+from cspawn.models import Class, CodeHost, ClassProto, NodeOp, User, db
 
 from . import admin_bp
 
@@ -386,3 +391,231 @@ def delete_class(class_id):
         flash("Class deleted.")
 
     return redirect(url_for("admin.classes"))
+
+
+# ---------------------------------------------------------------------------
+# Helper: resolve cspawnctl executable path
+# ---------------------------------------------------------------------------
+
+def _cspawnctl_path() -> str:
+    """Return path to the cspawnctl executable.
+
+    Tries shutil.which first (covers PATH installs and pipx).
+    Falls back to sys.argv[0]-based heuristic (same directory as the running
+    process) for the editable / dev case.
+    """
+    found = shutil.which("cspawnctl")
+    if found:
+        return found
+    # Editable install: cspawnctl lives next to the running interpreter
+    import os
+    bin_dir = os.path.dirname(sys.executable) if sys.executable else ""
+    if bin_dir:
+        candidate = os.path.join(bin_dir, "cspawnctl")
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    # Last resort: rely on PATH at subprocess time
+    return "cspawnctl"
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/nodes — list swarm nodes
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/nodes")
+@admin_required
+def list_nodes():
+    """List all swarm nodes with host counts, tiers, and recent operations."""
+    from cspawn.cli.node import count_hosts_per_node
+    from cspawn.cs_docker.tiers import load_tiers
+
+    docker_uri = ca.app_config.get("DOCKER_URI")
+    node_rows = []
+    try:
+        client = docker.DockerClient(base_url=docker_uri, use_ssh_client=True)
+        host_counts = count_hosts_per_node(client)
+        for n in client.nodes.list():
+            spec = n.attrs.get("Spec", {})
+            desc = n.attrs.get("Description", {})
+            status = n.attrs.get("Status", {})
+            ms = n.attrs.get("ManagerStatus") or {}
+            labels = spec.get("Labels") or {}
+            hostname = desc.get("Hostname", "")
+            role = (spec.get("Role") or "worker").lower()
+            is_leader = bool(ms.get("Leader"))
+            short = hostname.split(".")[0]
+            node_rows.append({
+                "hostname": hostname,
+                "short": short,
+                "ip": status.get("Addr", ""),
+                "role": "leader" if is_leader else role,
+                "tier": labels.get("cs.tier", ""),
+                "capacity": labels.get("cs.capacity", ""),
+                "host_count": host_counts.get(short, 0),
+                "availability": spec.get("Availability", ""),
+                "is_manager": role == "manager",
+                "is_leader": is_leader,
+            })
+        client.close()
+    except Exception as e:
+        flash(f"Could not connect to Docker: {e}", "danger")
+
+    tiers = load_tiers(ca.app_config)
+    recent_ops = NodeOp.query.order_by(NodeOp.created_at.desc()).limit(20).all()
+    return render_template("admin/nodes.html", node_rows=node_rows, tiers=tiers, recent_ops=recent_ops)
+
+
+# ---------------------------------------------------------------------------
+# POST /admin/nodes/start — launch an expand operation
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/nodes/start", methods=["POST"])
+@admin_required
+def nodes_start():
+    """Create a NodeOp(kind='expand') and launch cspawnctl node op-run detached."""
+    from cspawn.cs_docker.tiers import load_tiers
+
+    tier_name = request.form.get("tier", "").strip()
+    tiers = load_tiers(ca.app_config)
+    valid_tier_names = {t.name for t in tiers}
+
+    if not tier_name or tier_name not in valid_tier_names:
+        flash(f"Invalid tier: {tier_name!r}. Choose one of: {', '.join(sorted(valid_tier_names))}", "danger")
+        return redirect(url_for("admin.list_nodes"))
+
+    op = NodeOp(
+        kind="expand",
+        tier=tier_name,
+        status="pending",
+        created_by=current_user.id,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.session.add(op)
+    db.session.commit()
+
+    deploy = ca.app_config.get("JTL_DEPLOYMENT", "devel")
+    cspawnctl = _cspawnctl_path()
+    subprocess.Popen(
+        [cspawnctl, "-d", deploy, "node", "op-run", str(op.id)],
+        start_new_session=True,
+        stdout=DEVNULL,
+        stderr=DEVNULL,
+    )
+
+    flash(f"Starting node expansion (tier={tier_name}, op {op.id})", "success")
+    return redirect(url_for("admin.list_nodes"))
+
+
+# ---------------------------------------------------------------------------
+# POST /admin/nodes/remove — launch a remove operation
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/nodes/remove", methods=["POST"])
+@admin_required
+def nodes_remove():
+    """Validate node is not manager/leader, then create NodeOp(kind='remove') and launch detached."""
+    fqdn = request.form.get("fqdn", "").strip()
+    if not fqdn:
+        flash("No FQDN provided.", "danger")
+        return redirect(url_for("admin.list_nodes"))
+
+    # Re-query Docker to confirm node is not manager/leader
+    docker_uri = ca.app_config.get("DOCKER_URI")
+    try:
+        client = docker.DockerClient(base_url=docker_uri, use_ssh_client=True)
+        short = fqdn.split(".")[0]
+        for n in client.nodes.list():
+            desc = n.attrs.get("Description", {})
+            hostname = desc.get("Hostname", "")
+            if hostname == fqdn or hostname.split(".")[0] == short:
+                spec = n.attrs.get("Spec", {})
+                role = (spec.get("Role") or "worker").lower()
+                ms = n.attrs.get("ManagerStatus") or {}
+                is_leader = bool(ms.get("Leader"))
+                if role == "manager" or is_leader:
+                    client.close()
+                    flash(
+                        f"Cannot remove {fqdn}: node is a swarm manager/leader. "
+                        "Demote it first.",
+                        "danger",
+                    )
+                    return redirect(url_for("admin.list_nodes"))
+                break
+        client.close()
+    except Exception as e:
+        flash(f"Could not validate node against Docker: {e}", "danger")
+        return redirect(url_for("admin.list_nodes"))
+
+    op = NodeOp(
+        kind="remove",
+        target_fqdn=fqdn,
+        status="pending",
+        created_by=current_user.id,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.session.add(op)
+    db.session.commit()
+
+    deploy = ca.app_config.get("JTL_DEPLOYMENT", "devel")
+    cspawnctl = _cspawnctl_path()
+    subprocess.Popen(
+        [cspawnctl, "-d", deploy, "node", "op-run", str(op.id)],
+        start_new_session=True,
+        stdout=DEVNULL,
+        stderr=DEVNULL,
+    )
+
+    flash(f"Removing node {fqdn} (op {op.id})", "success")
+    return redirect(url_for("admin.list_nodes"))
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/nodes/op/<op_id>/status — JSON poll endpoint
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/nodes/op/<op_id>/status")
+@admin_required
+def node_op_status(op_id):
+    """Return JSON {status, exit_code, message, log_tail} for polling."""
+    op = NodeOp.query.get(op_id)
+    if op is None:
+        abort(404)
+
+    log_tail = ""
+    if op.log_path:
+        try:
+            with open(op.log_path, "r", errors="replace") as fh:
+                lines = fh.readlines()
+                log_tail = "".join(lines[-50:])
+        except OSError:
+            log_tail = ""
+
+    return jsonify({
+        "status": op.status,
+        "exit_code": op.exit_code,
+        "message": op.message,
+        "log_tail": log_tail,
+    })
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/nodes/op/<op_id>/log — full plain-text log
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/nodes/op/<op_id>/log")
+@admin_required
+def node_op_log(op_id):
+    """Return the full plain-text log for a NodeOp."""
+    op = NodeOp.query.get(op_id)
+    if op is None:
+        abort(404)
+
+    log_text = ""
+    if op.log_path:
+        try:
+            with open(op.log_path, "r", errors="replace") as fh:
+                log_text = fh.read()
+        except OSError:
+            log_text = ""
+
+    return Response(log_text, mimetype="text/plain")
