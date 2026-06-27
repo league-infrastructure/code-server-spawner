@@ -1,9 +1,13 @@
 ---
 id: '002'
 title: _ensure_priv_key prod fallback and op-run CLI worker
-status: open
-use-cases: [SUC-002, SUC-003, SUC-004]
-depends-on: ['001']
+status: done
+use-cases:
+- SUC-002
+- SUC-003
+- SUC-004
+depends-on:
+- '001'
 github-issue: ''
 issue: ''
 completes_issue: false
@@ -21,15 +25,15 @@ Two changes to `cspawn/cli/node.py`:
 
 ## Acceptance Criteria
 
-- [ ] `_ensure_priv_key()` returns the key paths from `/root/.ssh/id_rsa` (and `/root/.ssh/id_rsa.pub` if it exists) when `config/secrets/id_rsa` is absent.
-- [ ] `_ensure_priv_key()` raises `ClickException` with a message naming both paths checked when neither exists.
-- [ ] `_ensure_priv_key()` behavior is unchanged when `config/secrets/id_rsa` exists (primary path still returned).
-- [ ] `cspawnctl node op-run --help` shows the command exists and accepts `<op_id>`.
-- [ ] Running `cspawnctl node op-run <uuid>` for a `kind='expand'` `NodeOp` (with `ctx.invoke` mocked) sets `status='running'` then `status='done'`; `log_path` file is created; `started_at` and `finished_at` are set.
-- [ ] Running `cspawnctl node op-run <uuid>` for a `kind='remove'` `NodeOp` (with `ctx.invoke` mocked) follows the same lifecycle.
-- [ ] If `ctx.invoke` raises an exception, `status` is set to `'failed'`, `exit_code=1`, and `message` contains the exception text.
-- [ ] The `{DATA_DIR}/.node-ops.lock` file is created and the flock is acquired/released correctly (verify with a unit test that holds the lock and confirms a second invocation fails immediately).
-- [ ] Log output from the invoked command is written to `{DATA_DIR}/node-ops/<id>.log`.
+- [x] `_ensure_priv_key()` returns the key paths from `/root/.ssh/id_rsa` (and `/root/.ssh/id_rsa.pub` if it exists) when `config/secrets/id_rsa` is absent.
+- [x] `_ensure_priv_key()` raises `ClickException` with a message naming both paths checked when neither exists.
+- [x] `_ensure_priv_key()` behavior is unchanged when `config/secrets/id_rsa` exists (primary path still returned).
+- [x] `cspawnctl node op-run --help` shows the command exists and accepts `<op_id>`.
+- [x] Running `cspawnctl node op-run <uuid>` for a `kind='expand'` `NodeOp` (with `ctx.invoke` mocked) sets `status='running'` then `status='done'`; `log_path` file is created; `started_at` and `finished_at` are set.
+- [x] Running `cspawnctl node op-run <uuid>` for a `kind='remove'` `NodeOp` (with `ctx.invoke` mocked) follows the same lifecycle.
+- [x] If `ctx.invoke` raises an exception, `status` is set to `'failed'`, `exit_code=1`, and `message` contains the exception text.
+- [x] The `{DATA_DIR}/.node-ops.lock` file is created and the flock is acquired/released correctly (verify with a unit test that holds the lock and confirms a second invocation fails immediately).
+- [x] Log output from the invoked command is written to `{DATA_DIR}/node-ops/<id>.log`.
 
 ## Implementation Plan
 

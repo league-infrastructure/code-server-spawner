@@ -760,12 +760,29 @@ def _ensure_tag_on_droplet(token: str, droplet_id: int, tag: str, log=None) -> N
 
 
 def _ensure_priv_key() -> tuple[Path, Path]:
-    """Return (private_key_path, public_key_path) and ensure private exists."""
+    """Return (private_key_path, public_key_path) and ensure private exists.
+
+    Primary location: ``<workspace_root>/config/secrets/id_rsa`` (used in local-prod).
+    Fallback location: ``~/.ssh/id_rsa`` (used in the deployed prod container where
+    ``config/secrets/`` is empty but the swarm key lives in the root home directory).
+    The public key path is derived from the private key path; callers must check
+    ``pub_key_path.exists()`` before reading it (the fallback location may lack a
+    ``.pub`` counterpart).
+    """
     workspace_root = find_parent_dir()
-    priv_key_path = Path(workspace_root) / "config" / "secrets" / "id_rsa"
-    pub_key_path = Path(workspace_root) / "config" / "secrets" / "id_rsa.pub"
-    if not priv_key_path.exists():
-        raise click.ClickException(f"SSH private key not found at {priv_key_path}")
+    primary_priv = Path(workspace_root) / "config" / "secrets" / "id_rsa"
+    fallback_priv = Path.home() / ".ssh" / "id_rsa"
+
+    if primary_priv.exists():
+        priv_key_path = primary_priv
+    elif fallback_priv.exists():
+        priv_key_path = fallback_priv
+    else:
+        raise click.ClickException(
+            f"SSH private key not found at {primary_priv} or {fallback_priv}"
+        )
+
+    pub_key_path = priv_key_path.with_suffix(".pub")
     return priv_key_path, pub_key_path
 
 
@@ -2309,3 +2326,129 @@ def autoscale_cmd(ctx, dry_run: bool, force: bool, up_only):
     from cspawn.cs_docker.autoscale import run_autoscale
     result = run_autoscale(ctx, dry_run=dry_run, force=force, up_only=up_only)
     click.echo(result.summary())
+
+
+# ---------------------------------------------------------------------------
+# op-run — detached subprocess worker for admin-triggered node operations
+# ---------------------------------------------------------------------------
+
+@node.command(name="op-run")
+@click.argument("op_id")
+@click.pass_context
+def op_run(ctx, op_id: str):
+    """Execute a pending NodeOp by ID (called as a detached subprocess by the admin UI).
+
+    Loads the NodeOp from the database, acquires an exclusive file lock to
+    serialise concurrent node operations, redirects stdout/stderr to the op's
+    log file, invokes the appropriate existing command (expand or stop), and
+    updates the NodeOp status on completion.
+    """
+    import fcntl
+    import sys
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from cspawn.cli.util import get_app
+    from cspawn.models import NodeOp, db
+
+    cfg = get_config()
+    data_dir = cfg.get("DATA_DIR", "/tmp")
+
+    app = get_app(ctx)
+
+    # ---- 1. Load op and set running ----------------------------------------
+    with app.app_context():
+        op = db.session.get(NodeOp, op_id)
+        if op is None:
+            raise click.ClickException(f"NodeOp {op_id!r} not found in database")
+
+        # Compute log path and create directory before acquiring lock so the
+        # directory is ready when we redirect output.
+        log_dir = Path(data_dir) / "node-ops"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / f"{op_id}.log"
+
+        op.log_path = str(log_path)
+        op.status = "running"
+        op.started_at = datetime.now(timezone.utc)
+        db.session.commit()
+
+    # ---- 2. Redirect stdout/stderr to log file ------------------------------
+    # Use Python-level stream reassignment so the log file captures all click.echo
+    # output from the invoked sub-commands.  In the detached-subprocess use case,
+    # subprocess-level fd inheritance is not needed: the process itself is the
+    # writer, and all Python I/O goes through sys.stdout/sys.stderr.
+    log_file = open(log_path, "w")  # noqa: WPS515
+    _orig_stdout = sys.stdout
+    _orig_stderr = sys.stderr
+    sys.stdout = log_file
+    sys.stderr = log_file
+
+    # ---- 3. Acquire exclusive non-blocking flock ----------------------------
+    lock_path = Path(data_dir) / ".node-ops.lock"
+    lock_file = open(lock_path, "w")  # noqa: WPS515
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        with app.app_context():
+            op = db.session.get(NodeOp, op_id)
+            if op is not None:
+                op.status = "failed"
+                op.exit_code = 1
+                op.message = "another node operation is in progress"
+                op.finished_at = datetime.now(timezone.utc)
+                db.session.commit()
+        log_file.write("another node operation is in progress\n")
+        sys.stdout = _orig_stdout
+        sys.stderr = _orig_stderr
+        log_file.close()
+        lock_file.close()
+        return
+
+    # ---- 4. Execute operation and update status -----------------------------
+    exc_message: str | None = None
+    success = False
+    try:
+        with app.app_context():
+            op = db.session.get(NodeOp, op_id)
+            kind = op.kind if op is not None else None
+            tier = op.tier if op is not None else None
+            target_fqdn = op.target_fqdn if op is not None else None
+
+        if kind == "expand":
+            ctx.invoke(expand, tier_name=tier)
+        elif kind == "remove":
+            ctx.invoke(stop_node, node_spec=target_fqdn, force=False, dry_run=False)
+        else:
+            raise click.ClickException(f"Unknown NodeOp kind: {kind!r}")
+
+        success = True
+    except Exception as exc:
+        exc_message = str(exc)
+    finally:
+        # Restore stdout/stderr before releasing lock (so any final prints work)
+        sys.stdout = _orig_stdout
+        sys.stderr = _orig_stderr
+
+        # Release flock
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            lock_file.close()
+        except Exception:
+            pass
+
+        # Update final status
+        with app.app_context():
+            op = db.session.get(NodeOp, op_id)
+            if op is not None:
+                if success:
+                    op.status = "done"
+                    op.exit_code = 0
+                else:
+                    op.status = "failed"
+                    op.exit_code = 1
+                    op.message = exc_message
+                op.finished_at = datetime.now(timezone.utc)
+                db.session.commit()
+
+        log_file.close()
