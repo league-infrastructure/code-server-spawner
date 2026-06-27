@@ -1,5 +1,9 @@
 ---
-status: pending
+status: in-progress
+sprint: '006'
+tickets:
+- 006-001
+- 006-002
 ---
 
 # Admin "Nodes" tab — manual swarm node management
