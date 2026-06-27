@@ -118,7 +118,7 @@ results, and a recommendation. Wait for guidance.
 
 - Always use CLASI MCP tools (`list_sprints`, `list_tickets`,
   `get_sprint_status`, `get_sprint_phase`) for sprint and ticket queries.
-  Do not use Bash, Glob, or ls to explore `.clasi/sprints/`.
+  Do not use Bash, Glob, or ls to explore `clasi/sprints/`.
 
 ## References
 

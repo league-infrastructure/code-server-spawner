@@ -33,7 +33,7 @@ The stakeholder may request this mode with a variety of phrases, such as:
 5. Run `dotconfig version bump` and commit the result (`chore: bump
    version`). Tools are installed editable, so the version is how
    sessions tell which code is live — bump after every OOP commit.
-6. If the work addressed an issue (from `.clasi/issues/`), call
+6. If the work addressed an issue (from `clasi/issues/`), call
    `move_issue_to_done(filename)` to close it. The commit is not the
    finish line — the issue lifecycle must be closed too.
 7. If tests fail, fix the issue and re-run.

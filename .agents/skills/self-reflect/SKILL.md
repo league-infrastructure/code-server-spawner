@@ -24,7 +24,7 @@ stakeholder corrects. Captures what went wrong and proposes improvements.
 4. **Propose a fix**: New instruction, clarified wording, stronger emphasis,
    or a TODO for future work.
 
-5. **Write reflection**: Create `.clasi/reflections/YYYY-MM-DD-slug.md`:
+5. **Write reflection**: Create `clasi/reflections/YYYY-MM-DD-slug.md`:
 
    ```yaml
    ---
@@ -40,6 +40,6 @@ stakeholder corrects. Captures what went wrong and proposes improvements.
 
 ## Output
 
-- Reflection document in `.clasi/reflections/`
+- Reflection document in `clasi/reflections/`
 - Optional TODO file
 - Acknowledgment to the stakeholder

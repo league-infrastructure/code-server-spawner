@@ -13,9 +13,9 @@ stands and what should happen next.
 1. **Check artifacts**: Verify which SE documents exist:
    - `.clasi/design/overview.md`
    - `.clasi/design/usecases.md`
-   - `.clasi/architecture/` (versioned architecture documents)
-2. **Check sprints**: Scan `.clasi/sprints/` for active sprints and
-   `.clasi/sprints/done/` for completed sprints.
+   - `docs/architecture/` (versioned architecture documents)
+2. **Check sprints**: Scan `clasi/sprints/` for active sprints and
+   `clasi/sprints/done/` for completed sprints.
 3. **Scan tickets**: For each active sprint, read ticket files in
    `tickets/` and `tickets/done/`. Extract frontmatter status.
 4. **Determine stage**:

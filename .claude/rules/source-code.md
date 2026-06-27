@@ -1,6 +1,7 @@
 ---
 paths:
-  - clasi/**
+  - src/clasi/**
+  - src/clasr/**
   - tests/**
 ---
 

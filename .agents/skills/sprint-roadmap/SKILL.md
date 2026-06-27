@@ -17,11 +17,11 @@ them into sprints.
 
 - `.clasi/design/overview.md` (must exist)
 - Current architecture (if available)
-- Issue files in `.clasi/issues/`
+- Issue files in `clasi/issues/`
 
 ## Process
 
-1. **Read issues**: Scan `.clasi/issues/` for pending issue files.
+1. **Read issues**: Scan `clasi/issues/` for pending issue files.
    Read each to understand the work requested.
 
 2. **Group into sprints** based on:
@@ -42,8 +42,10 @@ them into sprints.
    - Rationale for grouping
    - Dependency notes
 
-4. **Update TODOs**: For each TODO claimed by a sprint, set
-   `sprint: "NNN"` in the TODO's frontmatter.
+4. **Link issues to sprint**: For each issue claimed by this sprint, call
+   `link_sprint_issues(sprint_id, [filenames])`. This writes the `issues:`
+   list in the sprint's frontmatter and updates each issue file's `sprint:`
+   field. Do not write issue or sprint frontmatter manually.
 
 ## Output
 

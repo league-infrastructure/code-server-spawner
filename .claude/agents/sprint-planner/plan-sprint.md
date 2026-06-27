@@ -46,11 +46,11 @@ planning. Multiple sprints can be planned in a single session.
 
 ### Roadmap Process
 
-1. **Determine sprint number**: Check `.clasi/sprints/` and
-   `.clasi/sprints/done/` for existing sprints. The new sprint gets the
+1. **Determine sprint number**: Check `clasi/sprints/` and
+   `clasi/sprints/done/` for existing sprints. The new sprint gets the
    next sequential number (NNN format: 001, 002, ...).
 
-2. **Mine the issues directory**: Scan `.clasi/issues/` for ideas relevant
+2. **Mine the issues directory**: Scan `clasi/issues/` for ideas relevant
    to the sprint. Discuss relevant issues with the stakeholder.
 
    For each issue claimed by this sprint, set `sprint: "NNN"` in the
@@ -69,7 +69,7 @@ planning. Multiple sprints can be planned in a single session.
 
 ### Roadmap Output
 
-- Sprint directory `.clasi/sprints/NNN-slug/` with `sprint.md`
+- Sprint directory `clasi/sprints/NNN-slug/` with `sprint.md`
 - Sprint `sprint.md` status set to `roadmap`
 - No branch created
 - No tickets created
@@ -86,7 +86,7 @@ planning artifacts for one sprint at a time.
    should already exist from Phase 1.
 
 2. **Update sprint.md**: Update the existing `sprint.md` with full
-   details. Set frontmatter `status: planning_docs`.
+   details. Set frontmatter `status: planning-docs`.
 
 3. **Write usecases.md**: Sprint-level use cases (SUC-NNN).
 

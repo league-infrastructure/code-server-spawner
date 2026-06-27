@@ -35,7 +35,7 @@ handles ticket creation inline.
 
    **Issue lifecycle:** When you call `create_ticket(sprint_id, title,
    issue=<filename>)`, the referenced issue file is physically moved from
-   `.clasi/issues/` into `<sprint>/issues/` and its frontmatter is updated
+   `clasi/issues/` into `<sprint>/issues/` and its frontmatter is updated
    to `status: in-progress`. When all tickets referencing that issue are
    moved to done, `Issue.move_to_done()` is called automatically, which
    moves the file into `<sprint>/issues/done/`. No manual

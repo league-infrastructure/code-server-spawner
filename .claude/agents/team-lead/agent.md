@@ -167,6 +167,24 @@ At the start of every session:
      dispatch after stakeholder approval and `acquire_execution_lock`.
 4. Report status and tickets for any sprint in `executing` phase.
 
+## Issue Lifecycle Responsibility
+
+The team-lead owns the full issue → done lifecycle. At each stage:
+
+1. **Roadmap**: After `create_sprint`, call `link_sprint_issues(sprint_id,
+   [filenames])` for every issue claimed by the sprint. Do not write `issues:`
+   frontmatter manually.
+2. **After planning**: Confirm that each ticket in the sprint carries an `issue:`
+   back-reference for any issue it implements. If back-refs are missing, call
+   `add_issue_ref(ticket_path, issue_filename)` to repair them.
+3. **After close**: Confirm resolved issues landed in `<sprint>/issues/done/`.
+   Read the close result — if `unresolved_issues` is present, surface the
+   filenames to the stakeholder and create follow-up issues or defer them to
+   the next sprint.
+4. **Mop-up**: Do not leave any issue in an ambiguous state. Every issue must
+   be either in `done/`, deferred to a future sprint, or explicitly abandoned
+   with a note.
+
 ## Behavioral Rules
 
 - **Never Write Content Directly**: You are an orchestrator, not an

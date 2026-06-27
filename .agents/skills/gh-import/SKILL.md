@@ -28,7 +28,7 @@ tracking.
    If 5 or fewer issues, proceed directly.
 
 5. **Create issues**: For each selected issue, create an issue file in
-   `.clasi/issues/` with:
+   `clasi/issues/` with:
    - Filename: slugified issue title
    - YAML frontmatter: `status: pending`, `github-issue: "owner/repo#N"`
    - Heading: issue title
