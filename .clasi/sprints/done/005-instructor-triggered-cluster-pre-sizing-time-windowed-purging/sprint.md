@@ -1,11 +1,11 @@
 ---
 id: '005'
 title: Instructor-triggered cluster pre-sizing + time-windowed purging
-status: planning-docs
+status: done
 branch: sprint/005-instructor-triggered-cluster-pre-sizing-time-windowed-purging
 use-cases: []
 issues:
-  - instructor-cluster-presize.md
+- instructor-cluster-presize.md
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
