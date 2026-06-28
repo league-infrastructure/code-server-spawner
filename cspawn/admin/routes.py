@@ -70,6 +70,24 @@ def list_code_hosts():
     return render_template("admin/code_hosts.html", code_hosts=code_hosts)
 
 
+@admin_bp.route("/hosts/sync", methods=["POST"])
+@admin_required
+def sync_code_hosts():
+    """Reconcile the CodeHost DB rows against live Docker/swarm state.
+
+    Manual trigger for the same reconcile the cron is meant to run: flips stale
+    'unknown' rows to their real state, marks missing services MIA, and refreshes
+    app readiness. Per-host failures are isolated inside csm.sync(), so one
+    unreachable host does not abort the whole pass.
+    """
+    try:
+        ca.csm.sync(check_ready=True)
+        flash("Code hosts synchronized with Docker.", "success")
+    except Exception as e:
+        flash(f"Sync failed: {e}", "danger")
+    return redirect(url_for("admin.list_code_hosts"))
+
+
 @admin_bp.route("/host/<int:host_id>/delete", methods=["POST"])
 @admin_required
 def delete_host(host_id):
