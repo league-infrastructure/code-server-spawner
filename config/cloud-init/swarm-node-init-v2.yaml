@@ -85,14 +85,23 @@ write_files:
       echo "UFW configured for Docker Swarm dataplane (iface='${VPC_IFACE:-<cidr-only>}', ${VPC_CIDR})"
 
 runcmd:
-  # Pin docker-ce to the manager's version to prevent major-version mismatch at join.
-  # The DO docker-20-04 image ships a newer engine; this downgrades and holds it.
-  # IMPORTANT: Update this version string when the manager's docker-ce is upgraded.
+  # Pin docker-ce to the swarm manager's major version to prevent a major-version
+  # mismatch at swarm join (a worker on a different Docker major than the manager
+  # is refused by the expand join preflight).
+  #
+  # The pin target is the 29.6 series, matching the swarm manager (swarm1/swarm2
+  # run docker-ce 29.6.1 as of 2026-06-27). The distro codename is resolved at
+  # runtime from the droplet's own OS (lsb_release) rather than hardcoded, so the
+  # pin works regardless of whether the DO base image is focal or jammy.
+  #
+  # IMPORTANT: when the manager's docker-ce major version changes, update
+  # DOCKER_PIN below (and upgrade the existing swarm nodes to match).
   - apt-get update -qq
   - >-
+    . /etc/os-release;
+    DOCKER_PIN="5:29.6.1-1~ubuntu.${VERSION_ID}~${VERSION_CODENAME}";
     apt-get install -y --allow-downgrades --allow-change-held-packages
-    docker-ce=5:27.4.1-1~ubuntu.20.04~focal
-    docker-ce-cli=5:27.4.1-1~ubuntu.20.04~focal
+    "docker-ce=${DOCKER_PIN}" "docker-ce-cli=${DOCKER_PIN}"
   - apt-mark hold docker-ce docker-ce-cli
   - systemctl enable --now docker
 
