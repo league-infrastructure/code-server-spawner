@@ -1,0 +1,191 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Admin — Swarm Nodes{% endblock %}
+
+{% block header %}
+<div class="text-center">
+    <h1 class="mb-4">Swarm Nodes</h1>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+
+    {# Flash messages #}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    {# Start a node — one button per tier #}
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header"><strong>Start a New Node</strong></div>
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-2">
+            {% for tier in tiers %}
+            <form method="post" action="{{ url_for('admin.nodes_start') }}" style="display:inline">
+                <input type="hidden" name="tier" value="{{ tier.name }}">
+                <button type="submit" class="btn btn-success">
+                    Start {{ tier.name }} node (cap: {{ tier.capacity }})
+                </button>
+            </form>
+            {% else %}
+            <span class="text-muted">No tiers configured.</span>
+            {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    {# Node table #}
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header"><strong>Swarm Nodes</strong></div>
+        <div class="card-body p-0">
+            <table class="table table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th>Hostname</th>
+                        <th>IP</th>
+                        <th>Role</th>
+                        <th>Tier</th>
+                        <th>Capacity</th>
+                        <th>Hosts</th>
+                        <th>Availability</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for row in node_rows %}
+                <tr>
+                    <td>{{ row.hostname }}</td>
+                    <td>{{ row.ip }}</td>
+                    <td>
+                        {% if row.is_leader %}
+                        <span class="badge bg-warning text-dark">leader</span>
+                        {% elif row.is_manager %}
+                        <span class="badge bg-primary">manager</span>
+                        {% else %}
+                        <span class="badge bg-secondary">worker</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ row.tier or "---" }}</td>
+                    <td>{{ row.capacity or "---" }}</td>
+                    <td>{{ row.host_count }}</td>
+                    <td>{{ row.availability }}</td>
+                    <td>
+                        {% if not row.is_manager and not row.is_leader %}
+                        <form method="post" action="{{ url_for('admin.nodes_remove') }}" style="display:inline"
+                              onsubmit="return confirm('Drain and destroy {{ row.hostname }}?')">
+                            <input type="hidden" name="fqdn" value="{{ row.hostname }}">
+                            <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+                        </form>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-center text-muted">No nodes found.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {# Recent operations panel #}
+    <div class="card shadow-sm">
+        <div class="card-header"><strong>Recent Node Operations</strong></div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Kind</th>
+                        <th>Tier / FQDN</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Log Tail</th>
+                        <th>Full Log</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for op in recent_ops %}
+                <tr id="op-row-{{ op.id }}">
+                    <td><small>{{ op.id[:8] }}</small></td>
+                    <td>{{ op.kind }}</td>
+                    <td>{{ op.tier or op.target_fqdn or "---" }}</td>
+                    <td>
+                        <span id="op-status-{{ op.id }}" class="badge
+                            {%- if op.status == 'done' %} bg-success
+                            {%- elif op.status == 'failed' %} bg-danger
+                            {%- elif op.status == 'running' %} bg-warning text-dark
+                            {%- else %} bg-secondary
+                            {%- endif %}">{{ op.status }}</span>
+                    </td>
+                    <td><small>{{ op.created_at.strftime('%Y-%m-%d %H:%M') if op.created_at else "---" }}</small></td>
+                    <td>
+                        <pre id="op-log-{{ op.id }}" class="small mb-0" style="max-height:6em;overflow-y:auto;white-space:pre-wrap;background:#f8f9fa;padding:4px;border-radius:4px;"></pre>
+                    </td>
+                    <td>
+                        <a href="{{ url_for('admin.node_op_log', op_id=op.id) }}" target="_blank"
+                           class="btn btn-sm btn-outline-secondary">Full log</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted">No operations yet.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    function pollOp(opId) {
+        var url = '/admin/nodes/op/' + opId + '/status';
+        function tick() {
+            fetch(url)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var statusEl = document.getElementById('op-status-' + opId);
+                    var logEl = document.getElementById('op-log-' + opId);
+                    if (statusEl) {
+                        statusEl.textContent = data.status;
+                        statusEl.className = 'badge';
+                        if (data.status === 'done') {
+                            statusEl.classList.add('bg-success');
+                        } else if (data.status === 'failed') {
+                            statusEl.classList.add('bg-danger');
+                        } else if (data.status === 'running') {
+                            statusEl.classList.add('bg-warning', 'text-dark');
+                        } else {
+                            statusEl.classList.add('bg-secondary');
+                        }
+                    }
+                    if (logEl && data.log_tail) {
+                        logEl.textContent = data.log_tail;
+                    }
+                    if (data.status === 'done' || data.status === 'failed') {
+                        location.reload();
+                    } else {
+                        setTimeout(tick, 2000);
+                    }
+                })
+                .catch(function() { setTimeout(tick, 5000); });
+        }
+        tick();
+    }
+
+    {% for op in recent_ops %}
+    {% if op.status in ('pending', 'running') %}
+    pollOp("{{ op.id }}");
+    {% endif %}
+    {% endfor %}
+</script>
+{% endblock %}

@@ -1,15 +1,15 @@
 ---
-id: "004"
-title: "Nodes tab template and JS polling"
-status: open
+id: '004'
+title: Nodes tab template and JS polling
+status: done
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
-  - SUC-004
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
 depends-on:
-  - "003"
-github-issue: ""
+- '003'
+github-issue: ''
 issue: admin-nodes-tab-manual-swarm-node-management.md
 completes_issue: false
 ---
@@ -89,19 +89,19 @@ link to `/admin/nodes/op/<id>/log`.
 
 ## Acceptance Criteria
 
-- [ ] A "Nodes" nav link appears in the admin subnav (`admin/base.html`) pointing
+- [x] A "Nodes" nav link appears in the admin subnav (`admin/base.html`) pointing
       to `url_for('admin.list_nodes')`.
-- [ ] `admin/nodes.html` exists and extends `admin/base.html`.
-- [ ] Start buttons render for each tier in the `tiers` context variable.
-- [ ] Node table renders with correct columns for each row in `node_rows`.
-- [ ] Manager/leader rows have no Remove button; worker rows have a Remove button.
-- [ ] Remove button shows a JS `confirm()` dialog before submitting.
-- [ ] Operations panel lists `recent_ops` rows.
-- [ ] For in-progress ops, JS `pollOp()` is called automatically on page load.
-- [ ] Polling stops and the page reloads when an op reaches `done` or `failed`.
-- [ ] Full log link renders for each op (`/admin/nodes/op/<id>/log`).
-- [ ] Flash messages from the base template render correctly (inherited).
-- [ ] Template renders without error when `node_rows=[]` (Docker unreachable case).
+- [x] `admin/nodes.html` exists and extends `admin/base.html`.
+- [x] Start buttons render for each tier in the `tiers` context variable.
+- [x] Node table renders with correct columns for each row in `node_rows`.
+- [x] Manager/leader rows have no Remove button; worker rows have a Remove button.
+- [x] Remove button shows a JS `confirm()` dialog before submitting.
+- [x] Operations panel lists `recent_ops` rows.
+- [x] For in-progress ops, JS `pollOp()` is called automatically on page load.
+- [x] Polling stops and the page reloads when an op reaches `done` or `failed`.
+- [x] Full log link renders for each op (`/admin/nodes/op/<id>/log`).
+- [x] Flash messages from the base template render correctly (inherited).
+- [x] Template renders without error when `node_rows=[]` (Docker unreachable case).
 
 ## Implementation Plan
 

@@ -1,9 +1,15 @@
 ---
 id: '003'
 title: Admin nodes routes and count_hosts_per_node integration
-status: open
-use-cases: [SUC-001, SUC-002, SUC-003, SUC-004]
-depends-on: ['001', '002']
+status: done
+use-cases:
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
+depends-on:
+- '001'
+- '002'
 github-issue: ''
 issue: ''
 completes_issue: false
@@ -25,16 +31,16 @@ This ticket adds all backend logic. The template (ticket 004) builds on these ro
 
 ## Acceptance Criteria
 
-- [ ] `GET /admin/nodes` returns HTTP 200 with a node list when the Docker client mock returns nodes and tasks; renders `admin/nodes.html`.
-- [ ] `GET /admin/nodes` passes `node_rows` (list of dicts with keys: `hostname`, `ip`, `role`, `tier`, `capacity`, `host_count`, `availability`), `tiers` (from `load_tiers`), and `recent_ops` (last 20 `NodeOp` rows ordered by `created_at` desc) to the template context.
-- [ ] `POST /admin/nodes/start` with a valid `tier` creates a `NodeOp` row with `kind='expand'`, `tier=<name>`, `status='pending'`; calls `subprocess.Popen` with the `cspawnctl` command; flashes a success message; redirects to `/admin/nodes`.
-- [ ] `POST /admin/nodes/start` with an invalid `tier` flashes an error and redirects without creating a `NodeOp` or calling `Popen`.
-- [ ] `POST /admin/nodes/remove` with a worker node FQDN creates a `NodeOp(kind='remove')`; calls `Popen`; flashes success; redirects.
-- [ ] `POST /admin/nodes/remove` with a manager or leader node FQDN is refused: flashes an error, no `NodeOp` created, no `Popen` called.
-- [ ] `GET /admin/nodes/op/<id>/status` returns JSON `{status, exit_code, message, log_tail}` for a known op; `log_tail` is the last 50 lines of the log file (empty string if file absent).
-- [ ] `GET /admin/nodes/op/<id>/status` returns 404 for an unknown op ID.
-- [ ] `GET /admin/nodes/op/<id>/log` returns plain text of the full log file; 404 if op not found.
-- [ ] All routes return 302 redirect to the main index (not 200) when accessed by a non-admin user (existing `admin_required` behavior).
+- [x] `GET /admin/nodes` returns HTTP 200 with a node list when the Docker client mock returns nodes and tasks; renders `admin/nodes.html`.
+- [x] `GET /admin/nodes` passes `node_rows` (list of dicts with keys: `hostname`, `ip`, `role`, `tier`, `capacity`, `host_count`, `availability`), `tiers` (from `load_tiers`), and `recent_ops` (last 20 `NodeOp` rows ordered by `created_at` desc) to the template context.
+- [x] `POST /admin/nodes/start` with a valid `tier` creates a `NodeOp` row with `kind='expand'`, `tier=<name>`, `status='pending'`; calls `subprocess.Popen` with the `cspawnctl` command; flashes a success message; redirects to `/admin/nodes`.
+- [x] `POST /admin/nodes/start` with an invalid `tier` flashes an error and redirects without creating a `NodeOp` or calling `Popen`.
+- [x] `POST /admin/nodes/remove` with a worker node FQDN creates a `NodeOp(kind='remove')`; calls `Popen`; flashes success; redirects.
+- [x] `POST /admin/nodes/remove` with a manager or leader node FQDN is refused: flashes an error, no `NodeOp` created, no `Popen` called.
+- [x] `GET /admin/nodes/op/<id>/status` returns JSON `{status, exit_code, message, log_tail}` for a known op; `log_tail` is the last 50 lines of the log file (empty string if file absent).
+- [x] `GET /admin/nodes/op/<id>/status` returns 404 for an unknown op ID.
+- [x] `GET /admin/nodes/op/<id>/log` returns plain text of the full log file; 404 if op not found.
+- [x] All routes return 302 redirect to the main index (not 200) when accessed by a non-admin user (existing `admin_required` behavior).
 
 ## Implementation Plan
 

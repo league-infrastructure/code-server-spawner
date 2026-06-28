@@ -2,6 +2,7 @@
 Database Models
 """
 
+import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from hashlib import md5
@@ -511,6 +512,30 @@ class CodeHost(db.Model):
 
     def __repr__(self):
         return f"<CodeHost(id={self.id}, user_id={self.user_id}, service_id={self.service_id})>"
+
+
+class NodeOp(db.Model):
+    """Tracks a single manual node operation (expand or remove) launched by the admin UI."""
+
+    __tablename__ = "node_ops"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    kind = Column(String(16), nullable=False)          # 'expand' or 'remove'
+    tier = Column(String(100), nullable=True)           # tier label, e.g. 'large'
+    target_fqdn = Column(String(255), nullable=True)   # FQDN for remove operations
+    status = Column(String(16), nullable=False, default="pending")  # pending|running|done|failed
+    exit_code = Column(Integer, nullable=True)
+    log_path = Column(String(500), nullable=True)
+    message = Column(Text, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    creator = relationship("User", backref="node_ops")
+
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self):
+        return f"<NodeOp(id={self.id!r}, kind={self.kind!r}, status={self.status!r})>"
 
 
 class ClassProto(db.Model):

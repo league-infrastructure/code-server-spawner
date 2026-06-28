@@ -1,16 +1,16 @@
 ---
-id: "005"
-title: "Tests and prod smoke-test checklist"
-status: open
+id: '005'
+title: Tests and prod smoke-test checklist
+status: done
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
-  - SUC-004
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
 depends-on:
-  - "003"
-  - "004"
-github-issue: ""
+- '003'
+- '004'
+github-issue: ''
 issue: admin-nodes-tab-manual-swarm-node-management.md
 completes_issue: true
 ---
@@ -33,41 +33,41 @@ the `_ensure_priv_key` fallback ships.
 ## Acceptance Criteria
 
 ### Unit / integration tests (automated)
-- [ ] `NodeOp` model round-trip: create with `kind='expand'`, `tier='large'`,
+- [x] `NodeOp` model round-trip: create with `kind='expand'`, `tier='large'`,
       `status='pending'`; commit; re-query; assert all fields. Update
       `status='done'`, `exit_code=0`; assert persisted. (`test_node_op_model.py`)
-- [ ] Migration applies cleanly: `flask db upgrade` creates `node_ops` table in
+- [x] Migration applies cleanly: `flask db upgrade` creates `node_ops` table in
       SQLite test DB. (`test_node_op_migration.py` or inline in model test)
-- [ ] `_ensure_priv_key()` with primary key present returns primary.
+- [x] `_ensure_priv_key()` with primary key present returns primary.
       (`test_node_key_fallback.py`)
-- [ ] `_ensure_priv_key()` with primary absent and fallback present returns
+- [x] `_ensure_priv_key()` with primary absent and fallback present returns
       fallback. (monkeypatch `find_parent_dir` to a tmp dir without the key;
       monkeypatch `Path.home()` to point to a tmp dir with a fake key)
-- [ ] `_ensure_priv_key()` with neither key present raises `ClickException`
+- [x] `_ensure_priv_key()` with neither key present raises `ClickException`
       naming both paths.
-- [ ] `op-run` expand lifecycle: mock `ctx.invoke(expand, ...)`; assert
+- [x] `op-run` expand lifecycle: mock `ctx.invoke(expand, ...)`; assert
       `NodeOp` transitions `pending→running→done`; log file created;
       `started_at`/`finished_at` set. (`test_op_run.py`)
-- [ ] `op-run` remove lifecycle: mock `ctx.invoke(stop_node, ...)`; same
+- [x] `op-run` remove lifecycle: mock `ctx.invoke(stop_node, ...)`; same
       lifecycle assertions.
-- [ ] `op-run` failure path: mock `ctx.invoke` to raise; assert
+- [x] `op-run` failure path: mock `ctx.invoke` to raise; assert
       `status='failed'`, `message` set.
-- [ ] `op-run` lock contention: hold flock in test thread; run `op-run`; assert
+- [x] `op-run` lock contention: hold flock in test thread; run `op-run`; assert
       it exits immediately with `status='failed'` and "another op is running"
       message.
-- [ ] `GET /admin/nodes` returns 200 with mocked Docker. (`test_admin_nodes.py`)
-- [ ] `GET /admin/nodes` redirects non-admin.
-- [ ] `POST /admin/nodes/start` valid tier: mocked `Popen`; assert `NodeOp`
+- [x] `GET /admin/nodes` returns 200 with mocked Docker. (`test_admin_nodes.py`)
+- [x] `GET /admin/nodes` redirects non-admin.
+- [x] `POST /admin/nodes/start` valid tier: mocked `Popen`; assert `NodeOp`
       created + `Popen` called with correct args.
-- [ ] `POST /admin/nodes/start` invalid tier: no `NodeOp`, no `Popen`.
-- [ ] `POST /admin/nodes/remove` worker: mocked Docker + `Popen`; assert
+- [x] `POST /admin/nodes/start` invalid tier: no `NodeOp`, no `Popen`.
+- [x] `POST /admin/nodes/remove` worker: mocked Docker + `Popen`; assert
       `NodeOp(kind='remove')` created.
-- [ ] `POST /admin/nodes/remove` manager: refused, no `NodeOp`, no `Popen`.
-- [ ] `GET /admin/nodes/op/<id>/status`: correct JSON shape; `log_tail` from
+- [x] `POST /admin/nodes/remove` manager: refused, no `NodeOp`, no `Popen`.
+- [x] `GET /admin/nodes/op/<id>/status`: correct JSON shape; `log_tail` from
       temp file.
-- [ ] `GET /admin/nodes/op/<id>/log`: plain text response.
-- [ ] Template renders `nodes.html` without error when `node_rows=[]`.
-- [ ] Full regression: `uv run pytest` passes with no existing tests broken.
+- [x] `GET /admin/nodes/op/<id>/log`: plain text response.
+- [x] Template renders `nodes.html` without error when `node_rows=[]`.
+- [x] Full regression: `uv run pytest` passes with no existing tests broken.
 
 ### Manual prod smoke-test (one-time, after deploy)
 
@@ -88,6 +88,10 @@ Procedure:
 - [ ] Confirm the op runs to completion: node disappears from the table.
 - [ ] Verify the droplet is destroyed in the DigitalOcean console.
 - [ ] Check for any stuck `NodeOp` rows with `status='running'` after cleanup.
+
+(The manual smoke-test checklist is documented in full at
+`clasi/sprints/006-admin-nodes-tab-manual-swarm-node-management/prod-smoke-test.md`.
+These items remain unchecked until the operator performs the first live run in prod.)
 
 ## Implementation Plan
 
@@ -114,8 +118,8 @@ files and monkeypatch `find_parent_dir` to return `tmp_path`.
 
 All tests listed in Acceptance Criteria above. Run with:
 ```
-uv run pytest tests/test_node_op_model.py tests/test_node_key_fallback.py \
-    tests/test_op_run.py tests/test_admin_nodes.py -v
+uv run pytest test/test_node_op_model.py test/test_node_op_cli.py \
+    test/test_admin_nodes_routes.py test/test_admin_nodes_template.py -v
 ```
 
 Full regression:
@@ -125,5 +129,5 @@ uv run pytest
 
 ### Documentation updates
 
-Update `clasi/sprints/006-admin-nodes-tab-manual-swarm-node-management/sprint.md`
-with the prod smoke-test result (pass/fail) after the manual e2e.
+- Prod smoke-test checklist: `clasi/sprints/006-admin-nodes-tab-manual-swarm-node-management/prod-smoke-test.md`
+- Update `sprint.md` with smoke-test result after manual e2e (operator completes).
