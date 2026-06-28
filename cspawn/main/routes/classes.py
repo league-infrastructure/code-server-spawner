@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, timezone
-from math import ceil
 from typing import Tuple, cast
 
 from flask_migrate import current
@@ -13,7 +12,6 @@ from flask_login import current_user, login_required
 
 from cspawn.main.routes.main import context, instructor_required
 from cspawn.util.names import class_code
-from cspawn.cs_docker.tiers import load_tiers
 
 from sqlalchemy.orm import joinedload
 from cspawn.init import cast_app
@@ -144,25 +142,6 @@ def which_host_buttons(state: str) -> Tuple[str]:
 context["which_host_buttons"] = which_host_buttons
 
 
-def _class_cluster_zone(class_: Class) -> str:
-    """Return the current cluster zone string for a class (mirrors class_cluster_status logic)."""
-    if class_.purge_after is None:
-        return "unarmed"
-    now = datetime.now(timezone.utc)
-    pa = class_.purge_after
-    pb = class_.purge_by
-    if pa.tzinfo is None:
-        pa = pa.replace(tzinfo=timezone.utc)
-    if pb is not None and pb.tzinfo is None:
-        pb = pb.replace(tzinfo=timezone.utc)
-    if now < pa:
-        return "provisioning"
-    elif pb is not None and now < pb:
-        return "active"
-    else:
-        return "expired"
-
-
 @main_bp.route("/class/<int:class_id>/details")
 @instructor_required
 def detail_class(class_id):
@@ -173,7 +152,6 @@ def detail_class(class_id):
         "classes/detail.html",
         class_=class_,
         host=host,
-        cluster_zone=_class_cluster_zone(class_),
         return_url=url_for("main.detail_class", class_id=class_id),
         **context,
     )
@@ -431,70 +409,3 @@ def classes_button_states():
     return jsonify(d)
 
 
-@main_bp.route("/classes/<int:class_id>/cluster", methods=["POST"])
-@instructor_required
-def class_cluster_arm(class_id):
-    """Stamp purge timestamps and target_nodes on a class row.
-
-    Non-blocking: writes to the DB only.  Never provisions nodes inline.
-    Idempotent: a second POST re-arms the window and recomputes target_nodes
-    from the current roster.
-    """
-    class_ = Class.query.get_or_404(class_id)
-
-    click_time = datetime.now(timezone.utc)
-
-    # Timestamp computation (spec baked in).
-    # Datetimes from SQLite may be tz-naive; treat them as UTC.
-    if class_.end_date is not None:
-        end_date = class_.end_date
-        if end_date.tzinfo is None:
-            end_date = end_date.replace(tzinfo=timezone.utc)
-        end_tod = end_date.astimezone(timezone.utc).time()
-        today_cutoff = datetime.combine(click_time.date(), end_tod).replace(tzinfo=timezone.utc)
-        purge_after = max(today_cutoff, click_time + timedelta(hours=1))
-    else:
-        purge_after = click_time + timedelta(hours=1)
-
-    purge_by = purge_after + timedelta(hours=1)
-
-    # Node sizing — always recomputed from current roster
-    tiers = load_tiers(current_app.config)
-    tier_capacity = tiers[0].capacity
-    student_count = len(class_.students)
-    target_nodes = ceil(student_count / tier_capacity) if student_count > 0 else 0
-
-    class_.purge_after = purge_after
-    class_.purge_by = purge_by
-    class_.target_nodes = target_nodes
-
-    db.session.commit()
-    return jsonify({"success": True}), 200
-
-
-@main_bp.route("/classes/<int:class_id>/cluster/status", methods=["GET"])
-@instructor_required
-def class_cluster_status(class_id):
-    """Return the current cluster zone for the class detail page."""
-    class_ = Class.query.get_or_404(class_id)
-
-    if class_.purge_after is None:
-        zone = "unarmed"
-    else:
-        now = datetime.now(timezone.utc)
-        # Datetimes from SQLite may be tz-naive; treat them as UTC.
-        pa = class_.purge_after
-        pb = class_.purge_by
-        if pa.tzinfo is None:
-            pa = pa.replace(tzinfo=timezone.utc)
-        if pb is not None and pb.tzinfo is None:
-            pb = pb.replace(tzinfo=timezone.utc)
-
-        if now < pa:
-            zone = "provisioning"
-        elif pb is not None and now < pb:
-            zone = "active"
-        else:
-            zone = "expired"
-
-    return jsonify({"status": zone}), 200

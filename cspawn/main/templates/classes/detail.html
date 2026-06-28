@@ -152,35 +152,6 @@
         </div>
     </div>
 
-    {% if current_user in class_.instructors %}
-    <!-- Cluster Pre-sizing Section (instructor only) -->
-    <div class="card mb-4">
-        <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
-            <h4>Cluster Pre-sizing</h4>
-        </div>
-        <div class="card-body">
-            <div id="cluster-status-display">
-                {% set tn = class_.target_nodes %}
-                {% if cluster_zone == 'unarmed' %}
-                    <p class="mb-2">No cluster window is currently armed.</p>
-                    <button id="create-cluster-btn" class="btn btn-primary">Create my cluster</button>
-                {% elif cluster_zone == 'provisioning' %}
-                    <p class="mb-1"><strong>Cluster pre-sized</strong> — {{ tn }} node{{ 's' if tn != 1 else '' }} requested.</p>
-                    <p class="mb-2 text-muted">Window opens at {{ class_.purge_after.strftime('%Y-%m-%d %H:%M UTC') }}.</p>
-                    <button id="create-cluster-btn" class="btn btn-secondary">Re-arm cluster</button>
-                {% elif cluster_zone == 'active' %}
-                    <p class="mb-1"><strong>Cluster active</strong> — idle reclaim enabled. {{ tn }} node{{ 's' if tn != 1 else '' }}.</p>
-                    <p class="mb-2 text-muted">Expires at {{ class_.purge_by.strftime('%Y-%m-%d %H:%M UTC') }}.</p>
-                    <button id="create-cluster-btn" class="btn btn-secondary">Re-arm cluster</button>
-                {% elif cluster_zone == 'expired' %}
-                    <p class="mb-2 text-warning">Cluster window expired.</p>
-                    <button id="create-cluster-btn" class="btn btn-primary">Create new cluster</button>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
     <!-- Student Management Section -->
     <div class="card">
         <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
@@ -399,58 +370,6 @@
 
         // Initial button state update
         updateActionButtons();
-
-        // Handle cluster pre-sizing button
-        function attachClusterBtn() {
-            const btn = document.getElementById('create-cluster-btn');
-            if (!btn) return;
-            btn.addEventListener('click', function onClusterClick() {
-                btn.disabled = true;
-
-                fetch('{{ url_for("main.class_cluster_arm", class_id=class_.id) }}', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                })
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Cluster arm failed: ' + response.status);
-                        }
-                        return response.json();
-                    })
-                    .then(() => {
-                        return fetch('{{ url_for("main.class_cluster_status", class_id=class_.id) }}');
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        const statusDiv = document.getElementById('cluster-status-display');
-                        const zone = data.status;
-                        let html = '';
-                        if (zone === 'provisioning') {
-                            html = '<p class="mb-1"><strong>Cluster pre-sized</strong> — nodes requested.</p>'
-                                 + '<p class="mb-2 text-muted">Window is being set up.</p>'
-                                 + '<button id="create-cluster-btn" class="btn btn-secondary">Re-arm cluster</button>';
-                        } else if (zone === 'active') {
-                            html = '<p class="mb-1"><strong>Cluster active</strong> — idle reclaim enabled.</p>'
-                                 + '<p class="mb-2 text-muted">Window is active.</p>'
-                                 + '<button id="create-cluster-btn" class="btn btn-secondary">Re-arm cluster</button>';
-                        } else if (zone === 'expired') {
-                            html = '<p class="mb-2 text-warning">Cluster window expired.</p>'
-                                 + '<button id="create-cluster-btn" class="btn btn-primary">Create new cluster</button>';
-                        } else {
-                            html = '<p class="mb-2">No cluster window is currently armed.</p>'
-                                 + '<button id="create-cluster-btn" class="btn btn-primary">Create my cluster</button>';
-                        }
-                        statusDiv.innerHTML = html;
-                        attachClusterBtn();
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        btn.disabled = false;
-                        alert('An error occurred while arming the cluster.');
-                    });
-            });
-        }
-        attachClusterBtn();
     });
     // Activate Bootstrap 5 tooltips (no jQuery)
     document.addEventListener('DOMContentLoaded', function () {
