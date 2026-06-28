@@ -1,15 +1,15 @@
 ---
 id: '006'
-title: "Admin Nodes tab — manual swarm node management"
-status: planning-docs
+title: "Admin Nodes tab \u2014 manual swarm node management"
+status: done
 branch: sprint/006-admin-nodes-tab-manual-swarm-node-management
 use-cases:
-  - SUC-001
-  - SUC-002
-  - SUC-003
-  - SUC-004
+- SUC-001
+- SUC-002
+- SUC-003
+- SUC-004
 issues:
-  - admin-nodes-tab-manual-swarm-node-management.md
+- admin-nodes-tab-manual-swarm-node-management.md
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
