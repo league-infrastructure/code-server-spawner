@@ -370,6 +370,49 @@ class TestNodesRemove:
 
 
 # ---------------------------------------------------------------------------
+# POST /admin/nodes/rebalance
+# ---------------------------------------------------------------------------
+
+class TestNodesRebalance:
+    def test_creates_rebalance_nodeop(self, flask_app, client, admin_user):
+        _login(client, flask_app, admin_user)
+
+        with patch("cspawn.admin.routes.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock()
+            resp = client.post("/admin/nodes/rebalance")
+
+        assert resp.status_code == 302
+        with flask_app.app_context():
+            ops = NodeOp.query.filter_by(kind="rebalance").all()
+            assert len(ops) == 1
+            assert ops[0].status == "pending"
+
+    def test_calls_popen_with_op_run(self, flask_app, client, admin_user):
+        _login(client, flask_app, admin_user)
+
+        with patch("cspawn.admin.routes.subprocess.Popen") as mock_popen, \
+             patch("cspawn.admin.routes._cspawnctl_path", return_value="/usr/bin/cspawnctl"):
+            mock_popen.return_value = MagicMock()
+            client.post("/admin/nodes/rebalance")
+
+        assert mock_popen.called
+        args = mock_popen.call_args[0][0]
+        assert args[0] == "/usr/bin/cspawnctl"
+        assert args[3] == "node"
+        assert args[4] == "op-run"
+        assert len(args[5]) == 36  # UUID
+
+    def test_redirects_to_list_nodes(self, flask_app, client, admin_user):
+        _login(client, flask_app, admin_user)
+
+        with patch("cspawn.admin.routes.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock()
+            resp = client.post("/admin/nodes/rebalance")
+
+        assert "/admin/nodes" in resp.headers["Location"]
+
+
+# ---------------------------------------------------------------------------
 # GET /admin/nodes/op/<op_id>/status
 # ---------------------------------------------------------------------------
 
@@ -495,6 +538,11 @@ class TestNonAdminAccess:
     def test_nodes_remove_redirects_non_admin(self, flask_app, client, plain_user):
         _login(client, flask_app, plain_user)
         resp = client.post("/admin/nodes/remove", data={"fqdn": "worker1.example.com"})
+        assert resp.status_code == 302
+
+    def test_nodes_rebalance_redirects_non_admin(self, flask_app, client, plain_user):
+        _login(client, flask_app, plain_user)
+        resp = client.post("/admin/nodes/rebalance")
         assert resp.status_code == 302
 
     def test_op_status_redirects_non_admin(self, flask_app, client, plain_user):

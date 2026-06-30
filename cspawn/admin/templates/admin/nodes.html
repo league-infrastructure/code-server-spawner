@@ -42,6 +42,22 @@
         </div>
     </div>
 
+    {# Rebalance hosts across nodes #}
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header"><strong>Rebalance Hosts</strong></div>
+        <div class="card-body">
+            <p class="text-muted mb-2">
+                Move running code hosts off the busiest nodes onto the least-loaded ones
+                until per-node counts are even. Each host is pushed to GitHub first;
+                workspace data is on shared NFS, so it follows the host automatically.
+            </p>
+            <form method="post" action="{{ url_for('admin.nodes_rebalance') }}" style="display:inline"
+                  onsubmit="return confirm('Rebalance hosts across all nodes now? Affected hosts will briefly restart as they move.')">
+                <button type="submit" class="btn btn-primary">Rebalance Hosts</button>
+            </form>
+        </div>
+    </div>
+
     {# Node table #}
     <div class="card mb-4 shadow-sm">
         <div class="card-header"><strong>Swarm Nodes</strong></div>

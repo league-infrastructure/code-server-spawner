@@ -45,6 +45,17 @@ def admin_required(f):
 @admin_bp.route("/")
 @admin_required
 def index():
+    # Sync DB against live Swarm state before counting so the dashboard reflects
+    # reality rather than a stale snapshot (e.g. hosts mid-reschedule onto a new
+    # node read as "not running"). One reconciliation pass only — the dashboard
+    # must stay responsive, so we do NOT run the convergence loop here; that's
+    # what the cron'd `cspawnctl host dbsync --converge` is for. A docker/SSH
+    # hiccup must never 500 the page, so failures are swallowed.
+    try:
+        ca.csm.sync(check_ready=True)
+    except Exception as e:
+        flash(f"Host state sync failed; counts may be stale: {e}", "warning")
+
     # Gather dashboard stats
     num_code_hosts = CodeHost.query.count()
     num_running_hosts = CodeHost.query.filter_by(state="running").count()
@@ -584,6 +595,42 @@ def nodes_remove():
     )
 
     flash(f"Removing node {fqdn} (op {op.id})", "success")
+    return redirect(url_for("admin.list_nodes"))
+
+
+# ---------------------------------------------------------------------------
+# POST /admin/nodes/rebalance — launch a rebalance operation
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/nodes/rebalance", methods=["POST"])
+@admin_required
+def nodes_rebalance():
+    """Create a NodeOp(kind='rebalance') and launch cspawnctl node op-run detached.
+
+    Relocates running code hosts off the most-loaded swarm nodes onto the
+    least-loaded ones until per-node counts differ by at most one. Workspace
+    data is on a shared NFS mount, so it follows each host automatically; each
+    host is also pushed to GitHub first as a safety snapshot.
+    """
+    op = NodeOp(
+        kind="rebalance",
+        status="pending",
+        created_by=current_user.id,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.session.add(op)
+    db.session.commit()
+
+    deploy = ca.app_config.get("JTL_DEPLOYMENT", "devel")
+    cspawnctl = _cspawnctl_path()
+    subprocess.Popen(
+        [cspawnctl, "-d", deploy, "node", "op-run", str(op.id)],
+        start_new_session=True,
+        stdout=DEVNULL,
+        stderr=DEVNULL,
+    )
+
+    flash(f"Rebalancing hosts across nodes (op {op.id})", "success")
     return redirect(url_for("admin.list_nodes"))
 
 

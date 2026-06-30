@@ -134,6 +134,218 @@ def hosts(ctx, summary):
         click.echo(f"\nTotal: {total} hosts on {len(per_node)} node(s)")
 
 
+def _service_constraints(svc) -> list[str]:
+    """Read the current placement constraints from a docker service spec."""
+    return list(
+        (((svc.attrs.get("Spec", {}) or {}).get("TaskTemplate", {}) or {})
+         .get("Placement", {}) or {}).get("Constraints", []) or []
+    )
+
+
+def _pin_service_to_node(svc, node_fqdn: str) -> None:
+    """Force a service onto a specific node via a node.hostname constraint.
+
+    Preserves any pre-existing constraints (e.g. 'node.role != manager' from
+    PLACEMENT_CONSTRAINTS) but replaces any prior 'node.hostname==' pin so the
+    host doesn't accumulate conflicting pins across repeated rebalances.
+    Calling update() with new constraints makes Swarm reschedule the task,
+    which recreates the container on the target node. The /workspace data is
+    on a shared NFS mount, so it travels with the user automatically.
+    """
+    kept = [c for c in _service_constraints(svc)
+            if not c.replace(" ", "").startswith("node.hostname==")]
+    kept.append(f"node.hostname=={node_fqdn}")
+    svc.update(constraints=kept)
+
+
+@node.command()
+@click.option("-N", "--dry-run", is_flag=True,
+              help="Show the planned moves without changing anything.")
+@click.option("--no-push", is_flag=True,
+              help="Skip the safety git-push to GitHub before moving each host.")
+@click.option("--max-moves", type=int, default=None,
+              help="Cap the number of hosts relocated in this run.")
+@click.pass_context
+def rebalance(ctx, dry_run, no_push, max_moves):
+    """Level code-host load across swarm nodes by relocating hosts.
+
+    Docker Swarm never rebalances on its own: adding a node only attracts NEW
+    hosts, leaving existing load on the original nodes. This command moves
+    running hosts off the most-loaded nodes onto the least-loaded ones until
+    the per-node counts differ by no more than one.
+
+    Each move re-pins the service to its target node (a Swarm reschedule, so
+    the container is recreated there). Workspace data lives on a shared NFS
+    mount, so it follows the user automatically. By default each host is also
+    pushed to GitHub first as a safety snapshot; --no-push skips that.
+    """
+    from collections import defaultdict
+
+    cfg = get_config()
+    docker_uri = cfg.get("DOCKER_URI")
+    if not docker_uri:
+        raise click.ClickException("Missing required config: DOCKER_URI")
+    try:
+        client = docker.DockerClient(base_url=docker_uri, use_ssh_client=True)
+    except Exception as e:
+        raise click.ClickException(f"Failed to connect to docker manager at {docker_uri}: {e}")
+
+    # node id -> (short, fqdn); track which nodes may RECEIVE hosts (eligible:
+    # worker role + active availability). Manager / drained / paused nodes are
+    # valid sources but never targets.
+    short_of: dict[str, str] = {}
+    fqdn_of_short: dict[str, str] = {}
+    eligible: list[str] = []
+    for n in client.nodes.list():
+        attrs = n.attrs
+        hn = attrs.get("Description", {}).get("Hostname", "") or n.id
+        short = hn.split(".")[0]
+        short_of[n.id] = short
+        fqdn_of_short[short] = hn
+        spec = attrs.get("Spec", {}) or {}
+        role = (spec.get("Role") or "").lower()
+        availability = (spec.get("Availability") or "").lower()
+        if role == "worker" and availability == "active":
+            eligible.append(short)
+
+    # Build live per-node membership: {short: [(username, docker_service)]}.
+    placement: dict[str, list[tuple[str, object]]] = defaultdict(list)
+    for svc in client.services.list(filters={"label": "jtl.codeserver=true"}):
+        labels = svc.attrs.get("Spec", {}).get("Labels", {})
+        uname = labels.get("jtl.codeserver.username") or svc.name
+        for t in svc.tasks(filters={"desired-state": "running"}):
+            if (t.get("Status", {}) or {}).get("State") != "running":
+                continue
+            short = short_of.get(t.get("NodeID"), "?")
+            placement[short].append((uname, svc))
+
+    if not eligible:
+        raise click.ClickException("No eligible (active worker) nodes to rebalance onto.")
+
+    # Index services by username so the planner can work on names alone.
+    svc_by_user = {u: s for hosts_ in placement.values() for (u, s) in hosts_}
+    per_node_names = {n: [u for (u, _) in hosts_] for n, hosts_ in placement.items()}
+
+    moves = plan_rebalance(per_node_names, eligible, max_moves=max_moves)
+
+    if not moves:
+        click.echo("Already balanced — no moves needed.")
+        # Still show the distribution so the operator can confirm.
+        for n in sorted(set(list(per_node_names) + eligible)):
+            click.echo(f"  {n:<14} {len(per_node_names.get(n, []))}")
+        return
+
+    click.echo(f"Planned moves ({len(moves)}):")
+    for user, src, tgt in moves:
+        click.echo(f"  {user:<24} {src} -> {tgt}")
+
+    if dry_run:
+        click.echo("\nDry run — nothing changed.")
+        return
+
+    moved = 0
+    failed = 0
+    for user, src, tgt in moves:
+        svc = svc_by_user.get(user)
+        if svc is None:
+            click.echo(f"  {user}: service vanished, skipping")
+            failed += 1
+            continue
+
+        if not no_push:
+            try:
+                from cspawn.cs_github.repo import CodeHostRepo
+                from cspawn.cli.util import get_app
+                app = get_app(ctx)
+                with app.app_context():
+                    CodeHostRepo.new_codehostrepo(app, user).push()
+                click.echo(f"  {user}: pushed", nl=False)
+            except Exception as e:
+                # Data is safe on NFS regardless, so a push failure must not
+                # block the move — just warn and proceed.
+                click.echo(f"  {user}: push failed ({e}) — moving anyway", nl=False)
+        else:
+            click.echo(f"  {user}:", nl=False)
+
+        target_fqdn = fqdn_of_short.get(tgt, tgt)
+        try:
+            _pin_service_to_node(svc, target_fqdn)
+            click.echo(f" moved {src} -> {tgt}")
+            moved += 1
+        except Exception as e:
+            click.echo(f" MOVE FAILED ({e})")
+            failed += 1
+
+    click.echo(f"\nRebalance complete: {moved} moved, {failed} failed.")
+
+
+def plan_rebalance(per_node: dict[str, list], eligible: list[str],
+                   max_moves: int | None = None) -> list[tuple[str, str, str]]:
+    """Compute a list of host moves that levels load across eligible nodes.
+
+    Greedy: repeatedly move one host from the most-loaded node to the
+    least-loaded eligible node until the spread is at most 1 (so counts
+    differ by no more than one — the best any integer split can do), or
+    until max_moves is reached.
+
+    Args:
+        per_node: {short_node_name: [usernames]} live placement.
+        eligible: short names of nodes that may RECEIVE hosts (workers that
+            are not drained/paused). Hosts on non-eligible nodes are still
+            counted as sources so a drained node can be emptied here too.
+        max_moves: optional cap on the number of moves returned.
+
+    Returns:
+        List of (username, source_node, target_node) tuples, in order.
+    """
+    # Work on a mutable copy of the counts/membership.
+    members = {n: list(v) for n, v in per_node.items()}
+    # Every eligible node must appear even if it currently has zero hosts,
+    # otherwise a brand-new empty node would never be chosen as a target.
+    for n in eligible:
+        members.setdefault(n, [])
+
+    eligible_set = set(eligible)
+    moves: list[tuple[str, str, str]] = []
+
+    def _capped() -> bool:
+        return max_moves is not None and len(moves) >= max_moves
+
+    def _least_loaded_target() -> str | None:
+        return min(eligible_set, key=lambda n: len(members[n]), default=None)
+
+    # Phase 1: fully evacuate every non-eligible node (drained/paused/manager).
+    # Their hosts must leave regardless of balance, spreading onto the
+    # currently least-loaded eligible node one at a time.
+    for src in list(members):
+        if src in eligible_set:
+            continue
+        while members[src]:
+            if _capped():
+                return moves
+            tgt = _least_loaded_target()
+            if tgt is None:
+                return moves
+            user = members[src].pop()
+            members[tgt].append(user)
+            moves.append((user, src, tgt))
+
+    # Phase 2: level load among eligible nodes until the spread is at most one
+    # (the best any integer split can do).
+    while not _capped():
+        src = max(eligible_set, key=lambda n: len(members[n]))
+        tgt = _least_loaded_target()
+        if tgt is None or src == tgt:
+            break
+        if len(members[src]) - len(members[tgt]) <= 1:
+            break
+        user = members[src].pop()
+        members[tgt].append(user)
+        moves.append((user, src, tgt))
+
+    return moves
+
+
 def _compute_fingerprint(pub_key_str: str) -> str:
     """Compute MD5 fingerprint for an OpenSSH public key string."""
     try:
@@ -247,6 +459,52 @@ def _wait_for_ssh(
         time.sleep(delay)
         delay = min(delay * 1.5, 30.0)
     raise TimeoutError(f"SSH not available on {host}:{port} in time (timeout={int(timeout)}s)")
+
+
+def _wait_for_cloud_init(host: str, key_path: Path, *, username: str = "root",
+                         timeout: int = 600, log=None) -> None:
+    """Block until the node's cloud-init has finished its first-boot run.
+
+    `_wait_for_ssh` returns as soon as sshd accepts ONE connection, but on the
+    DO base image cloud-init is still running in the background for minutes:
+    it installs/pins docker-ce, installs do-agent, reconfigures UFW, and finally
+    restarts sshd. Running introspection/join commands during that window races
+    the sshd restart and the UFW reconfigure, producing intermittent
+    "Unable to connect to port 22" failures mid-sequence.
+
+    `cloud-init status --wait` blocks until the run is complete (exit 0) or
+    errored (exit 2; we proceed anyway and let later steps surface real
+    problems). Best-effort: if the command is unavailable or the node never
+    settles within `timeout`, we log and continue rather than abort — the
+    downstream `_ssh_exec_retry` calls still guard the actual work.
+    """
+    if log:
+        log.info(f"[expand] Waiting for cloud-init to finish on {host} (timeout={timeout}s)")
+    try:
+        # `cloud-init status --wait` prints dots while running and blocks until
+        # done. We bound it with our own connect; a single long-lived SSH exec
+        # is also gentler on UFW's SSH rate-limit than many short connections.
+        code, out, err = _ssh_exec(
+            host, username, key_path,
+            f"timeout {int(timeout)} cloud-init status --wait 2>/dev/null; "
+            "cloud-init status 2>/dev/null || true",
+            connect_timeout=20,
+        )
+        status_line = (out or err or "").strip()
+        if "status: done" in status_line:
+            if log:
+                log.info("[expand] cloud-init finished (status: done)")
+        elif status_line:
+            if log:
+                log.warning(f"[expand] cloud-init not 'done' after wait: {status_line!r}; proceeding")
+        else:
+            if log:
+                log.info("[expand] cloud-init status unavailable; proceeding")
+    except Exception as e:
+        # sshd may be mid-restart from cloud-init itself; give it a moment and
+        # let the caller's _wait_for_ssh/_ssh_exec_retry recover.
+        if log:
+            log.warning(f"[expand] cloud-init wait could not complete ({e}); proceeding")
 
 
 def _ssh_exec(host: str, username: str, key_path: Path, cmd: str, *, connect_timeout: int = 15) -> tuple[int, str, str]:
@@ -978,6 +1236,11 @@ def _configure_node(ctx, target: str, desired_shortname: str | None = None, ssh_
     )
     shortname = desired_shortname or target.split(".")[0]
     _wait_for_ssh(ip, log=log, key_path=priv_key_path, timeout=ssh_timeout or 900)
+    # cloud-init is still installing docker/pinning versions/reconfiguring UFW and
+    # will restart sshd at the end. Wait for it to finish before any introspection,
+    # then re-confirm SSH (the sshd restart drops the early connection).
+    _wait_for_cloud_init(ip, priv_key_path, log=log)
+    _wait_for_ssh(ip, log=log, key_path=priv_key_path, timeout=ssh_timeout or 900)
     # brief pause to avoid UFW rate-limit on immediate reconnect
     time.sleep(1.0)
     # Check current hostname
@@ -1023,6 +1286,13 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
         or _resolve_ip(_expand_host_with_template(name_template, target))
         or target
     )
+    _wait_for_ssh(ip, log=log, key_path=priv_key_path, timeout=ssh_timeout or 900)
+    # Ensure cloud-init (docker install/pin, UFW, sshd restart) has fully
+    # finished before introspecting/joining, then re-confirm SSH after the
+    # cloud-init sshd restart. This is what was racing: the private-IP read
+    # (`ip -o -4 addr show ...`) ran while cloud-init restarted sshd, giving
+    # "Unable to connect to port 22".
+    _wait_for_cloud_init(ip, priv_key_path, log=log)
     _wait_for_ssh(ip, log=log, key_path=priv_key_path, timeout=ssh_timeout or 900)
     time.sleep(1.0)
 
@@ -1100,7 +1370,7 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
         "root",
         priv_key_path,
         "ip -o -4 addr show | awk '$4 ~ /10\\.124\\./ {print $4}' | cut -d/ -f1 | head -n1",
-        retries=6,
+        retries=10,
         initial_delay=1.5,
         log=log,
     )
@@ -2308,7 +2578,8 @@ def contract_node(ctx, dry_run: bool, force_drain: bool):
 @click.option(
     "--force",
     is_flag=True,
-    help="Bypass cooldown check (for manual emergency use).",
+    help="Bypass the AUTOSCALE_ENABLED kill-switch and scale-down cooldown "
+         "for a one-off manual run (AUTOSCALE_DRY_RUN still applies).",
 )
 @click.option(
     "--up-only/--down-only",
@@ -2322,6 +2593,11 @@ def autoscale_cmd(ctx, dry_run: bool, force: bool, up_only):
 
     Respects AUTOSCALE_ENABLED (kill-switch) and AUTOSCALE_DRY_RUN (global
     dry-run override). Safe to run from cron: exits cleanly when disabled.
+
+    Use --force to run a one-off cycle even when AUTOSCALE_ENABLED=false
+    (it also bypasses the scale-down cooldown). AUTOSCALE_DRY_RUN still
+    applies, so pair --force with a config where AUTOSCALE_DRY_RUN=false
+    (or run --dry-run first) to control whether mutations actually occur.
     """
     from cspawn.cs_docker.autoscale import run_autoscale
     result = run_autoscale(ctx, dry_run=dry_run, force=force, up_only=up_only)
@@ -2373,16 +2649,31 @@ def op_run(ctx, op_id: str):
         op.started_at = datetime.now(timezone.utc)
         db.session.commit()
 
-    # ---- 2. Redirect stdout/stderr to log file ------------------------------
-    # Use Python-level stream reassignment so the log file captures all click.echo
-    # output from the invoked sub-commands.  In the detached-subprocess use case,
-    # subprocess-level fd inheritance is not needed: the process itself is the
-    # writer, and all Python I/O goes through sys.stdout/sys.stderr.
+    # ---- 2. Redirect stdout/stderr AND attach a logging FileHandler ---------
+    # Two separate output paths must both be captured into the op log:
+    #   * click.echo()/print() → go through sys.stdout, so reassign it.
+    #   * log.info()/log.warning() → go through the logging StreamHandler that
+    #     basicConfig bound to the ORIGINAL sys.stderr at import time. Reassigning
+    #     sys.stderr does NOT redirect them (the handler holds its own ref), so
+    #     without a dedicated FileHandler all logging output (which is most of
+    #     expand's narration, and ALL of a failed op's diagnostics) is lost —
+    #     the log file ends up 0 bytes. Attach a FileHandler to the root logger
+    #     so every module logger (cspawn.cli, cspawn.docker, ...) is captured.
     log_file = open(log_path, "w")  # noqa: WPS515
     _orig_stdout = sys.stdout
     _orig_stderr = sys.stderr
     sys.stdout = log_file
     sys.stderr = log_file
+
+    _root_logger = logging.getLogger()
+    _file_handler = logging.FileHandler(str(log_path))
+    _file_handler.setLevel(logging.INFO)
+    _file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    _root_logger.addHandler(_file_handler)
+    # Ensure INFO records actually reach the handler even if the root level is higher.
+    _prev_root_level = _root_logger.level
+    if _root_logger.level > logging.INFO or _root_logger.level == logging.NOTSET:
+        _root_logger.setLevel(logging.INFO)
 
     # ---- 3. Acquire exclusive non-blocking flock ----------------------------
     lock_path = Path(data_dir) / ".node-ops.lock"
@@ -2419,13 +2710,31 @@ def op_run(ctx, op_id: str):
             ctx.invoke(expand, tier_name=tier)
         elif kind == "remove":
             ctx.invoke(stop_node, node_spec=target_fqdn, force=False, dry_run=False)
+        elif kind == "rebalance":
+            ctx.invoke(rebalance, dry_run=False, no_push=False, max_moves=None)
         else:
             raise click.ClickException(f"Unknown NodeOp kind: {kind!r}")
 
         success = True
     except Exception as exc:
         exc_message = str(exc)
+        # Make sure the failure is in the log itself, not only in op.message —
+        # logging may have already captured the traceback, but a top-level
+        # ClickException raised after retries is the headline the operator needs.
+        try:
+            logging.getLogger("cspawn.cli").error("Node operation failed: %s", exc_message)
+        except Exception:
+            pass
     finally:
+        # Detach the FileHandler and restore the root log level.
+        try:
+            _file_handler.flush()
+            _root_logger.removeHandler(_file_handler)
+            _file_handler.close()
+            _root_logger.setLevel(_prev_root_level)
+        except Exception:
+            pass
+
         # Restore stdout/stderr before releasing lock (so any final prints work)
         sys.stdout = _orig_stdout
         sys.stderr = _orig_stderr

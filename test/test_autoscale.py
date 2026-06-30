@@ -1029,8 +1029,11 @@ class TestApplyPlan:
             result = apply_plan(ctx, plan, cfg, dry_run=True)
 
         assert result.dry_run is True
-        assert result.added == 0
-        assert result.removed == 0
+        # Dry-run reports what the plan WOULD do (no mutation occurs)...
+        assert result.added == 1
+        assert result.removed == 1
+        assert result.would_remove == ["swarm5.example.com"]
+        # ...but no infrastructure primitive is actually invoked.
         mock_create.assert_not_called()
         mock_configure.assert_not_called()
         mock_join.assert_not_called()
@@ -1046,6 +1049,27 @@ class TestApplyPlan:
 
         assert isinstance(result, ApplyResult)
         assert result.dry_run is True
+
+    def test_dry_run_summary_lists_would_remove(self):
+        """The dry-run summary string surfaces the planned removals by name."""
+        plan = ScalePlan(
+            add_large=0,
+            add_small=0,
+            remove_nodes=["swarm5.example.com"],
+            purge_first=True,
+            reason="test",
+        )
+        ctx = MagicMock()
+        cfg = {"NODE_TIERS": NODE_TIERS_JSON, "DEFAULT_CAPACITY": "6"}
+
+        with (
+            patch("cspawn.cli.node.graceful_remove_node"),
+        ):
+            result = apply_plan(ctx, plan, cfg, dry_run=True)
+
+        summary = result.summary()
+        assert "removed=1" in summary
+        assert "would_remove=swarm5.example.com" in summary
 
     def test_scale_down_rechecks_emptiness_before_drain(self):
         """apply_plan re-checks host count immediately before graceful_remove_node.
@@ -1122,6 +1146,48 @@ class TestRunAutoscale:
 
         assert isinstance(result, ApplyResult)
         mock_gather.assert_not_called()
+
+    def test_autoscale_disabled_force_bypasses_kill_switch(self):
+        """force=True bypasses AUTOSCALE_ENABLED=false and proceeds to gather state."""
+        ctx = MagicMock()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_cfg = {
+                "AUTOSCALE_ENABLED": "false",  # kill-switch off...
+                "AUTOSCALE_DRY_RUN": "true",   # ...but dry-run still protects us
+                "DATA_DIR": tmpdir,
+                "NODE_TIERS": NODE_TIERS_JSON,
+                "DEFAULT_CAPACITY": "6",
+                "DOCKER_URI": "ssh://fake",
+                "DO_TOKEN": "fake-token",
+            }
+
+            fake_app = MagicMock()
+            fake_manager_client = MagicMock()
+            fake_manager_client.nodes.list.return_value = []
+            fake_manager_client.services.list.return_value = []
+
+            with (
+                patch("cspawn.cli.util.get_config", return_value=fake_cfg),
+                patch(
+                    "cspawn.cs_docker.autoscale.gather_cluster_state",
+                    return_value=([], {}, 0, [], [], {}),
+                ) as mock_gather,
+                patch("cspawn.cs_docker.autoscale.apply_plan") as mock_apply,
+                patch("digitalocean.Manager"),
+            ):
+                mock_apply.return_value = ApplyResult(dry_run=True)
+                result = run_autoscale(
+                    ctx,
+                    dry_run=True,
+                    force=True,
+                    app=fake_app,
+                    manager_client=fake_manager_client,
+                )
+
+            # Kill-switch was bypassed: the cycle actually ran.
+            mock_gather.assert_called_once()
+            assert isinstance(result, ApplyResult)
 
     def test_autoscale_dry_run_config_forces_dry_run(self):
         """AUTOSCALE_DRY_RUN=true in config prevents all mutations even if CLI dry_run=False."""

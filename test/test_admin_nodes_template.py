@@ -254,6 +254,14 @@ class TestNodesTemplateRendering:
         html = resp.data.decode()
         assert "confirm(" in html
 
+    def test_rebalance_button_present(self, flask_app, client, admin_user):
+        """The Rebalance Hosts button posts to the rebalance route with a confirm()."""
+        resp = _get_nodes(client, flask_app, admin_user)
+        html = resp.data.decode()
+        assert "/admin/nodes/rebalance" in html
+        assert "Rebalance Hosts" in html
+        assert "confirm(" in html
+
     def test_ops_panel_shows_op_status_element(self, flask_app, client, admin_user):
         """op-status-<id> span and op-log-<id> pre are present for ops."""
         with flask_app.app_context():

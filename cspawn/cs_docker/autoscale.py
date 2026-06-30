@@ -166,16 +166,22 @@ class ScalePlan:
 
 @dataclass
 class ApplyResult:
-    """Result returned by apply_plan and run_autoscale."""
+    """Result returned by apply_plan and run_autoscale.
+
+    In a dry run, ``added``/``removed`` reflect what the plan *would* do (no
+    mutation occurs), and ``would_remove`` lists the node fqdns the plan
+    selected for removal so ``--dry-run`` is informative.
+    """
     added: int = 0
     removed: int = 0
     purged: bool = False
     dry_run: bool = False
     errors: list[str] = field(default_factory=list)
+    would_remove: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
         """Return a single-line structured log string suitable for journald/logfmt."""
-        return (
+        base = (
             f"autoscale result="
             f"added={self.added} "
             f"removed={self.removed} "
@@ -183,6 +189,9 @@ class ApplyResult:
             f"dry_run={self.dry_run} "
             f"errors={len(self.errors)}"
         )
+        if self.dry_run and self.would_remove:
+            base += f" would_remove={','.join(self.would_remove)}"
+        return base
 
 
 # ---------------------------------------------------------------------------
@@ -942,6 +951,11 @@ def apply_plan(
     result = ApplyResult(dry_run=dry_run)
 
     if dry_run:
+        # Surface what the plan WOULD do, even though nothing is mutated.
+        result.added = plan.add_large + plan.add_small
+        result.removed = len(plan.remove_nodes)
+        result.purged = plan.purge_first
+        result.would_remove = list(plan.remove_nodes)
         log.info("[autoscale] dry-run: %s", plan.summary())
         return result
 
@@ -1079,7 +1093,9 @@ def run_autoscale(
 
     Steps
     -----
-    1. Kill-switch check: ``AUTOSCALE_ENABLED`` must be ``true`` to proceed.
+    1. Kill-switch check: ``AUTOSCALE_ENABLED`` must be ``true`` to proceed,
+       unless ``force=True`` (which bypasses the kill-switch for a one-off
+       manual run; ``AUTOSCALE_DRY_RUN`` still applies).
     2. Config dry-run override: ``AUTOSCALE_DRY_RUN=true`` forces ``dry_run=True``
        regardless of the ``--dry-run`` CLI flag.
     3. Acquire an exclusive non-blocking file lock (``fcntl.flock``) to prevent
@@ -1100,7 +1116,9 @@ def run_autoscale(
         Suppress all mutations.  Overridden to ``True`` when ``AUTOSCALE_DRY_RUN``
         config key is ``true``.
     force:
-        When ``True``, bypass the scale-down cooldown.
+        When ``True``, bypass the ``AUTOSCALE_ENABLED`` kill-switch and the
+        scale-down cooldown, for one-off manual runs without enabling
+        autoscale globally.  ``AUTOSCALE_DRY_RUN`` is still honoured.
     up_only:
         ``True``  → zero out remove_nodes (scale-up only).
         ``False`` → zero out add counts (scale-down only).
@@ -1127,10 +1145,16 @@ def run_autoscale(
 
     cfg = _get_config()
 
-    # 1. Kill-switch
+    # 1. Kill-switch (bypassable with force= for one-off manual runs)
     if not _cfg_bool(cfg, "AUTOSCALE_ENABLED", False):
-        log.info("[autoscale] autoscale disabled (AUTOSCALE_ENABLED=false); exiting")
-        return ApplyResult()
+        if force:
+            log.warning(
+                "[autoscale] AUTOSCALE_ENABLED=false but force=True; "
+                "bypassing kill-switch for this run (AUTOSCALE_DRY_RUN still applies)"
+            )
+        else:
+            log.info("[autoscale] autoscale disabled (AUTOSCALE_ENABLED=false); exiting")
+            return ApplyResult()
 
     # 2. Config dry-run override
     if _cfg_bool(cfg, "AUTOSCALE_DRY_RUN", True):

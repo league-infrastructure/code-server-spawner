@@ -280,9 +280,24 @@ class Service(ProcessBase):
                 if t["Status"]["ContainerStatus"]["ContainerID"]:
                     tasks.append(t)
             except KeyError:
-                logger.error(
-                    f"Task {t['ID']} in service {self.name} does not have a ContainerStatus."
-                )
+                # A task with no ContainerStatus is almost always one Swarm has
+                # accepted but not yet scheduled/started (state new/pending/
+                # assigned) — expected churn right after services.create(), and
+                # the dominant case during a concurrent `test start`. Only a task
+                # that actually failed/rejected is worth surfacing loudly; the
+                # rest is normal startup timing, so log at DEBUG.
+                state = (t.get("Status", {}) or {}).get("State", "unknown")
+                if state in ("failed", "rejected"):
+                    err = (t.get("Status", {}) or {}).get("Err", "")
+                    logger.error(
+                        f"Task {t['ID']} in service {self.name} {state} before "
+                        f"getting a ContainerStatus: {err}"
+                    )
+                else:
+                    logger.debug(
+                        f"Task {t['ID']} in service {self.name} has no ContainerStatus "
+                        f"yet (state={state}); not scheduled/started — skipping."
+                    )
                 continue
 
         def _rank(t):
@@ -297,7 +312,9 @@ class Service(ProcessBase):
         try:
             return next(self.container_tasks)
         except StopIteration:
-            logger.warning(f"No tasks found for service {self.name}")
+            # No container-bearing task yet — normal immediately after create
+            # while Swarm schedules the container. Callers handle None.
+            logger.debug(f"No running task yet for service {self.name}")
             return None
 
 

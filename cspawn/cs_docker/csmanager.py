@@ -3,6 +3,7 @@ import logging
 import os
 import socket
 import threading
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -756,6 +757,76 @@ class CodeServerManager(ServicesManager):
                 s.sync_to_db(check_ready=check_ready)
             except Exception as e:
                 logger.warning("Skipping service %s during sync: %s", service_id, e)
+
+    def unsettled_hosts(self) -> list:
+        """Return CodeHost rows that are NOT in a terminal/known state.
+
+        A host is "settled" once it is either fully up (app_state == READY) or
+        definitively gone (state/app_state == MIA). Everything else — UNKNOWN,
+        STARTING, or container-RUNNING-but-app-not-READY — is still converging
+        and is worth re-syncing. This is the set `sync_converge` keeps chasing.
+        """
+        rows = CodeHost.query.all()
+        unsettled = []
+        for ch in rows:
+            if ch.is_mia:
+                continue
+            if ch.app_state == HostState.READY.value:
+                continue
+            unsettled.append(ch)
+        return unsettled
+
+    def sync_converge(self, *, max_passes: int = 8, deadline_s: float = 90.0,
+                      initial_delay: float = 2.0, max_delay: float = 12.0):
+        """Sync repeatedly, focusing on hosts in an unknown/transient state,
+        until they all settle (READY or MIA) or a deadline is hit.
+
+        A single `sync()` is a snapshot: a host caught mid-start stays UNKNOWN/
+        STARTING in the DB until the next manual sync. This drives state to
+        convergence — each pass runs the normal reconciliation (with readiness
+        probing) and then, if any hosts are still unsettled, waits (backoff) and
+        syncs again. Bounded by both pass count and wall-clock so it can run
+        safely on a cron without ever hanging.
+
+        Returns a dict summary: {passes, settled, unsettled, unsettled_names}.
+        Time/delay must be injected via callers' clock in tests; here we use
+        time.monotonic()/time.sleep (the workflow-script clock restrictions do
+        not apply to application code).
+        """
+        start = time.monotonic()
+        passes = 0
+        remaining: list = []
+        while passes < max_passes:
+            passes += 1
+            self.sync(check_ready=True)
+            remaining = self.unsettled_hosts()
+            logger.info(
+                "sync_converge pass %d/%d: %d host(s) still unsettled",
+                passes, max_passes, len(remaining),
+            )
+            if not remaining:
+                break
+            if time.monotonic() - start >= deadline_s:
+                logger.warning(
+                    "sync_converge hit deadline (%.0fs) with %d unsettled host(s): %s",
+                    deadline_s, len(remaining),
+                    ", ".join(ch.service_name for ch in remaining),
+                )
+                break
+            # Backoff between passes; cap so a long deadline still polls steadily.
+            delay = min(initial_delay * (1.5 ** (passes - 1)), max_delay)
+            # Don't sleep past the deadline.
+            delay = min(delay, max(0.0, deadline_s - (time.monotonic() - start)))
+            if delay > 0:
+                time.sleep(delay)
+
+        settled_names = [ch.service_name for ch in remaining]
+        return {
+            "passes": passes,
+            "settled": CodeHost.query.count() - len(remaining),
+            "unsettled": len(remaining),
+            "unsettled_names": settled_names,
+        }
 
     def remove_all(self):
         """Remove all Code Server instances."""

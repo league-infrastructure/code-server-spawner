@@ -186,10 +186,17 @@ def reap(ctx, dry_run: bool):
 
 @host.command()
 @click.option("-N", "--dry-run", is_flag=True, help="Show what would be done, without making any changes.")
+@click.option("--no-push", is_flag=True, help="Skip pushing each host's changes to GitHub before stopping it.")
 @click.pass_context
-def purge(ctx, dry_run: bool):
-    """Remove containers that are purgable."""
+def purge(ctx, dry_run: bool, no_push: bool):
+    """Remove containers that are purgable.
+
+    By default each purgeable host's local changes are pushed to GitHub
+    before the host is stopped and deleted, so no student work is lost.
+    Pass --no-push to skip the push and purge immediately.
+    """
     from datetime import datetime, timezone
+    from cspawn.cs_github.repo import CodeHostRepo
 
     app = get_app(ctx)
 
@@ -203,6 +210,17 @@ def purge(ctx, dry_run: bool):
                 print(ch.service_name + ": ", end=" ")
 
                 if not dry_run:
+                    # Push the host's work to GitHub before tearing it down,
+                    # unless the operator opted out. A push failure must not
+                    # abort the purge — log it and still remove the host.
+                    if not no_push:
+                        try:
+                            ch_repo = CodeHostRepo.new_codehostrepo(app, ch.service_name)
+                            ch_repo.push()
+                            print("(pushed)", end=" ")
+                        except Exception as e:
+                            print(f"(push failed: {e})", end=" ")
+
                     # Stopping the service tunnels to the node and can fail if the
                     # node is unreachable. Don't let one bad host abort the batch;
                     # still delete the DB record so the orphan doesn't linger.
@@ -215,18 +233,42 @@ def purge(ctx, dry_run: bool):
                     app.db.session.delete(ch)
                     print(f"Stopped and deleted:   {ch.service_name}")
                 else:
-                    print(f"Would stop and delete: {ch.service_name}")
+                    action = "stop and delete" if no_push else "push, stop and delete"
+                    print(f"Would {action}: {ch.service_name}")
 
         if not dry_run:
             app.db.session.commit()
 
 @host.command()
+@click.option("--converge", is_flag=True,
+              help="Keep re-syncing hosts in an unknown/transient state until they "
+                   "settle (ready or MIA) or the deadline is hit.")
+@click.option("--deadline", "deadline_s", type=float, default=90.0, show_default=True,
+              help="Max wall-clock seconds for --converge.")
+@click.option("--max-passes", type=int, default=8, show_default=True,
+              help="Max sync passes for --converge.")
 @click.pass_context
-def dbsync(ctx):
-    """Sync the database with the docker Code Hosts. Same as `cspawnctl db sync`."""
+def dbsync(ctx, converge: bool, deadline_s: float, max_passes: int):
+    """Sync the database with the docker Code Hosts. Same as `cspawnctl db sync`.
+
+    Without flags this is a single reconciliation pass. With --converge it
+    repeatedly re-syncs hosts that are still in an unknown/transient state
+    (just-created or mid-reschedule) until every host settles to a known state
+    (ready or MIA) or the deadline expires — intended to be cron'd so the DB
+    self-heals after bursts of host creation or node rebalancing.
+    """
     app = get_app(ctx)
     with app.app_context():
-        app.csm.sync(check_ready=True)
+        if converge:
+            summary = app.csm.sync_converge(deadline_s=deadline_s, max_passes=max_passes)
+            click.echo(
+                f"Converged in {summary['passes']} pass(es): "
+                f"{summary['settled']} settled, {summary['unsettled']} unsettled."
+            )
+            if summary["unsettled"]:
+                click.echo("Still unsettled: " + ", ".join(summary["unsettled_names"]))
+        else:
+            app.csm.sync(check_ready=True)
 
 
 @host.command()

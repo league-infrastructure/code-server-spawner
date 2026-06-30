@@ -515,12 +515,12 @@ class CodeHost(db.Model):
 
 
 class NodeOp(db.Model):
-    """Tracks a single manual node operation (expand or remove) launched by the admin UI."""
+    """Tracks a single manual node operation (expand, remove, or rebalance) launched by the admin UI."""
 
     __tablename__ = "node_ops"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    kind = Column(String(16), nullable=False)          # 'expand' or 'remove'
+    kind = Column(String(16), nullable=False)          # 'expand' | 'remove' | 'rebalance'
     tier = Column(String(100), nullable=True)           # tier label, e.g. 'large'
     target_fqdn = Column(String(255), nullable=True)   # FQDN for remove operations
     status = Column(String(16), nullable=False, default="pending")  # pending|running|done|failed

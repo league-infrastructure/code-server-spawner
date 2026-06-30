@@ -195,7 +195,7 @@ def _make_noop_command(name: str) -> click.Command:
     return _cmd
 
 
-def _run_op(op_id: str, app, tmp_path, expand_cmd=None, stop_node_cmd=None):
+def _run_op(op_id: str, app, tmp_path, expand_cmd=None, stop_node_cmd=None, rebalance_cmd=None):
     """Invoke op_run with infrastructure mocked.
 
     Patches:
@@ -203,16 +203,20 @@ def _run_op(op_id: str, app, tmp_path, expand_cmd=None, stop_node_cmd=None):
     - cspawn.cli.node.get_config → returns {DATA_DIR: str(tmp_path)}
     - cspawn.cli.node.expand → expand_cmd (default: noop command)
     - cspawn.cli.node.stop_node → stop_node_cmd (default: noop command)
+    - cspawn.cli.node.rebalance → rebalance_cmd (default: noop command)
     """
     if expand_cmd is None:
         expand_cmd = _make_noop_command("expand")
     if stop_node_cmd is None:
         stop_node_cmd = _make_noop_command("stop")
+    if rebalance_cmd is None:
+        rebalance_cmd = _make_noop_command("rebalance")
 
     with patch("cspawn.cli.util.get_app", return_value=app), \
          patch("cspawn.cli.node.get_config", return_value={"DATA_DIR": str(tmp_path)}), \
          patch("cspawn.cli.node.expand", expand_cmd), \
-         patch("cspawn.cli.node.stop_node", stop_node_cmd):
+         patch("cspawn.cli.node.stop_node", stop_node_cmd), \
+         patch("cspawn.cli.node.rebalance", rebalance_cmd):
         runner = CliRunner(mix_stderr=False)
         result = runner.invoke(
             op_run,
@@ -308,6 +312,46 @@ class TestOpRunRemove:
         assert captured_kwargs[0]["dry_run"] is False
 
 
+class TestOpRunRebalance:
+    def test_rebalance_lifecycle_pending_to_done(self, app_db, tmp_path):
+        """kind='rebalance' op transitions pending→running→done."""
+        app, _db = app_db
+        op_id = _make_op(app_db, kind="rebalance", tier=None)
+
+        result = _run_op(op_id, app, tmp_path)
+        assert result.exit_code == 0, result.output
+
+        with app.app_context():
+            op = _db.session.get(NodeOp, op_id)
+            assert op.status == "done"
+            assert op.exit_code == 0
+            assert op.started_at is not None
+            assert op.finished_at is not None
+
+    def test_rebalance_invokes_rebalance_command(self, app_db, tmp_path):
+        """kind='rebalance' calls ctx.invoke(rebalance, dry_run=False, no_push=False, ...)."""
+        app, _db = app_db
+        op_id = _make_op(app_db, kind="rebalance", tier=None)
+
+        captured_kwargs: list[dict] = []
+
+        @click.command(name="rebalance")
+        @click.option("-N", "--dry-run", "dry_run", is_flag=True, default=False)
+        @click.option("--no-push", "no_push", is_flag=True, default=False)
+        @click.option("--max-moves", "max_moves", type=int, default=None)
+        @click.pass_context
+        def mock_rebalance(ctx, dry_run, no_push, max_moves):
+            captured_kwargs.append({"dry_run": dry_run, "no_push": no_push, "max_moves": max_moves})
+
+        result = _run_op(op_id, app, tmp_path, rebalance_cmd=mock_rebalance)
+        assert result.exit_code == 0, result.output
+
+        assert len(captured_kwargs) == 1, f"Expected one rebalance call, got {captured_kwargs}"
+        assert captured_kwargs[0]["dry_run"] is False
+        assert captured_kwargs[0]["no_push"] is False
+        assert captured_kwargs[0]["max_moves"] is None
+
+
 class TestOpRunFailurePath:
     def test_ctx_invoke_raises_sets_failed_status(self, app_db, tmp_path):
         """If ctx.invoke raises, status='failed', exit_code=1, message populated."""
@@ -331,7 +375,12 @@ class TestOpRunFailurePath:
             assert op.finished_at is not None
 
     def test_log_file_written_on_failure(self, app_db, tmp_path):
-        """Log file is created even when the operation fails."""
+        """Log file is created AND non-empty (contains the failure) when the op fails.
+
+        Regression: previously a failed op left a 0-byte log because op_run only
+        redirected sys.stdout/stderr, while expand narrates via the logging
+        module (whose handler was bound to the original stderr → /dev/null).
+        """
         app, _db = app_db
         op_id = _make_op(app_db, kind="expand", tier="large")
 
@@ -347,6 +396,38 @@ class TestOpRunFailurePath:
             op = _db.session.get(NodeOp, op_id)
             assert op.log_path is not None
             assert Path(op.log_path).exists()
+            contents = Path(op.log_path).read_text()
+            # The failure headline must be in the log itself, not only op.message.
+            assert "disk full" in contents, f"log was empty/missing failure: {contents!r}"
+
+    def test_log_file_captures_logging_output(self, app_db, tmp_path):
+        """log.info()/log.warning() emitted by the invoked command land in the log file.
+
+        This is the core of the fix: the FileHandler attached in op_run captures
+        the logging module output, not just click.echo/print.
+        """
+        import logging as _logging
+
+        app, _db = app_db
+        op_id = _make_op(app_db, kind="expand", tier="large")
+
+        @click.command(name="expand")
+        @click.option("--tier", "tier_name", default=None)
+        @click.pass_context
+        def chatty_expand(ctx, tier_name):
+            _logging.getLogger("cspawn.cli").info("EXPAND-LOG-MARKER step one")
+            _logging.getLogger("cspawn.docker").warning("DOCKER-LOG-MARKER step two")
+            click.echo("ECHO-MARKER done")
+
+        _run_op(op_id, app, tmp_path, expand_cmd=chatty_expand)
+
+        with app.app_context():
+            op = _db.session.get(NodeOp, op_id)
+            contents = Path(op.log_path).read_text()
+
+        assert "EXPAND-LOG-MARKER step one" in contents
+        assert "DOCKER-LOG-MARKER step two" in contents
+        assert "ECHO-MARKER done" in contents
 
 
 # ---------------------------------------------------------------------------

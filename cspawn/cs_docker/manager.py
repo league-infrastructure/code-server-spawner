@@ -320,8 +320,17 @@ class ServicesManager(DockerManager):
 
             if EndpointSpec and port_configs:
                 kwargs["endpoint_spec"] = EndpointSpec(ports=port_configs)
+            elif ports_val:
+                # Ports were requested but none parsed into a valid mapping —
+                # worth a warning since the caller expected published ports.
+                logger.warning(
+                    f"No valid port mappings parsed from {ports_val!r}; ports will not be published"
+                )
             else:
-                logger.warning("No valid port mappings found; ports will not be published")
+                # No ports requested (ports=None/[]). Expected for code hosts,
+                # which are reached via the Caddy reverse proxy, not Swarm
+                # ingress. Not a problem.
+                logger.debug("No ports requested; service will not publish any (proxied via Caddy)")
 
             # Remove raw 'ports' from kwargs; Swarm uses endpoint_spec
             del kwargs["ports"]
