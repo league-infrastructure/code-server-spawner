@@ -356,12 +356,25 @@ def teardown(ctx, keep_students, keep_repos, dry_run):
         stopped = repos_deleted = rows_deleted = users_deleted = 0
 
         for username, _ in _iter_test_users():
+            # Resolve the CodeHost row up front so the stop step below can
+            # route through the shared stop_host() choke point (push, stop,
+            # delete) instead of a bare service .stop() — test-student work
+            # is never meaningfully pushed, so push is always disabled here.
+            ch = CodeHost.query.filter_by(service_name=username).first()
+
             s = app.csm.get_by_username(username)
             if s:
                 if dry_run:
                     click.echo(f"  would stop service {username}")
                 else:
-                    s.stop()
+                    if ch:
+                        result = app.csm.stop_host(ch, push=False)
+                        if result.stop_error:
+                            logger.warning("Stop failed for %s: %s", username, result.stop_error)
+                    else:
+                        # Orphan Swarm service with no DB record — nothing
+                        # for stop_host() to operate on.
+                        s.stop()
                 stopped += 1
 
             if gorg and proto:
@@ -374,11 +387,13 @@ def teardown(ctx, keep_students, keep_repos, dry_run):
                     except Exception as e:
                         logger.warning("Failed to delete repo for %s: %s", username, e)
 
-            ch = CodeHost.query.filter_by(service_name=username).first()
             if ch:
                 if dry_run:
                     click.echo(f"  would delete CodeHost row {username}")
-                else:
+                elif not s:
+                    # stop_host() above already deleted+committed the row
+                    # when a live service existed; only delete directly here
+                    # when there was no service to stop (DB-only orphan row).
                     db.session.delete(ch)
                 rows_deleted += 1
 

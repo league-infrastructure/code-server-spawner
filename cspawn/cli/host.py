@@ -111,25 +111,53 @@ def start(ctx, service_name, no_wait):
 @host.command()
 @click.argument("service_name", required=False)
 @click.option("-a", "--all", is_flag=True, help="Stop all services.")
+@click.option("--no-push", is_flag=True, help="Skip pushing each host's changes to GitHub before stopping it.")
 @click.pass_context
-def stop(ctx, service_name, all):
-    """Stop the specified service or all services if --all is provided."""
+def stop(ctx, service_name, all, no_push):
+    """Stop the specified service or all services if --all is provided.
 
+    By default each host's local changes are pushed to GitHub before it is
+    stopped, so no student work is lost. Pass --no-push to skip the push.
+    An orphan Swarm service with no matching CodeHost DB row is stopped
+    directly (nothing to push from) with a warning.
+    """
+    logger = get_logger(ctx)
     app = get_app(ctx)
-    if all:
-        for s in app.csm.list():
-            print(f"Stopping {s.name}")
-            s.stop()
-        print("All services stopped successfully")
-    elif service_name:
-        try:
-            s = app.csm.get(service_name)
-            s.stop()
-            print(f"Service {service_name} stopped successfully")
-        except NotFound:
-            print(f"Service {service_name} not found")
-    else:
-        print("Please provide a service name or use --all to stop all services.")
+
+    with app.app_context():
+        if all:
+            for s in app.csm.list():
+                ch = s.rec
+                if ch:
+                    result = app.csm.stop_host(ch, push=not no_push)
+                    if result.push_error:
+                        print(f"Stopping {s.name} (push failed: {result.push_error})")
+                    else:
+                        print(f"Stopping {s.name}")
+                else:
+                    logger.warning(f"No CodeHost record for {s.name}; stopping without push")
+                    print(f"Stopping {s.name} (no DB record — push skipped)")
+                    try:
+                        s.stop()
+                    except Exception as e:
+                        print(f"Failed to stop {s.name}: {e}")
+            print("All services stopped successfully")
+        elif service_name:
+            ch = CodeHost.query.filter_by(service_name=service_name).first()
+            if ch:
+                app.csm.stop_host(ch, push=not no_push)
+                print(f"Service {service_name} stopped successfully")
+            else:
+                try:
+                    s = app.csm.get(service_name)
+                    logger.warning(f"No CodeHost record for {service_name}; stopping without push")
+                    print(f"No CodeHost record for {service_name}; stopping without push")
+                    s.stop()
+                    print(f"Service {service_name} stopped successfully")
+                except NotFound:
+                    print(f"Service {service_name} not found")
+        else:
+            print("Please provide a service name or use --all to stop all services.")
 
 
 @host.command()
@@ -195,9 +223,6 @@ def purge(ctx, dry_run: bool, no_push: bool):
     before the host is stopped and deleted, so no student work is lost.
     Pass --no-push to skip the push and purge immediately.
     """
-    from datetime import datetime, timezone
-    from cspawn.cs_github.repo import CodeHostRepo
-
     app = get_app(ctx)
 
     with app.app_context():
@@ -210,27 +235,20 @@ def purge(ctx, dry_run: bool, no_push: bool):
                 print(ch.service_name + ": ", end=" ")
 
                 if not dry_run:
-                    # Push the host's work to GitHub before tearing it down,
-                    # unless the operator opted out. A push failure must not
-                    # abort the purge — log it and still remove the host.
-                    if not no_push:
-                        try:
-                            ch_repo = CodeHostRepo.new_codehostrepo(app, ch.service_name)
-                            ch_repo.push()
-                            print("(pushed)", end=" ")
-                        except Exception as e:
-                            print(f"(push failed: {e})", end=" ")
+                    # Push, stop, and delete via the shared choke point. Each
+                    # step is independently best-effort inside stop_host() —
+                    # a push or stop failure never aborts the purge, and the
+                    # DB record is still removed so the orphan doesn't linger.
+                    result = app.csm.stop_host(ch, push=not no_push)
 
-                    # Stopping the service tunnels to the node and can fail if the
-                    # node is unreachable. Don't let one bad host abort the batch;
-                    # still delete the DB record so the orphan doesn't linger.
-                    try:
-                        s = app.csm.get(ch)
-                        if s:
-                            s.stop()
-                    except Exception as e:
-                        print(f"(stop failed: {e})", end=" ")
-                    app.db.session.delete(ch)
+                    if result.pushed:
+                        print("(pushed)", end=" ")
+                    elif result.push_error:
+                        print(f"(push failed: {result.push_error})", end=" ")
+
+                    if result.stop_error:
+                        print(f"(stop failed: {result.stop_error})", end=" ")
+
                     print(f"Stopped and deleted:   {ch.service_name}")
                 else:
                     action = "stop and delete" if no_push else "push, stop and delete"

@@ -258,6 +258,10 @@ def rebalance(ctx, dry_run, no_push, max_moves):
                 from cspawn.cli.util import get_app
                 app = get_app(ctx)
                 with app.app_context():
+                    # Direct CodeHostRepo.push() call, not stop_host() — a
+                    # rebalance re-pins the service and keeps the DB row, it
+                    # doesn't stop it. Shares CodeHostRepo.push()'s ticket-001
+                    # timeout hardening automatically since it's the same method.
                     CodeHostRepo.new_codehostrepo(app, user).push()
                 click.echo(f"  {user}: pushed", nl=False)
             except Exception as e:

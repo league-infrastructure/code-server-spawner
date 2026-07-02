@@ -11,11 +11,18 @@ def sys():
 
 
 @sys.command()
+@click.option("--no-push", is_flag=True, help="Skip pushing each host's changes to GitHub before shutdown.")
 @click.pass_context
-def shutdown(ctx):
-    """Shutdown the system."""
+def shutdown(ctx, no_push):
+    """Shutdown the system.
+
+    By default every host's local changes are pushed to GitHub before it is
+    stopped and removed, so no student work is lost. Pass --no-push to skip
+    the push and shut down immediately.
+    """
     app = get_app(ctx)
-    app.csm.remove_all()
+    with app.app_context():
+        app.csm.remove_all(push=not no_push)
     print("System shutdown initiated.")
 
 

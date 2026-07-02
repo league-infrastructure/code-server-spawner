@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: Migrate CLI stop paths onto stop_host, add --no-push flags, refactor host purge
-status: open
+status: done
 use-cases:
 - SUC-005
 - SUC-006
@@ -34,46 +34,46 @@ completing it satisfies every stop path enumerated in the issue.
 
 ## Acceptance Criteria
 
-- [ ] `cspawn/cli/host.py` `stop` command (currently lines 111-132)
+- [x] `cspawn/cli/host.py` `stop` command (currently lines 111-132)
       gains a `--no-push` flag (`is_flag=True`, default `False`, i.e.
       push happens by default — consistent with every other migrated
       path).
-- [ ] `stop <name>`: resolves the `CodeHost` row for `name` via
+- [x] `stop <name>`: resolves the `CodeHost` row for `name` via
       `CodeHost.query.filter_by(service_name=...).first()`; if found,
       calls `app.csm.stop_host(ch, push=not no_push)`; if no matching
       `CodeHost` row exists (orphan Swarm service with no DB record),
       falls back to a direct `s.stop()` with a printed/logged warning
       that push was skipped because there is no DB record to push from.
-- [ ] `stop --all`: for each live service `s` returned by
+- [x] `stop --all`: for each live service `s` returned by
       `app.csm.list()`, resolves its `CodeHost` row via the existing
       `CSMService.rec` property; calls `stop_host(ch, push=not no_push)`
       when a row exists, else falls back as above; one host's failure
       does not abort the loop over the rest.
-- [ ] `cspawn/cli/sys.py` `shutdown` command (currently lines 13-19)
+- [x] `cspawn/cli/sys.py` `shutdown` command (currently lines 13-19)
       gains a `--no-push` flag, passed through as
       `app.csm.remove_all(push=not no_push)`.
-- [ ] `cspawn/cli/host.py` `purge` command's (currently lines 187-240)
+- [x] `cspawn/cli/host.py` `purge` command's (currently lines 187-240)
       inline push/stop/delete block — `CodeHostRepo.new_codehostrepo(...).push()`
       then `app.csm.get(ch)`/`s.stop()` then `db.session.delete(ch)`,
       each in its own try/except — is replaced by a single
       `app.csm.stop_host(ch, push=not no_push)` call per targeted host.
-- [ ] `purge`'s existing observable behavior is unchanged: same
+- [x] `purge`'s existing observable behavior is unchanged: same
       `--no-push` / `--dry-run` flags; same per-host stdout shape
       (`"(pushed)"` / `"(push failed: ...)"` / `"Stopped and deleted:
       <name>"` for the real run; `"Would push, stop and delete: <name>"`
       / `"Would stop and delete: <name>"` for `--dry-run`); same final
       `app.db.session.commit()` timing (only after the loop, only when
       not `--dry-run`).
-- [ ] `cspawn/cli/test.py` `teardown` command's (currently lines
+- [x] `cspawn/cli/test.py` `teardown` command's (currently lines
       339-412) `s.stop()` call is replaced by
       `app.csm.stop_host(ch, push=False)` when a `CodeHost` row exists
       for the test student being torn down; the existing `--dry-run`
       output (`"would stop service <name>"`) is unchanged.
-- [ ] `cspawn/cli/node.py` `rebalance` is verified unchanged (no code
+- [x] `cspawn/cli/node.py` `rebalance` is verified unchanged (no code
       edit expected) — confirm it inherits the ticket-001 timeout
       hardening automatically since it calls the same
       `CodeHostRepo(...).push()` method.
-- [ ] Unit tests (Click `CliRunner`, mocking `app.csm` /
+- [x] Unit tests (Click `CliRunner`, mocking `app.csm` /
       `CodeServerManager.stop_host`) cover: `--no-push` skips push on
       both `host stop` and `sys shutdown`; `host purge`'s stdout format
       is unchanged before/after the refactor for the pushed / push-failed
