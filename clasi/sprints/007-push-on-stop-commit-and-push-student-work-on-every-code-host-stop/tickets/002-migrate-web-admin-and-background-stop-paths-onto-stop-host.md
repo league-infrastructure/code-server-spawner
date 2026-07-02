@@ -1,7 +1,7 @@
 ---
 id: '002'
 title: Migrate web, admin, and background stop paths onto stop_host
-status: open
+status: done
 use-cases:
 - SUC-001
 - SUC-002
@@ -33,50 +33,50 @@ subprocess-per-host isolation.
 
 ## Acceptance Criteria
 
-- [ ] `cspawn/main/routes/hosts.py` student `stop_host` route
+- [x] `cspawn/main/routes/hosts.py` student `stop_host` route
       (`main_bp.route("/host/<host_id>/stop")`, currently lines 17-56)
       calls `ca.csm.stop_host(code_host)` instead of `s.stop()` +
       manual `db.session.delete()`/`commit()`. The flash message
       reflects `StopResult.push_error` (warning: stopped but work may
       not be fully saved) vs. a clean push (success).
-- [ ] `cspawn/admin/routes.py` admin `stop_host` route
+- [x] `cspawn/admin/routes.py` admin `stop_host` route
       (`admin_bp.route("/host/<int:host_id>/stop")`, currently lines
       112-133) calls `ca.csm.stop_host(code_host)` instead of `s.stop()`
       + manual delete. The existing "service not found in Swarm but
       present in DB" case still results in the DB row being removed (now
       via `stop_host()`'s own stop-failure tolerance rather than a
       separate branch).
-- [ ] `cspawn/admin/teardown.py` `_stop_user_servers()` (currently lines
+- [x] `cspawn/admin/teardown.py` `_stop_user_servers()` (currently lines
       34-55) calls `app.csm.stop_host(ch)` per host instead of manual
       `s.stop()` + delete. `TeardownReport.servers_stopped` /
       `.failures` are populated from each `StopResult` (a push or stop
       failure is recorded as a failure entry but does not stop the loop
       from processing the user's remaining hosts — the existing
       continue-and-collect contract is preserved).
-- [ ] `cspawn/cs_docker/autoscale.py` `apply_reaper_zones()`'s
+- [x] `cspawn/cs_docker/autoscale.py` `apply_reaper_zones()`'s
       active-purge zone loop (currently ~lines 859-906: `app.csm.get(ch)`
       + `s.stop()` + `db.session.delete(ch)`) calls
       `app.csm.stop_host(ch)` instead. Zone classification and the
       15-minute idle threshold above it are unchanged.
-- [ ] `apply_reaper_zones()`'s dormant zone loop (currently ~lines
+- [x] `apply_reaper_zones()`'s dormant zone loop (currently ~lines
       811-857, force-remove-all) calls `app.csm.stop_host(ch)` per host
       instead of its manual sequence. `Class.purge_after` /
       `.purge_by` / `.target_nodes` clearing still happens regardless of
       individual host push/stop outcomes.
-- [ ] `apply_reaper_zones()`'s `dry_run=True` path is preserved exactly:
+- [x] `apply_reaper_zones()`'s `dry_run=True` path is preserved exactly:
       no `stop_host()` call is made when `dry_run` is `True` (matches
       existing dry-run print/log-only behavior).
-- [ ] `cspawn/main/routes/classes.py` `remove_students()` (currently
+- [x] `cspawn/main/routes/classes.py` `remove_students()` (currently
       lines 326-350) calls `ca.csm.stop_host(host)` instead of
       `ca.csm.stop_cs(host.service_name)` + manual
       `db.session.delete(host)`.
-- [ ] `main/routes/classes.py` `delete_class()` (lines 160-188) is left
+- [x] `main/routes/classes.py` `delete_class()` (lines 160-188) is left
       untouched — confirmed dead code (unreachable: the function returns
       early whenever `class_.students` is non-empty, so its
       `stop_cs(host.name)` loop — which also references a nonexistent
       `CodeHost.name` attribute — never executes). Out of scope per
       `architecture-update.md`.
-- [ ] Unit/integration tests updated or added for each of the five call
+- [x] Unit/integration tests updated or added for each of the five call
       sites, asserting `stop_host()` (not the old raw sequence) is
       invoked, and that a mocked push failure does not abort processing
       of the remaining hosts in any multi-host loop (reaper, teardown).

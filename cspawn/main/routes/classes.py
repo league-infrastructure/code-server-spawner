@@ -341,8 +341,16 @@ def remove_students():
         if student in class_.students:
             host = CodeHost.query.filter_by(service_name=student.username).first()
             if host:
-                ca.csm.stop_cs(host.service_name)
-                db.session.delete(host)
+                # stop_host() is best-effort and never raises (push, stop, and
+                # delete of the CodeHost row are each individually isolated
+                # inside it), so one host's push/stop failure can't abort the
+                # rest of the removal loop.
+                result = ca.csm.stop_host(host)
+                if result.push_error or result.stop_error:
+                    ca.logger.warning(
+                        "remove_students: stop_host issue for %s (push_error=%s stop_error=%s)",
+                        host.service_name, result.push_error, result.stop_error,
+                    )
 
             class_.students.remove(student)
 

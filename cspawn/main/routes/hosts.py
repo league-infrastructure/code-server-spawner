@@ -35,23 +35,15 @@ def stop_host(host_id) -> str:
         flash("You do not have permission to stop this host.", "danger")
         return redirect(return_url)
 
-    try:
-        s = ca.csm.get(code_host.service_id)
-    except KeyError:
-        s = None
-
-    if code_host:
-        if not s:
-            flash("Host not found", "danger")
-            return redirect(url_for("admin.list_code_hosts"))
-
-        s.stop()
-
-        db.session.delete(code_host)
-        db.session.commit()
-        flash("Host stopped", "success")
+    result = ca.csm.stop_host(code_host)
+    if result.push_error:
+        flash(
+            "Host stopped, but your work may not have been fully saved "
+            f"(push failed: {result.push_error}).",
+            "warning",
+        )
     else:
-        flash("Host not found", "danger")
+        flash("Host stopped", "success")
 
     return redirect(return_url)
 
