@@ -12,6 +12,9 @@ services:
       - 443:443
     environment:
       - CADDY_INGRESS_NETWORKS=caddy
+      # Coalesce docker-event bursts (mass purge/spawn) into fewer config
+      # reloads; a single host start otherwise triggers 2-3 reloads.
+      - CADDY_DOCKER_EVENT_THROTTLE_INTERVAL=10s
     networks:
       - caddy
     volumes:

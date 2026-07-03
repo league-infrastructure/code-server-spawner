@@ -392,6 +392,10 @@ def define_cs_container(
         "caddy.0_route.handle.reverse_proxy": "@ws {{upstreams 6080}}",
         "caddy.0_route.handle.reverse_proxy.transport": "http",
         "caddy.0_route.handle.reverse_proxy.transport.versions": "1.1",
+        # Keep established VNC websockets open across Caddy config reloads;
+        # caddy-docker-proxy reloads on every service create/remove, which
+        # otherwise closes every open websocket in the fleet (close 1001).
+        "caddy.0_route.handle.reverse_proxy.stream_close_delay": "4h",
         # VNC Proxy
         "caddy.1_route.handle": "/vnc/*",
         "caddy.1_route.handle_path": "/vnc/*",
@@ -399,6 +403,8 @@ def define_cs_container(
         # General Reverse Proxy
         "caddy.2_route.handle": "/*",
         "caddy.2_route.handle.reverse_proxy": "{{upstreams 80}}",
+        # code-server's own websocket must also survive reloads
+        "caddy.2_route.handle.reverse_proxy.stream_close_delay": "4h",
         f"caddy.basic_auth.{username}": hashed_pw,
     }
 
