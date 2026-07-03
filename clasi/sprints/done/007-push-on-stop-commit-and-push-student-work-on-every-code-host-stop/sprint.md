@@ -1,7 +1,7 @@
 ---
 id: '007'
-title: "Push-on-stop — commit and push student work on every code-host stop"
-status: planning-docs
+title: "Push-on-stop \u2014 commit and push student work on every code-host stop"
+status: done
 branch: sprint/007-push-on-stop-commit-and-push-student-work-on-every-code-host-stop
 use-cases:
 - SUC-001
