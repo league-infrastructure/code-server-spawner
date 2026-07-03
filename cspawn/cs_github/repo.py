@@ -53,7 +53,9 @@ class CodeHostRepo:
     def _get_service_container(self) -> "App":
         # Use app.csm to get the container object
         service = self.app.csm.get(self.service_name)
-        
+        if service is None:
+            raise ValueError(f"No service found for {self.service_name}")
+
         containers = list(service.containers)
         if not containers:
             raise ValueError(f"No containers found for service {self.service_name}")
@@ -70,9 +72,20 @@ class CodeHostRepo:
             raise ValueError("GITHUB_TOKEN is not configured for git operations")
         return {"GITHUB_TOKEN": token}
 
-    def push(self, branch: str = "master") -> int:
-        """Push local changes from the codehost's container to GitHub."""
+    def push(self, branch: str = "master", timeout: Optional[float] = None) -> int:
+        """Push local changes from the codehost's container to GitHub.
+
+        Args:
+            branch: Remote branch to push to.
+            timeout: Seconds to allow the underlying ``docker exec`` subprocess
+                to run before aborting. Defaults to the
+                ``CODEHOST_PUSH_TIMEOUT_S`` config key (falling back to 30s)
+                so a wedged SSH/docker-exec never hangs the calling thread
+                forever.
+        """
         import subprocess
+
+        effective_timeout = timeout or self.app.app_config.get("CODEHOST_PUSH_TIMEOUT_S", 30)
 
         service, container = self._get_service_container()
         env = self._git_environment()
@@ -106,7 +119,12 @@ class CodeHostRepo:
             "-e", f"GITHUB_TOKEN={env['GITHUB_TOKEN']}",
             container.id, "sh", "-c", cmd,
         ]
-        proc = subprocess.run(argv, capture_output=True, text=True)
+        try:
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=effective_timeout)
+        except subprocess.TimeoutExpired as e:
+            raise RuntimeError(
+                f"git push timed out after {effective_timeout}s for {self.username} on {node_host}"
+            ) from e
         if proc.stdout and proc.stdout.strip():
             print(proc.stdout.strip())
         if proc.returncode != 0:

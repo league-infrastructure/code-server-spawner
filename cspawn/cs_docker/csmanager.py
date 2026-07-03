@@ -5,6 +5,7 @@ import socket
 import threading
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -19,16 +20,33 @@ from slugify import slugify
 import docker
 from cspawn.cs_docker.manager import ServicesManager, logger
 from cspawn.cs_docker.proc import Container, Service
-from cspawn.cs_github.repo import GithubOrg
+from cspawn.cs_github.repo import CodeHostRepo, GithubOrg, StudentRepo
 from cspawn.models import CodeHost, HostState, User, db
 from cspawn.util.auth import basic_auth_hash, random_string
 from cspawn.util.exceptions import DockerException
 from docker import DockerClient
-from cspawn.cs_github.repo import StudentRepo
 
 from ..models import Class, ClassProto
 
 logger = logging.getLogger("cspawn.docker")  # noqa: F811
+
+
+@dataclass
+class StopResult:
+    """Outcome of a single `CodeServerManager.stop_host()` call.
+
+    Every step (push, stop, delete) is independently best-effort — a failure
+    in one step is recorded here but never prevents the remaining steps from
+    running.
+    """
+
+    service_name: str
+    pushed: bool = False
+    push_error: Optional[str] = None
+    stopped: bool = False
+    stop_error: Optional[str] = None
+    deleted: bool = False
+    skipped_push_mia: bool = False
 
 
 class CSMService(Service):
@@ -374,6 +392,10 @@ def define_cs_container(
         "caddy.0_route.handle.reverse_proxy": "@ws {{upstreams 6080}}",
         "caddy.0_route.handle.reverse_proxy.transport": "http",
         "caddy.0_route.handle.reverse_proxy.transport.versions": "1.1",
+        # Keep established VNC websockets open across Caddy config reloads;
+        # caddy-docker-proxy reloads on every service create/remove, which
+        # otherwise closes every open websocket in the fleet (close 1001).
+        "caddy.0_route.handle.reverse_proxy.stream_close_delay": "4h",
         # VNC Proxy
         "caddy.1_route.handle": "/vnc/*",
         "caddy.1_route.handle_path": "/vnc/*",
@@ -381,6 +403,8 @@ def define_cs_container(
         # General Reverse Proxy
         "caddy.2_route.handle": "/*",
         "caddy.2_route.handle.reverse_proxy": "{{upstreams 80}}",
+        # code-server's own websocket must also survive reloads
+        "caddy.2_route.handle.reverse_proxy.stream_close_delay": "4h",
         f"caddy.basic_auth.{username}": hashed_pw,
     }
 
@@ -674,6 +698,73 @@ class CodeServerManager(ServicesManager):
         if s:
             s.stop()
 
+    def stop_host(self, code_host: CodeHost, *, push: bool = True, branch: str = "master") -> StopResult:
+        """Push, stop, and delete a single CodeHost — the choke point every
+
+        stop path should call. Each step (push / stop / delete) is
+        independently best-effort: a failure in one step is logged and
+        recorded on the returned `StopResult`, but never prevents the
+        remaining steps from running, and this method itself never raises.
+
+        Sequence:
+          1. Push the host's local git state to GitHub, unless `push=False`
+             or the host is MIA (`code_host.is_mia`), in which case the push
+             is skipped cleanly (`skipped_push_mia=True`, INFO log).
+          2. Stop the live Swarm service, if any. A missing/already-gone
+             service (`self.get()` returns None) counts as a successful stop
+             — the goal state, "no live service," already holds.
+          3. Delete the `CodeHost` DB row and commit, rolling back on
+             failure.
+
+        Args:
+            code_host: The CodeHost row to stop. Must already be persisted.
+            push: If False, never calls `CodeHostRepo.push`, regardless of
+                `code_host.is_mia`.
+            branch: Branch to push to, forwarded to `CodeHostRepo.push`.
+
+        Returns:
+            A populated `StopResult` describing what happened at each step.
+        """
+        service_name = code_host.service_name
+        result = StopResult(service_name=service_name)
+
+        # 1. Push — best-effort, skipped cleanly for MIA hosts.
+        if push:
+            if code_host.is_mia:
+                result.skipped_push_mia = True
+                logger.info(
+                    "Skipping push for %s: host is MIA", service_name
+                )
+            else:
+                try:
+                    CodeHostRepo(code_host, self.app).push(branch=branch)
+                    result.pushed = True
+                except Exception as e:
+                    result.push_error = str(e)
+                    logger.error("Push failed for %s: %s", service_name, e)
+
+        # 2. Stop the live Swarm service — best-effort. A missing service is
+        #    treated as an already-successful stop.
+        try:
+            service = self.get(code_host)
+            if service is not None:
+                service.stop()
+            result.stopped = True
+        except Exception as e:
+            result.stop_error = str(e)
+            logger.error("Stop failed for %s: %s", service_name, e)
+
+        # 3. Delete the CodeHost DB row — best-effort, with rollback on failure.
+        try:
+            db.session.delete(code_host)
+            db.session.commit()
+            result.deleted = True
+        except Exception as e:
+            db.session.rollback()
+            logger.error("DB delete failed for %s: %s", service_name, e)
+
+        return result
+
     def _list_raw(self, filters: Optional[Dict[str, Any]] = {"label": "jtl.codeserver"}) -> List[CSMService]:
         """
         Call the parent list() without acquiring the SSH semaphore.
@@ -828,12 +919,21 @@ class CodeServerManager(ServicesManager):
             "unsettled_names": settled_names,
         }
 
-    def remove_all(self):
-        """Remove all Code Server instances."""
-        for c in self.list():
-            logger.info("Removing container %s (%s)", c.name, c.id)
-            self.repo.remove_by_id(c.id)
-            c.remove()
+    def remove_all(self, *, push: bool = True) -> List[StopResult]:
+        """Stop and remove every CodeHost row via `stop_host()`.
+
+        Args:
+            push: Forwarded to `stop_host()` for every row; set False to
+                skip pushing student work before removal.
+
+        Returns:
+            One `StopResult` per `CodeHost` row processed.
+        """
+        results = []
+        for ch in CodeHost.query.all():
+            logger.info("Removing code host %s (id=%s)", ch.service_name, ch.id)
+            results.append(self.stop_host(ch, push=push))
+        return results
 
     def get_by_hostname(self, username):
         """

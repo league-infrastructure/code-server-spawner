@@ -32,27 +32,28 @@ class TeardownReport:
 
 
 def _stop_user_servers(app, user: User, report: TeardownReport) -> None:
-    """Stop + remove every CodeHost belonging to the user and its swarm service."""
+    """Stop + remove every CodeHost belonging to the user and its swarm service.
+
+    Delegates to ``CodeServerManager.stop_host()`` (push, stop, delete), which
+    is itself best-effort and never raises: a push or stop failure for one
+    host is recorded here but never aborts the loop, and the DB record is
+    still removed when possible so an orphan doesn't linger — the original
+    continue-and-collect contract.
+    """
     hosts: List[CodeHost] = list(CodeHost.query.filter_by(user_id=user.id).all())
 
     for ch in hosts:
         name = ch.service_name or ch.service_id or f"host:{ch.id}"
-        # Stopping tunnels to the swarm node and can fail if the node is
-        # unreachable. Don't let one bad host abort the batch; still delete the
-        # DB record so the orphan doesn't linger.
-        try:
-            s = app.csm.get(ch)
-            if s:
-                s.stop()
-        except Exception as e:  # noqa: BLE001 - report, don't abort
-            report.failures.append(f"stop server {name}: {e}")
-        try:
-            db.session.delete(ch)
-            db.session.commit()
+        result = app.csm.stop_host(ch)
+
+        if result.push_error or result.stop_error:
+            detail = result.push_error or result.stop_error
+            report.failures.append(f"stop server {name}: {detail}")
+
+        if result.deleted:
             report.servers_stopped.append(name)
-        except Exception as e:  # noqa: BLE001
-            db.session.rollback()
-            report.failures.append(f"delete host record {name}: {e}")
+        else:
+            report.failures.append(f"delete host record {name}: record not removed")
 
 
 def _delete_user_repos(app, user: User, report: TeardownReport) -> None:

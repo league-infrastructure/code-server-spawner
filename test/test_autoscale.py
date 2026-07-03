@@ -1380,10 +1380,29 @@ class TestApplyReaperZones:
 
             return cls.id, host.id
 
-    def _make_app_with_mock_csm(self):
-        """Return (app, db) with app.csm mocked to avoid Docker calls."""
+    def _make_app_with_mock_csm(self, stop_host_side_effect=None):
+        """Return (app, db, mock_csm) with app.csm mocked to avoid Docker calls.
+
+        ``apply_reaper_zones`` now delegates the push/stop/delete sequence to
+        a single ``app.csm.stop_host(ch)`` call (ticket 007-002). By default,
+        ``mock_csm.stop_host`` performs the same caller-visible effect the
+        real ``CodeServerManager.stop_host()`` has for these tests' purposes
+        — deleting the ``CodeHost`` row and committing — and returns a
+        successful ``StopResult``, so existing "host is gone from the DB"
+        assertions continue to hold without needing live Docker/GitHub.
+        Pass ``stop_host_side_effect`` to simulate push/stop/delete failures.
+        """
+        from cspawn.cs_docker.csmanager import StopResult
+
         app, db = _make_reaper_flask_app()
         mock_csm = MagicMock()
+
+        def _default_stop_host(ch, *, push=True, branch="master"):
+            db.session.delete(ch)
+            db.session.commit()
+            return StopResult(service_name=ch.service_name, pushed=push, stopped=True, deleted=True)
+
+        mock_csm.stop_host.side_effect = stop_host_side_effect or _default_stop_host
         app.csm = mock_csm
         return app, db, mock_csm
 
@@ -1413,8 +1432,8 @@ class TestApplyReaperZones:
             host = CodeHost.query.get(host_id)
             assert host is not None
 
-        # csm.get must never have been called
-        mock_csm.get.assert_not_called()
+        # csm.stop_host must never have been called
+        mock_csm.stop_host.assert_not_called()
 
     def test_protected_zone_exactly_at_boundary(self):
         """Boundary check: now exactly equal to purge_after is active-purge, not protected."""
@@ -1454,17 +1473,15 @@ class TestApplyReaperZones:
 
         cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
 
-        # Set up mock csm.get to return a mock service
-        mock_svc = MagicMock()
-        mock_csm.get.return_value = mock_svc
-
         class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
         result = apply_reaper_zones(app, class_rows, [], now, dry_run=False)
 
         assert result[cls_id] == "active-purge"
 
-        # stop() must have been called on the service
-        mock_svc.stop.assert_called_once()
+        # stop_host() must have been called exactly once, for this host.
+        mock_csm.stop_host.assert_called_once()
+        (called_host,), _ = mock_csm.stop_host.call_args
+        assert called_host.id == host_id
 
         # DB record must be gone
         with app.app_context():
@@ -1492,7 +1509,7 @@ class TestApplyReaperZones:
             host = CodeHost.query.get(host_id)
             assert host is not None, "Non-idle host must not be deleted"
 
-        mock_csm.get.assert_not_called()
+        mock_csm.stop_host.assert_not_called()
 
     def test_active_purge_exactly_15min_idle_removed(self):
         """Active-purge zone: host at exactly 15 min idle threshold is removed."""
@@ -1506,7 +1523,6 @@ class TestApplyReaperZones:
         updated_at = now - timedelta(minutes=15)  # exactly 15 minutes
 
         cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
-        mock_csm.get.return_value = MagicMock()
 
         class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
         apply_reaper_zones(app, class_rows, [], now, dry_run=False)
@@ -1530,16 +1546,17 @@ class TestApplyReaperZones:
         updated_at = now - timedelta(minutes=2)
 
         cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
-        mock_svc = MagicMock()
-        mock_csm.get.return_value = mock_svc
 
         class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
         result = apply_reaper_zones(app, class_rows, [], now, dry_run=False)
 
         assert result[cls_id] == "dormant"
 
-        # Service must be stopped (no idle check in dormant zone)
-        mock_svc.stop.assert_called_once()
+        # stop_host() must have been called exactly once, for this host
+        # (no idle check in dormant zone).
+        mock_csm.stop_host.assert_called_once()
+        (called_host,), _ = mock_csm.stop_host.call_args
+        assert called_host.id == host_id
 
         # DB record must be gone
         with app.app_context():
@@ -1565,7 +1582,6 @@ class TestApplyReaperZones:
             cls.target_nodes = 5
             db.session.commit()
 
-        mock_csm.get.return_value = MagicMock()
         class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
         apply_reaper_zones(app, class_rows, [], now, dry_run=False)
 
@@ -1591,7 +1607,6 @@ class TestApplyReaperZones:
         updated_at = now - timedelta(hours=2)
 
         cls_id, _ = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
-        mock_csm.get.return_value = MagicMock()
 
         class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
         apply_reaper_zones(app, class_rows, [], now, dry_run=False)
@@ -1628,7 +1643,7 @@ class TestApplyReaperZones:
             host = CodeHost.query.get(host_id)
             assert host is not None, "dry_run must not delete hosts"
 
-        mock_csm.get.assert_not_called()
+        mock_csm.stop_host.assert_not_called()
 
     def test_dry_run_dormant_no_mutations(self):
         """dry_run=True in dormant zone: nothing force-removed, class fields unchanged."""
@@ -1657,7 +1672,7 @@ class TestApplyReaperZones:
             assert cls.purge_after is not None, "dry_run must not clear purge_after"
             assert cls.purge_by is not None, "dry_run must not clear purge_by"
 
-        mock_csm.get.assert_not_called()
+        mock_csm.stop_host.assert_not_called()
 
     # ── 5. Manager/leader node safety ─────────────────────────────────────────
 
@@ -1678,7 +1693,6 @@ class TestApplyReaperZones:
         updated_at = now - timedelta(hours=2)
 
         cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
-        mock_csm.get.return_value = MagicMock()
 
         class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
         result = apply_reaper_zones(app, class_rows, [], now, dry_run=False)
@@ -1761,7 +1775,6 @@ class TestApplyReaperZones:
         updated_at = now - timedelta(minutes=1)  # not idle — only dormant would remove
 
         cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
-        mock_csm.get.return_value = MagicMock()
 
         class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
         result = apply_reaper_zones(app, class_rows, [], now, dry_run=False)
@@ -1794,3 +1807,185 @@ class TestApplyReaperZones:
         class_rows = [{"id": 42, "purge_after": None, "purge_by": now + timedelta(hours=1)}]
         result = apply_reaper_zones(app, class_rows, [], now, dry_run=False)
         assert result == {}
+
+    # ── 9. Both zones call stop_host(), not the old get()/s.stop() pair ──────
+
+    def test_active_purge_calls_stop_host_not_get(self):
+        """apply_reaper_zones's active-purge loop invokes app.csm.stop_host(ch)
+        directly — the old app.csm.get(ch)/s.stop() pair is gone."""
+        app, db, mock_csm = self._make_app_with_mock_csm()
+
+        now = datetime(2026, 6, 25, 14, 0, 0, tzinfo=timezone.utc)
+        purge_after = now - timedelta(hours=1)
+        purge_by = now + timedelta(hours=1)
+        updated_at = now - timedelta(minutes=30)  # idle
+
+        cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+
+        mock_csm.stop_host.assert_called_once()
+        (called_host,), kwargs = mock_csm.stop_host.call_args
+        assert called_host.id == host_id
+        # apply_reaper_zones must not call the old get()/list() Docker primitives.
+        mock_csm.get.assert_not_called()
+
+    def test_dormant_calls_stop_host_not_get(self):
+        """apply_reaper_zones's dormant loop invokes app.csm.stop_host(ch)
+        directly — the old app.csm.get(ch)/s.stop() pair is gone."""
+        app, db, mock_csm = self._make_app_with_mock_csm()
+
+        now = datetime(2026, 6, 25, 18, 0, 0, tzinfo=timezone.utc)
+        purge_after = now - timedelta(hours=3)
+        purge_by = now - timedelta(hours=1)
+        updated_at = now - timedelta(minutes=1)  # not idle — dormant force-removes anyway
+
+        cls_id, host_id = self._make_class_and_host(app, db, purge_after, purge_by, updated_at)
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+
+        mock_csm.stop_host.assert_called_once()
+        (called_host,), kwargs = mock_csm.stop_host.call_args
+        assert called_host.id == host_id
+        mock_csm.get.assert_not_called()
+
+    # ── 10. A push/stop failure on one host must not abort the rest ─────────
+
+    def _make_two_hosts_same_class(self, app, db, purge_after, purge_by, updated_at):
+        """Create a single Class with two CodeHost rows for multi-host tests."""
+        from cspawn.models import Class, ClassProto, CodeHost, User
+
+        TestApplyReaperZones._host_counter += 1
+        suffix = TestApplyReaperZones._host_counter
+
+        with app.app_context():
+            proto = ClassProto(
+                name=f"Multi Proto {suffix}",
+                image_uri="test-image:latest",
+                hash=f"deadbeefm{suffix:04d}",
+            )
+            db.session.add(proto)
+            db.session.flush()
+
+            cls = Class(
+                name=f"Multi Class {suffix}",
+                proto_id=proto.id,
+                start_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                purge_after=purge_after,
+                purge_by=purge_by,
+            )
+            db.session.add(cls)
+            db.session.flush()
+
+            host_ids = []
+            for i in range(2):
+                user = User(
+                    user_id=f"uid-multi{suffix}-{i}",
+                    email=f"multi{suffix}-{i}@example.com",
+                    username=f"multi{suffix}-{i}",
+                    is_active=True,
+                )
+                db.session.add(user)
+                db.session.flush()
+
+                host = CodeHost(
+                    user_id=user.id,
+                    service_id=f"svc-multi-{suffix}-{i}",
+                    service_name=f"cs-multi{suffix}-{i}",
+                    class_id=cls.id,
+                    app_state="ready",
+                )
+                host.updated_at = updated_at
+                db.session.add(host)
+                db.session.flush()
+                host_ids.append(host.id)
+
+            db.session.commit()
+            return cls.id, host_ids
+
+    def test_dormant_zone_push_failure_on_one_host_does_not_abort_the_other(self):
+        """A mocked push failure (StopResult.push_error set) on one host must
+        not stop the dormant loop from processing the remaining host."""
+        from cspawn.cs_docker.csmanager import StopResult
+        from cspawn.models import CodeHost
+
+        app, db = _make_reaper_flask_app()
+        mock_csm = MagicMock()
+
+        def _stop_host_side_effect(ch, *, push=True, branch="master"):
+            failing = ch.service_name.endswith("-0")
+            db.session.delete(ch)
+            db.session.commit()
+            return StopResult(
+                service_name=ch.service_name,
+                pushed=not failing,
+                push_error="push boom" if failing else None,
+                stopped=True,
+                deleted=True,
+            )
+
+        mock_csm.stop_host.side_effect = _stop_host_side_effect
+        app.csm = mock_csm
+
+        now = datetime(2026, 6, 25, 18, 0, 0, tzinfo=timezone.utc)
+        purge_after = now - timedelta(hours=3)
+        purge_by = now - timedelta(hours=1)
+        updated_at = now - timedelta(minutes=1)
+
+        cls_id, host_ids = self._make_two_hosts_same_class(app, db, purge_after, purge_by, updated_at)
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        result = apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+
+        assert result[cls_id] == "dormant"
+        # Both hosts must have been processed (stop_host called twice) despite
+        # the first one's push failure.
+        assert mock_csm.stop_host.call_count == 2
+        with app.app_context():
+            for host_id in host_ids:
+                assert CodeHost.query.get(host_id) is None, (
+                    "Both hosts must be removed even though one push failed"
+                )
+
+    def test_active_purge_push_failure_on_one_host_does_not_abort_the_other(self):
+        """Same isolation guarantee in the active-purge zone."""
+        from cspawn.cs_docker.csmanager import StopResult
+        from cspawn.models import CodeHost
+
+        app, db = _make_reaper_flask_app()
+        mock_csm = MagicMock()
+
+        def _stop_host_side_effect(ch, *, push=True, branch="master"):
+            failing = ch.service_name.endswith("-0")
+            db.session.delete(ch)
+            db.session.commit()
+            return StopResult(
+                service_name=ch.service_name,
+                pushed=not failing,
+                push_error="push boom" if failing else None,
+                stopped=True,
+                deleted=True,
+            )
+
+        mock_csm.stop_host.side_effect = _stop_host_side_effect
+        app.csm = mock_csm
+
+        now = datetime(2026, 6, 25, 14, 0, 0, tzinfo=timezone.utc)
+        purge_after = now - timedelta(hours=1)
+        purge_by = now + timedelta(hours=1)
+        updated_at = now - timedelta(minutes=30)  # both idle
+
+        cls_id, host_ids = self._make_two_hosts_same_class(app, db, purge_after, purge_by, updated_at)
+
+        class_rows = [{"id": cls_id, "purge_after": purge_after, "purge_by": purge_by}]
+        result = apply_reaper_zones(app, class_rows, [], now, dry_run=False)
+
+        assert result[cls_id] == "active-purge"
+        assert mock_csm.stop_host.call_count == 2
+        with app.app_context():
+            for host_id in host_ids:
+                assert CodeHost.query.get(host_id) is None, (
+                    "Both idle hosts must be removed even though one push failed"
+                )

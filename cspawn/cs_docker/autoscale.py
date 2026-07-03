@@ -824,16 +824,17 @@ def apply_reaper_zones(app, class_rows, host_rows, now: datetime, *, dry_run: bo
                     if dry_run:
                         log.info("[reaper] dry-run: would force-remove host %s (dormant)", svc_name)
                         continue
-                    try:
-                        s = app.csm.get(ch)
-                        if s:
-                            s.stop()
-                    except Exception as exc:
-                        log.warning("[reaper] stop failed for host %s: %s", svc_name, exc)
-                    try:
-                        db.session.delete(ch)
-                    except Exception as exc:
-                        log.warning("[reaper] db delete failed for host %s: %s", svc_name, exc)
+                    # stop_host() is itself best-effort and never raises (push,
+                    # stop, and delete are each individually isolated inside
+                    # it, including its own commit), so one bad host here
+                    # can't abort the rest of this class's cleanup.
+                    result = app.csm.stop_host(ch)
+                    if result.push_error:
+                        log.warning("[reaper] push failed for host %s: %s", svc_name, result.push_error)
+                    if result.stop_error:
+                        log.warning("[reaper] stop failed for host %s: %s", svc_name, result.stop_error)
+                    if not result.deleted:
+                        log.warning("[reaper] db delete failed for host %s", svc_name)
 
                 # Clear purge window and target_nodes on the Class row
                 cls_obj = Class.query.get(cls_id)
@@ -863,7 +864,6 @@ def apply_reaper_zones(app, class_rows, host_rows, now: datetime, *, dry_run: bo
 
                 # Re-fetch from DB immediately before destructive action
                 hosts = CodeHost.query.filter_by(class_id=cls_id).all()
-                any_removed = False
                 for ch in hosts:
                     # Compute idle duration from updated_at
                     updated = ch.updated_at
@@ -882,28 +882,21 @@ def apply_reaper_zones(app, class_rows, host_rows, now: datetime, *, dry_run: bo
                             svc_name, idle_minutes,
                         )
                         continue
-                    try:
-                        s = app.csm.get(ch)
-                        if s:
-                            s.stop()
-                    except Exception as exc:
-                        log.warning("[reaper] stop failed for idle host %s: %s", svc_name, exc)
-                    try:
-                        db.session.delete(ch)
-                        any_removed = True
+                    # stop_host() is itself best-effort and never raises
+                    # (including its own commit for the delete step), so one
+                    # bad host here can't abort the rest of this class's pass.
+                    result = app.csm.stop_host(ch)
+                    if result.push_error:
+                        log.warning("[reaper] push failed for idle host %s: %s", svc_name, result.push_error)
+                    if result.stop_error:
+                        log.warning("[reaper] stop failed for idle host %s: %s", svc_name, result.stop_error)
+                    if result.deleted:
                         log.info(
                             "[reaper] stopped and deleted idle host %s (idle=%.1f min)",
                             svc_name, idle_minutes,
                         )
-                    except Exception as exc:
-                        log.warning("[reaper] db delete failed for host %s: %s", svc_name, exc)
-
-                if any_removed and not dry_run:
-                    try:
-                        db.session.commit()
-                    except Exception as exc:
-                        db.session.rollback()
-                        log.error("[reaper] commit failed for class_id=%s active-purge: %s", cls_id, exc)
+                    else:
+                        log.warning("[reaper] db delete failed for host %s", svc_name)
 
     return zone_summary
 

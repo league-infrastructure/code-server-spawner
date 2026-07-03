@@ -112,24 +112,24 @@ def delete_host(host_id):
 @admin_bp.route("/host/<int:host_id>/stop", methods=["POST"])
 @admin_required
 def stop_host(host_id):
-    code_host = CodeHost.query.get(host_id)
-
     if not host_id:
         flash("No host ID provided", "danger")
         return redirect(url_for("admin.list_code_hosts"))
 
     code_host = CodeHost.query.get_or_404(host_id)
-    s = ca.csm.get(code_host.service_id)
-    if not s:
-        flash("Host not found", "danger")
-        db.session.delete(code_host)
-        db.session.commit()
-        return redirect(url_for("admin.list_code_hosts"))
-    
-    s.stop()
-    db.session.delete(code_host)
-    db.session.commit()
-    flash("Host deleted successfully", "success")
+
+    # stop_host() treats a Swarm service that's already gone as a successful
+    # stop, so the old "service not found in Swarm but present in DB" branch
+    # is no longer a separate case — the DB row is removed either way.
+    result = ca.csm.stop_host(code_host)
+    if result.push_error:
+        flash(
+            "Host stopped, but push failed (work may not be fully saved): "
+            f"{result.push_error}",
+            "warning",
+        )
+    else:
+        flash("Host deleted successfully", "success")
     return redirect(url_for("admin.list_code_hosts"))
 
 
