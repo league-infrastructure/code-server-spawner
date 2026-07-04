@@ -1,8 +1,8 @@
 ---
 id: 008
-title: "Stale swarm node references — treat NotFound as MIA, detect and repair\
+title: "Stale swarm node references \u2014 treat NotFound as MIA, detect and repair\
   \ orphaned tasks"
-status: planning-docs
+status: done
 branch: sprint/008-stale-swarm-node-references-treat-notfound-as-mia-detect-and-repair-orphaned-tasks
 use-cases: []
 issues:
