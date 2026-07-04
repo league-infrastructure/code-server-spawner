@@ -2,7 +2,7 @@
 id: '003'
 title: 'Prevent permanently-orphaned tasks: clear stale node.hostname pins before
   node removal'
-status: open
+status: done
 use-cases:
 - SUC-006
 depends-on: []
@@ -51,7 +51,7 @@ a broader policy change").
 
 ## Acceptance Criteria
 
-- [ ] `_unpin_services_from_node(client, node_fqdn, *, log=None) -> int`
+- [x] `_unpin_services_from_node(client, node_fqdn, *, log=None) -> int`
       lists `client.services.list(filters={"label": "jtl.codeserver=true"})`,
       and for each service whose `_service_constraints(svc)` includes
       `node.hostname==<fqdn>` or `node.hostname==<short-name>` (matching
@@ -59,19 +59,19 @@ a broader policy change").
       strips **only** that constraint via `svc.update(constraints=kept)`
       — any other constraints (e.g. `node.role != manager`) are
       preserved. Returns the count of services unpinned.
-- [ ] A service with no `node.hostname==` constraint, or one pinned to a
+- [x] A service with no `node.hostname==` constraint, or one pinned to a
       *different* node, is left untouched — `svc.update` is not called
       for it.
-- [ ] Failures updating an individual service are caught and logged as a
+- [x] Failures updating an individual service are caught and logged as a
       warning; they do not raise out of `_unpin_services_from_node()` and
       do not prevent checking/unpinning the remaining services.
-- [ ] `graceful_remove_node()` (`cli/node.py:1993-2085`) calls
+- [x] `graceful_remove_node()` (`cli/node.py:1993-2085`) calls
       `_unpin_services_from_node(manager_client, resolved_fqdn, log=log)`
       immediately after `node_obj = _find_swarm_node(...)` resolves
       (whether or not `node_obj` is found — a stale pin is meaningful
       even if the swarm-side node object is already gone) and before
       `_drain_swarm_node()`.
-- [ ] `stop_node`'s `--force` branch (`cli/node.py:2122-2132`), which
+- [x] `stop_node`'s `--force` branch (`cli/node.py:2122-2132`), which
       currently constructs no `manager_client` at all, builds one (same
       `docker.DockerClient(base_url=docker_uri, use_ssh_client=True)`
       pattern the non-force branch already uses) when `DOCKER_URI` is
@@ -80,7 +80,7 @@ a broader policy change").
       (Docker unreachable, construction error) is caught and logged as a
       warning; `droplet.destroy()` still runs unconditionally afterward —
       the unpin attempt never blocks the force-destroy escape hatch.
-- [ ] Unit tests cover every criterion above with a mocked
+- [x] Unit tests cover every criterion above with a mocked
       `docker.DockerClient` — no live Docker/DigitalOcean access.
 
 ## Implementation Plan

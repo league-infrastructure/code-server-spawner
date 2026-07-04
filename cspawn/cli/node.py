@@ -158,6 +158,41 @@ def _pin_service_to_node(svc, node_fqdn: str) -> None:
     svc.update(constraints=kept)
 
 
+def _unpin_services_from_node(client, node_fqdn: str, *, log=None) -> int:
+    """Strip any `node.hostname==<node_fqdn>` placement constraint from code-server services.
+
+    Prevents permanently-orphaned tasks: a service hard-pinned to a node via
+    `_pin_service_to_node()` (e.g. by `node rebalance`) cannot be rescheduled
+    once that node is removed, so the pin must be cleared before the node is
+    drained or destroyed. Matches both the fully-qualified and short-hostname
+    forms of the pin (mirroring `_pin_service_to_node`'s own normalization).
+    Only the matching `node.hostname==` constraint is removed — any other
+    constraints on the service (e.g. `node.role != manager`) are preserved.
+    Services with no pin, or a pin to a different node, are left untouched.
+    Per-service failures are caught and logged as warnings; they do not
+    prevent unpinning the remaining services. Returns the count unpinned.
+    """
+    short = node_fqdn.split(".")[0]
+    targets = {f"node.hostname=={node_fqdn}".replace(" ", ""),
+               f"node.hostname=={short}".replace(" ", "")}
+
+    unpinned = 0
+    for svc in client.services.list(filters={"label": "jtl.codeserver=true"}):
+        constraints = _service_constraints(svc)
+        matching = [c for c in constraints if c.replace(" ", "") in targets]
+        if not matching:
+            continue
+        kept = [c for c in constraints if c not in matching]
+        try:
+            svc.update(constraints=kept)
+            unpinned += 1
+        except Exception as e:
+            svc_name = getattr(svc, "name", None) or getattr(svc, "id", "?")
+            if log:
+                log.warning(f"[stop] Failed to clear node pin on service {svc_name}: {e}")
+    return unpinned
+
+
 @node.command()
 @click.option("-N", "--dry-run", is_flag=True,
               help="Show the planned moves without changing anything.")
@@ -2003,6 +2038,9 @@ def graceful_remove_node(
 
     Shared between the 'stop' CLI command and cspawn/cs_docker/autoscale.py so that
     autoscale.py can remove nodes without duplicating the drain/remove/destroy sequence.
+    Before draining, clears any stale `node.hostname==` pins on this node so a
+    hard-pinned service can be rescheduled elsewhere instead of being permanently
+    orphaned (see `_unpin_services_from_node`).
 
     Parameters
     ----------
@@ -2040,6 +2078,10 @@ def graceful_remove_node(
 
     short = resolved_fqdn.split(".")[0]
     node_obj = _find_swarm_node(manager_client, resolved_fqdn, short)
+
+    # A stale node.hostname pin is meaningful even if the swarm-side node
+    # object is already gone, so clear it regardless of node_obj above.
+    _unpin_services_from_node(manager_client, resolved_fqdn, log=log)
 
     if dry_run:
         actions = []
@@ -2094,6 +2136,9 @@ def stop_node(ctx, force: bool, dry_run: bool, node_spec: str):
     """Stop (destroy) a DigitalOcean node by spec (serial, shortname, or FQDN).
 
     Initially requires --force; draining/removing from swarm is not implemented yet.
+    The --force path best-effort clears stale node.hostname pins before destroying
+    the droplet (see `_unpin_services_from_node`); a failure there never blocks
+    the destroy.
     """
     log = get_logger(ctx)
     cfg = get_config()
@@ -2123,6 +2168,17 @@ def stop_node(ctx, force: bool, dry_run: bool, node_spec: str):
         if dry_run:
             click.echo(f"Would stop droplet: {fqdn} (id={droplet.id})")
             return
+        # Best-effort: clear stale node.hostname pins before destroying the
+        # droplet, so any hard-pinned service isn't left permanently
+        # unreschedulable. Never blocks the force-destroy escape hatch.
+        if docker_uri:
+            try:
+                _mc = docker.DockerClient(base_url=docker_uri, use_ssh_client=True)
+                n = _unpin_services_from_node(_mc, fqdn, log=log)
+                if n:
+                    log.info(f"[stop] Cleared {n} node pin(s) before force-destroying {fqdn}")
+            except Exception as e:
+                log.warning(f"[stop] Could not clear node pins before force-destroy (proceeding anyway): {e}")
         try:
             log.info(f"[stop] Destroying droplet {fqdn} (id={droplet.id})")
             droplet.destroy()
