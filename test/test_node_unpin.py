@@ -3,13 +3,16 @@
 Covers:
 - `_unpin_services_from_node`: strips only the matching `node.hostname==`
   constraint (FQDN or short-name form), preserves other constraints, leaves
-  unrelated/unpinned services untouched, and tolerates per-service failures.
-- `graceful_remove_node`: calls `_unpin_services_from_node()` before
-  `_drain_swarm_node()`, regardless of whether the swarm node object was
-  found.
+  unrelated/unpinned services untouched, tolerates per-service failures, and
+  in `dry_run=True` mode counts matches without ever calling `svc.update()`.
+- `graceful_remove_node`: on a real run, calls `_unpin_services_from_node()`
+  before `_drain_swarm_node()`, regardless of whether the swarm node object
+  was found. On a `--dry-run`, it reports how many services would be
+  unpinned but makes no mutating call at all.
 - `stop_node --force`: attempts the unpin (best-effort) before destroying
-  the droplet, and still destroys the droplet even if the unpin attempt
-  raises (e.g. Docker unreachable).
+  the droplet, still destroys the droplet even if the unpin attempt raises
+  (e.g. Docker unreachable), and with `--dry-run` never touches Docker at
+  all.
 
 All tests use mocked Docker clients — no live Docker/DigitalOcean access.
 """
@@ -151,6 +154,26 @@ class TestUnpinServicesFromNode:
         _unpin_services_from_node(client, "swarm5.example.com")
         client.services.list.assert_called_once_with(filters={"label": "jtl.codeserver=true"})
 
+    def test_dry_run_counts_matches_without_calling_update(self):
+        """dry_run=True reports the count but never mutates the service."""
+        svc = _make_service(["node.hostname==swarm5.example.com", "node.role != manager"])
+        client = _make_client([svc])
+
+        count = _unpin_services_from_node(client, "swarm5.example.com", dry_run=True)
+
+        assert count == 1
+        svc.update.assert_not_called()
+
+    def test_dry_run_zero_when_no_matching_services(self):
+        """dry_run=True with no matching pins returns 0 and touches nothing."""
+        svc = _make_service(["node.role != manager"])
+        client = _make_client([svc])
+
+        count = _unpin_services_from_node(client, "swarm5.example.com", dry_run=True)
+
+        assert count == 0
+        svc.update.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Tests: graceful_remove_node ordering
@@ -216,12 +239,83 @@ class TestGracefulRemoveNodeUnpinOrdering:
 
 
 # ---------------------------------------------------------------------------
+# Tests: graceful_remove_node dry-run must not mutate
+# ---------------------------------------------------------------------------
+
+class TestGracefulRemoveNodeDryRun:
+    def _run_dry(self, node_obj, services):
+        """Invoke graceful_remove_node(dry_run=True) against a real (unmocked)
+        `_unpin_services_from_node`, backed by a fake Docker services list."""
+        ctx = MagicMock()
+        manager_client = MagicMock()
+        manager_client.services.list.return_value = services
+        mgr = MagicMock()
+        droplet = MagicMock()
+        droplet.id = "droplet-id"
+        log = MagicMock()
+
+        with (
+            patch("cspawn.cli.node.get_config", return_value={}),
+            patch(
+                "cspawn.cli.node._resolve_droplet_by_spec",
+                return_value=(droplet, "swarm5.example.com"),
+            ),
+            patch("cspawn.cli.node._find_swarm_node", return_value=node_obj),
+            patch("cspawn.cli.node._drain_swarm_node") as mock_drain,
+            patch("cspawn.cli.node._wait_node_tasks_drained") as mock_wait,
+        ):
+            graceful_remove_node(
+                ctx, manager_client, mgr, "swarm5.example.com", dry_run=True, log=log
+            )
+
+        return droplet, mock_drain, mock_wait
+
+    def test_dry_run_reports_would_unpin_and_makes_no_mutating_call(self, capsys):
+        """--dry-run reports the pinned-service count but never calls svc.update()."""
+        svc = _make_service(["node.hostname==swarm5.example.com"])
+        node_obj = MagicMock()
+
+        droplet, mock_drain, mock_wait = self._run_dry(node_obj, [svc])
+
+        out = capsys.readouterr().out
+        assert "unpin 1 service(s) pinned to swarm5.example.com" in out
+        svc.update.assert_not_called()
+        mock_drain.assert_not_called()
+        mock_wait.assert_not_called()
+        droplet.destroy.assert_not_called()
+
+    def test_dry_run_with_no_pinned_services_omits_unpin_line(self, capsys):
+        """--dry-run with nothing pinned doesn't mention unpinning at all."""
+        svc = _make_service(["node.role != manager"])
+        node_obj = MagicMock()
+
+        droplet, mock_drain, mock_wait = self._run_dry(node_obj, [svc])
+
+        out = capsys.readouterr().out
+        assert "unpin" not in out
+        svc.update.assert_not_called()
+        droplet.destroy.assert_not_called()
+
+    def test_dry_run_reports_unpin_even_when_node_not_found(self, capsys):
+        """A stale pin is still worth reporting in --dry-run even if the node is already gone."""
+        svc = _make_service(["node.hostname==swarm5"])
+
+        droplet, mock_drain, mock_wait = self._run_dry(node_obj=None, services=[svc])
+
+        out = capsys.readouterr().out
+        assert "unpin 1 service(s) pinned to swarm5.example.com" in out
+        svc.update.assert_not_called()
+        droplet.destroy.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # Tests: stop_node --force best-effort unpin
 # ---------------------------------------------------------------------------
 
 class TestStopNodeForceUnpin:
     def _invoke_force(self, unpin_side_effect=None, docker_client_side_effect=None,
-                       docker_uri="ssh://fake-manager", destroy_side_effect=None):
+                       docker_uri="ssh://fake-manager", destroy_side_effect=None,
+                       dry_run=False):
         cfg = {
             "DO_TOKEN": "fake-token",
             "DO_NAMES": "swarm{serial}.example.com",
@@ -241,6 +335,8 @@ class TestStopNodeForceUnpin:
             else {"return_value": mock_docker_client}
         )
 
+        args = ["--force", "--dry-run", "swarm5"] if dry_run else ["--force", "swarm5"]
+
         with (
             patch("cspawn.cli.node.get_config", return_value=cfg),
             patch("cspawn.cli.node.get_logger", return_value=mock_log),
@@ -249,7 +345,7 @@ class TestStopNodeForceUnpin:
                 "cspawn.cli.node._resolve_droplet_by_spec",
                 return_value=(droplet, "swarm5.example.com"),
             ),
-            patch("cspawn.cli.node.docker.DockerClient", **docker_client_kwargs),
+            patch("cspawn.cli.node.docker.DockerClient", **docker_client_kwargs) as mock_docker_cls,
             patch(
                 "cspawn.cli.node._unpin_services_from_node",
                 side_effect=unpin_side_effect,
@@ -259,13 +355,13 @@ class TestStopNodeForceUnpin:
             runner = CliRunner(mix_stderr=False)
             result = runner.invoke(
                 stop_node,
-                ["--force", "swarm5"],
+                args,
                 obj={"v": 0, "deploy": "devel"},
                 catch_exceptions=False,
             )
 
         assert result.exit_code == 0, result.output
-        return droplet, mock_unpin, mock_log
+        return droplet, mock_unpin, mock_log, mock_docker_cls
 
     def test_force_unpins_before_destroying_droplet(self):
         """--force with DOCKER_URI configured: unpin is attempted before destroy, which still runs."""
@@ -275,7 +371,7 @@ class TestStopNodeForceUnpin:
             call_order.append("unpin")
             return 1
 
-        droplet, mock_unpin, log = self._invoke_force(
+        droplet, mock_unpin, log, _ = self._invoke_force(
             unpin_side_effect=_record_unpin,
             destroy_side_effect=lambda: call_order.append("destroy"),
         )
@@ -286,7 +382,7 @@ class TestStopNodeForceUnpin:
 
     def test_force_destroys_even_when_docker_unreachable(self):
         """Docker connection failure while building the manager client never blocks destroy()."""
-        droplet, mock_unpin, log = self._invoke_force(
+        droplet, mock_unpin, log, _ = self._invoke_force(
             docker_client_side_effect=RuntimeError("connection refused")
         )
 
@@ -296,7 +392,7 @@ class TestStopNodeForceUnpin:
 
     def test_force_destroys_even_when_unpin_itself_raises(self):
         """_unpin_services_from_node() raising is caught; destroy still proceeds."""
-        droplet, mock_unpin, log = self._invoke_force(
+        droplet, mock_unpin, log, _ = self._invoke_force(
             unpin_side_effect=RuntimeError("docker api error")
         )
 
@@ -306,7 +402,16 @@ class TestStopNodeForceUnpin:
 
     def test_force_skips_unpin_when_no_docker_uri_configured(self):
         """Without DOCKER_URI, no DockerClient/unpin attempt is made; destroy still runs."""
-        droplet, mock_unpin, log = self._invoke_force(docker_uri=None)
+        droplet, mock_unpin, log, _ = self._invoke_force(docker_uri=None)
 
         mock_unpin.assert_not_called()
         droplet.destroy.assert_called_once()
+
+    def test_force_dry_run_never_touches_docker_or_unpin(self):
+        """--force --dry-run must not construct a manager client, attempt an unpin,
+        or destroy the droplet — dry-run must not mutate cluster state at all."""
+        droplet, mock_unpin, log, mock_docker_cls = self._invoke_force(dry_run=True)
+
+        mock_docker_cls.assert_not_called()
+        mock_unpin.assert_not_called()
+        droplet.destroy.assert_not_called()

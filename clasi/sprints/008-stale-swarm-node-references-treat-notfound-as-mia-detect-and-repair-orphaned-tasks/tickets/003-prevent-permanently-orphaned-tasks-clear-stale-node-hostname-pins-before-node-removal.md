@@ -65,7 +65,8 @@ a broader policy change").
 - [x] Failures updating an individual service are caught and logged as a
       warning; they do not raise out of `_unpin_services_from_node()` and
       do not prevent checking/unpinning the remaining services.
-- [x] `graceful_remove_node()` (`cli/node.py:1993-2085`) calls
+- [x] On a real (non-dry-run) invocation, `graceful_remove_node()`
+      (`cli/node.py:1993-2085`) calls
       `_unpin_services_from_node(manager_client, resolved_fqdn, log=log)`
       immediately after `node_obj = _find_swarm_node(...)` resolves
       (whether or not `node_obj` is found — a stale pin is meaningful
@@ -80,8 +81,21 @@ a broader policy change").
       (Docker unreachable, construction error) is caught and logged as a
       warning; `droplet.destroy()` still runs unconditionally afterward —
       the unpin attempt never blocks the force-destroy escape hatch.
+- [x] **`--dry-run` never mutates cluster state.** In `graceful_remove_node(dry_run=True)`,
+      no `svc.update()` call is made — `_unpin_services_from_node()` is
+      invoked in a counting-only mode (`dry_run=True` on the helper) and
+      the number of services that *would* be unpinned is folded into the
+      existing "Would perform (in order):" report (e.g. "unpin N
+      service(s) pinned to `<fqdn>`"), omitted when there are none. This
+      holds regardless of whether `node_obj` is found. `stop_node
+      --force --dry-run` already returns before touching Docker at all
+      (no `DockerClient` construction, no unpin attempt, no
+      `droplet.destroy()`), so it satisfies the same no-mutation rule
+      with no code change required.
 - [x] Unit tests cover every criterion above with a mocked
-      `docker.DockerClient` — no live Docker/DigitalOcean access.
+      `docker.DockerClient` — no live Docker/DigitalOcean access,
+      including dedicated dry-run cases asserting `svc.update` is never
+      called while the report still reflects the would-be count.
 
 ## Implementation Plan
 

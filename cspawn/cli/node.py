@@ -158,7 +158,7 @@ def _pin_service_to_node(svc, node_fqdn: str) -> None:
     svc.update(constraints=kept)
 
 
-def _unpin_services_from_node(client, node_fqdn: str, *, log=None) -> int:
+def _unpin_services_from_node(client, node_fqdn: str, *, log=None, dry_run: bool = False) -> int:
     """Strip any `node.hostname==<node_fqdn>` placement constraint from code-server services.
 
     Prevents permanently-orphaned tasks: a service hard-pinned to a node via
@@ -171,6 +171,10 @@ def _unpin_services_from_node(client, node_fqdn: str, *, log=None) -> int:
     Services with no pin, or a pin to a different node, are left untouched.
     Per-service failures are caught and logged as warnings; they do not
     prevent unpinning the remaining services. Returns the count unpinned.
+
+    When `dry_run` is True, no `svc.update()` call is made at all — matching
+    services are only counted, so the return value reports what *would* be
+    unpinned without mutating any cluster state.
     """
     short = node_fqdn.split(".")[0]
     targets = {f"node.hostname=={node_fqdn}".replace(" ", ""),
@@ -181,6 +185,9 @@ def _unpin_services_from_node(client, node_fqdn: str, *, log=None) -> int:
         constraints = _service_constraints(svc)
         matching = [c for c in constraints if c.replace(" ", "") in targets]
         if not matching:
+            continue
+        if dry_run:
+            unpinned += 1
             continue
         kept = [c for c in constraints if c not in matching]
         try:
@@ -2053,7 +2060,9 @@ def graceful_remove_node(
     fqdn:
         Fully-qualified (or short) node name to remove.
     dry_run:
-        When True, print the planned actions and return without making changes.
+        When True, print the planned actions (including how many pinned
+        services would be unpinned) and return without making any changes —
+        no `svc.update()` call is made in this mode.
     log:
         Logger instance (from get_logger).
     """
@@ -2079,12 +2088,13 @@ def graceful_remove_node(
     short = resolved_fqdn.split(".")[0]
     node_obj = _find_swarm_node(manager_client, resolved_fqdn, short)
 
-    # A stale node.hostname pin is meaningful even if the swarm-side node
-    # object is already gone, so clear it regardless of node_obj above.
-    _unpin_services_from_node(manager_client, resolved_fqdn, log=log)
-
     if dry_run:
         actions = []
+        would_unpin = _unpin_services_from_node(
+            manager_client, resolved_fqdn, log=log, dry_run=True
+        )
+        if would_unpin:
+            actions.append(f"unpin {would_unpin} service(s) pinned to {resolved_fqdn}")
         if node_obj:
             actions.append(f"drain swarm node {resolved_fqdn}")
             actions.append(f"wait for tasks to drain on {resolved_fqdn}")
@@ -2096,6 +2106,10 @@ def graceful_remove_node(
         for a in actions:
             click.echo(f"  - {a}")
         return
+
+    # A stale node.hostname pin is meaningful even if the swarm-side node
+    # object is already gone, so clear it regardless of node_obj above.
+    _unpin_services_from_node(manager_client, resolved_fqdn, log=log)
 
     if node_obj:
         log.info(f"[stop] Draining swarm node {resolved_fqdn}")
