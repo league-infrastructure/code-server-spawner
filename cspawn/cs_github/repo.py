@@ -56,10 +56,7 @@ class CodeHostRepo:
         if service is None:
             raise ValueError(f"No service found for {self.service_name}")
 
-        containers = list(service.containers)
-        if not containers:
-            raise ValueError(f"No containers found for service {self.service_name}")
-        return service, containers[0]
+        return service, service.first_container()
 
     def _git_environment(self):
         # Only GITHUB_TOKEN is needed from config/env
@@ -140,7 +137,7 @@ class CodeHostRepo:
         refspec = f" {branch}" if branch else ""
         cmd = f'cd "$WORKSPACE_FOLDER" && git pull{rebase_flag} "{remote}"{refspec}'
 
-        container = self._get_container()
+        _, container = self._get_service_container()
         env = self._git_environment()
 
         if dry_run:
@@ -317,11 +314,7 @@ class StudentRepo:
         if not service:
             raise ValueError(f"No service found for username: {self.username}")
 
-        containers = list(service.containers)
-        if not containers:
-            raise ValueError(f"No containers found for service {service.name}")
-
-        return service, containers[0]
+        return service, service.first_container()
 
     def _git_environment(self) -> Mapping[str, str]:
         token = self._resolve_token()
