@@ -214,7 +214,7 @@ class CSMService(Service):
 
 
 
-        return CodeHost(
+        model_kwargs = dict(
             user_id=user.id,
             service_id=self.id,
             service_name=self.name,
@@ -229,6 +229,25 @@ class CSMService(Service):
             labels=json.dumps(self.labels),
             created_at=datetime.fromisoformat(self.labels.get("jtl.codeserver.start_time")),
         )
+
+        # No live container was resolved (any of the branches above). If its
+        # task's node has actually been removed from the Swarm, `self.status`
+        # would still report the Swarm-stale "running" state forever — override
+        # it to MIA. A fresh service with no task yet (`no_container=True`, or
+        # an empty `container_tasks`) or a transient connection blip must NOT
+        # be flagged this way, so `app_state` is only ever added to the kwargs
+        # here — never unconditionally — to avoid clobbering an existing row's
+        # `app_state` (e.g. "ready") back to None on a routine resync.
+        if c is None and not no_container and self.node_missing:
+            logger.error(
+                "CodeHost.to_model(): service %s has no live container and "
+                "its task's node no longer exists in the Swarm; marking MIA",
+                self.name,
+            )
+            model_kwargs["state"] = HostState.MIA.value
+            model_kwargs["app_state"] = HostState.MIA.value
+
+        return CodeHost(**model_kwargs)
 
 
 def hostname_type(hostname):

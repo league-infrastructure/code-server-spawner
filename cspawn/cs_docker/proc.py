@@ -2,6 +2,7 @@ from paramiko.ssh_exception import NoValidConnectionsError
 import logging
 from typing import Any, List, Generator
 from docker.client import DockerClient
+from docker.errors import NotFound
 from docker.models.containers import Container as DockerContainer
 from docker.models.services import Service as DockerService
 logger = logging.getLogger("cspawn.docker")
@@ -156,7 +157,15 @@ class Service(ProcessBase):
 
         for t in self.container_tasks:
             node_id = t["NodeID"]
-            node = self.manager.client.nodes.get(node_id)
+            try:
+                node = self.manager.client.nodes.get(node_id)
+            except NotFound as e:
+                logger.error(
+                    f"Node {node_id} for task {t['ID']} in service {self.name} "
+                    f"no longer exists in the Swarm (likely destroyed by the "
+                    f"autoscaler): {e}"
+                )
+                continue
 
             node_name = node.attrs.get("Description", {}).get("Hostname")
 
@@ -316,6 +325,47 @@ class Service(ProcessBase):
             # while Swarm schedules the container. Callers handle None.
             logger.debug(f"No running task yet for service {self.name}")
             return None
+
+    @property
+    def node_missing(self) -> bool:
+        """Return True if any of this service's container-bearing tasks
+        references a NodeID that no longer exists in the Swarm cluster.
+
+        Uses `nodes.list()` (a bulk call that never raises `NotFound`) rather
+        than `nodes.get(<id>)`, so this property itself can never raise
+        `docker.errors.NotFound`. Returns False when there are no
+        container-bearing tasks at all — a freshly created service with no
+        task yet must not be flagged as having a missing node.
+        """
+        task_node_ids = {
+            t.get("NodeID") for t in self.container_tasks if t.get("NodeID")
+        }
+        if not task_node_ids:
+            return False
+
+        live_node_ids = {n.id for n in self.manager.client.nodes.list()}
+        return bool(task_node_ids - live_node_ids)
+
+    def first_container(self) -> Container:
+        """Return this service's first live container.
+
+        Raises:
+            ValueError: if no live container can be resolved. The message
+                distinguishes a stale-node condition (`self.node_missing`
+                is True — the task's node was removed from the Swarm) from
+                the generic "no container yet" case.
+        """
+        containers = list(self.containers)
+        if containers:
+            return containers[0]
+
+        if self.node_missing:
+            raise ValueError(
+                f"No container found for service {self.name}: its task's "
+                "node no longer exists in the Swarm (likely destroyed by "
+                "the autoscaler)"
+            )
+        raise ValueError(f"No containers found for service {self.name}")
 
 
     @property

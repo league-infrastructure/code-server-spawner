@@ -1,5 +1,10 @@
 ---
-status: pending
+status: in-progress
+sprint: 008
+tickets:
+- 008-001
+- 008-002
+- 008-003
 ---
 
 # Stale swarm node references break node-targeted host operations (push, sync, stop)
