@@ -426,6 +426,7 @@ def _make_repo_with_mock_service(app):
 
     mock_service = MagicMock()
     mock_service.containers = [mock_container]
+    mock_service.first_container.return_value = mock_container
     mock_service.env = {"JTL_REPO": "org/repo"}
 
     app.csm = MagicMock()

@@ -24,10 +24,7 @@ class HostS3Sync:
         service = self.app.csm.get_by_username(username)
         if not service:
             raise ValueError(f"No service found for username: {username}")
-        containers = list(service.containers)
-        if not containers:
-            raise ValueError(f"No containers found for service {service.name}")
-        return service, containers[0]
+        return service, service.first_container()
     
 
     def _run_rclone_op(self, username, op_type, direction, dry_run=False):

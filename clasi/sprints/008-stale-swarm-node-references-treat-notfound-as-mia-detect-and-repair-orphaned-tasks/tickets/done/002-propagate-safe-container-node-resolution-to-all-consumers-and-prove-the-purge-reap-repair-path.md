@@ -2,7 +2,7 @@
 id: '002'
 title: Propagate safe container/node resolution to all consumers and prove the purge/reap
   repair path
-status: open
+status: done
 use-cases:
 - SUC-002
 - SUC-003
@@ -61,40 +61,40 @@ reasoning.
 
 ## Acceptance Criteria
 
-- [ ] `CodeHostRepo._get_service_container()` (`cspawn/cs_github/repo.py:53-62`)
+- [x] `CodeHostRepo._get_service_container()` (`cspawn/cs_github/repo.py:53-62`)
       returns `(service, service.first_container())` after the existing
       `service is None` guard; `push()` (`repo.py:75-134`) itself is
       **not** modified — its safety is fully inherited from ticket 001.
-- [ ] `CodeHostRepo.pull()` (`repo.py:136-169`) calls
+- [x] `CodeHostRepo.pull()` (`repo.py:136-169`) calls
       `_, container = self._get_service_container()` instead of the
       non-existent `self._get_container()`.
-- [ ] `StudentRepo._get_service_and_container()` (`repo.py:312-324`)
+- [x] `StudentRepo._get_service_and_container()` (`repo.py:312-324`)
       returns `(service, service.first_container())` after its existing
       `service` guards.
-- [ ] `HostS3Sync.get_service_and_container()`
+- [x] `HostS3Sync.get_service_and_container()`
       (`cspawn/util/host_s3_sync.py:23-30`) returns
       `(service, service.first_container())` after its existing `service`
       guard.
-- [ ] `cli/host.py`'s `cont` command (`cspawn/cli/host.py:74-95`): guards
+- [x] `cli/host.py`'s `cont` command (`cspawn/cli/host.py:74-95`): guards
       `s is None` (prints "Service {name} not found" and returns) before
       use; replaces `list(s.containers)[0].o` with `s.first_container().o`;
       adds an `except ValueError as e:` branch alongside the existing
       `except NotFound:` that prints a message distinct from "service not
       found" (e.g. naming that the container/node is unresolvable).
-- [ ] A test proves: given a service whose `first_container()` raises the
+- [x] A test proves: given a service whose `first_container()` raises the
       stale-node `ValueError`, `CodeHostRepo.push()` propagates a
       `ValueError` (never a raw `docker.errors.NotFound`), and
       `CodeServerManager.stop_host()` (sprint 007, unmodified) still sets
       `stopped=True, deleted=True` with `push_error` populated — proving
       composition with sprint 007's best-effort contract for this
       specific exception type (not just a generic mocked exception).
-- [ ] A test proves: a `CodeHost` row with `state=mia, app_state=mia`
+- [x] A test proves: a `CodeHost` row with `state=mia, app_state=mia`
       (as ticket 001's `to_model()` would produce) is selected by `host
       purge`'s existing `is_mia or is_quiescent` filter with no changes
       to `cli/host.py`'s `purge` command, and `stop_host()` on it sets
       `skipped_push_mia=True` (push never attempted) while still removing
       the service and deleting the row.
-- [ ] Unit tests cover every criterion above with no live Docker/GitHub/
+- [x] Unit tests cover every criterion above with no live Docker/GitHub/
       network access.
 
 ## Implementation Plan

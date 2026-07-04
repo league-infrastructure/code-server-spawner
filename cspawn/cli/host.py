@@ -83,6 +83,9 @@ def cont(ctx, service_name):
     try:
 
         s = app.csm.get(service_name)
+        if s is None:
+            print(f"Service {service_name} not found")
+            return
         s = cast(CodeServerManager, s)
 
         ci = list(s.containers_info())[0]
@@ -90,9 +93,11 @@ def cont(ctx, service_name):
         print(f"Service Name: {service_name}")
         print(f"Container Name: {ci['container_id']}")
         print("NodeId:", ci['node_id'])
-        print(list(s.containers)[0].o)
+        print(s.first_container().o)
     except NotFound:
         print(f"Service {service_name} not found")
+    except ValueError as e:
+        print(f"Cannot resolve container for {service_name}: {e}")
 
 @host.command()
 @click.argument("service_name")
