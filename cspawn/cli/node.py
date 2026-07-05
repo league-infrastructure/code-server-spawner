@@ -1116,6 +1116,25 @@ def _collect_do_ssh_keys(mgr: digitalocean.Manager, do_token: str, pub_key_path:
     return ssh_keys_param
 
 
+def _resolve_cloud_init_path(cfg: dict) -> Path | None:
+    """Resolve the configured cloud-init file to a path, without checking existence.
+
+    Returns ``None`` when neither ``DO_CLOUD_INIT`` nor ``DO_CLOUD_INIT_FILE`` is set
+    in ``cfg`` — an explicit operator opt-out to proceed without cloud-init. Otherwise
+    returns ``<project-root>/config/cloud-init/<configured-file>``, where
+    ``<project-root>`` is ``find_parent_dir()``.
+
+    Does not check whether the resolved path exists or is readable — that's each
+    caller's job, since "missing" means different things in different contexts
+    (e.g. `_create_droplet` treats it as a hard failure; `_expected_docker_version`
+    treats it as "skip the version check").
+    """
+    cloud_init_file = cfg.get("DO_CLOUD_INIT") or cfg.get("DO_CLOUD_INIT_FILE")
+    if not cloud_init_file:
+        return None
+    return Path(find_parent_dir()) / "config" / "cloud-init" / cloud_init_file
+
+
 def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.DockerClient, name_template: str,
                     do_token: str, do_region: str, do_size: str, do_image: str, project_selector: str | None,
                     desired_serial: int | None, docker_uri: str, do_tag: str | None = None,
@@ -1123,6 +1142,12 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
     """Create droplet for next or specific serial. Idempotent if desired_serial provided.
 
     When ``tier`` is provided it takes precedence over ``do_size`` for the droplet slug.
+
+    Cloud-init user-data is resolved via `_resolve_cloud_init_path` *before* any
+    DigitalOcean side effect (SSH-key upload, `droplet.create()`): if
+    ``DO_CLOUD_INIT``/``DO_CLOUD_INIT_FILE`` is configured but the resolved file is
+    missing or unreadable, this raises `click.ClickException` and creates nothing.
+    If unset, proceeds with ``user_data=None`` (unchanged, explicit opt-out).
 
     Returns (droplet, ip, fqdn, shortname)
     """
@@ -1164,28 +1189,28 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
         log.info(f"[expand] Droplet already exists for {fqdn} (id={existing.id}); reusing")
         droplet = existing
     else:
+        # Resolve cloud-init user-data BEFORE any DigitalOcean side effect
+        # (SSH-key upload, droplet.create()): a misconfigured DO_CLOUD_INIT must
+        # fail with zero side effects, not just before droplet.create(). Unset
+        # is an explicit operator opt-out and proceeds with user_data=None.
+        user_data = None
+        cip = _resolve_cloud_init_path(config)
+        if cip is None:
+            log.info("[expand] No CLOUD_INIT_FILE configured; proceeding without user-data")
+        else:
+            try:
+                user_data = cip.read_text()
+            except OSError as e:
+                raise click.ClickException(
+                    f"[expand] Configured cloud-init file at {cip} could not be read: {e}. "
+                    "Fix the file/permissions, or unset DO_CLOUD_INIT/DO_CLOUD_INIT_FILE to "
+                    "proceed without cloud-init (not recommended)."
+                )
+            log.info(f"[expand] Including cloud-init user-data from {cip}")
+
         # Prepare keys
         priv_key_path, pub_key_path = _ensure_priv_key()
         ssh_keys_param = _collect_do_ssh_keys(mgr, do_token, pub_key_path, shortname, log)
-
-        # Optional cloud-init user-data
-        user_data = None
-        try:
-            cfg = get_config()
-            cloud_init_file = cfg.get("DO_CLOUD_INIT") or cfg.get("DO_CLOUD_INIT_FILE")
-            if cloud_init_file:
-               
-                cip = Path(find_parent_dir()) / 'config' / 'cloud-init' / cloud_init_file
-
-                if cip.exists():
-                    user_data = cip.read_text()
-                    log.info(f"[expand] Including cloud-init user-data from {cip}")
-                else:
-                    log.warning(f"[expand] CLOUD_INIT_FILE not found at {cip}; proceeding without user-data")
-            else:
-                log.info("[expand] No CLOUD_INIT_FILE configured; proceeding without user-data")
-        except Exception as e:
-            log.warning(f"[expand] Error reading CLOUD_INIT_FILE: {e}")
 
         # Create droplet — tier.slug takes precedence over do_size when provided
         effective_size = tier.slug if tier is not None else do_size

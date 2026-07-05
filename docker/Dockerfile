@@ -68,6 +68,11 @@ COPY migrations /app/migrations
 
 COPY docker/supervisord.conf /app/supervisord.conf
 COPY docker/gunicorn_config.py /app/config/gunicorn_config.py
+COPY config/cloud-init /app/config/cloud-init
+# Build-time self-check: fail the build if the cloud-init templates didn't
+# actually land in the image (e.g. a future .dockerignore/COPY regression) —
+# _create_droplet in cspawn/cli/node.py depends on this path existing.
+RUN ls /app/config/cloud-init/*.yaml
 COPY docker/ssh-config /etc/ssh/ssh_config.d/dojtl.conf
 RUN chmod 644 /etc/ssh/ssh_config.d/dojtl.conf
 
