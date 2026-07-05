@@ -916,6 +916,16 @@ def apply_plan(
     This is the only function that mutates infrastructure (Docker Swarm /
     DigitalOcean).
 
+    Each scale-up node is put through the same post-join provisioning
+    verification (``_verify_node_provisioning``) as the manual ``node
+    expand`` CLI path. Unlike ``expand`` (which aborts the whole command on
+    a verification failure), a single bad node here does not abort the
+    batch: on failure the node is drained (best-effort), the failure is
+    recorded in ``ApplyResult.errors`` without incrementing ``result.added``,
+    and the loop continues to the next planned node. A systemic failure
+    (e.g. ``click.ClickException`` from a bad DO token, or any other
+    unhandled exception) still ``break``s the scale-up loop, unchanged.
+
     Parameters
     ----------
     ctx:
@@ -962,6 +972,11 @@ def apply_plan(
             _configure_node,
             _join_swarm,
             _get_next_serial,
+            _verify_node_provisioning,
+            _expected_docker_version,
+            _find_swarm_node,
+            _drain_swarm_node,
+            _ensure_priv_key,
         )
         from cspawn.cs_docker.tiers import load_tiers
 
@@ -1007,6 +1022,39 @@ def apply_plan(
                 )
                 _configure_node(ctx, fqdn, desired_shortname=shortname)
                 _join_swarm(ctx, fqdn, _client, docker_uri, tier=tier)
+
+                verify_key_path, _ = _ensure_priv_key()
+                verify_failures = _verify_node_provisioning(
+                    ip, verify_key_path,
+                    expected_docker_version=_expected_docker_version(cfg),
+                    log=log,
+                )
+                if verify_failures:
+                    msg = (
+                        f"scale-up error for tier={tier.name}: node {fqdn} failed "
+                        f"post-join provisioning verification: {'; '.join(verify_failures)}"
+                    )
+                    log.error("[autoscale] %s", msg)
+                    errors.append(msg)
+                    # Best-effort: drain a node we just determined is defective so
+                    # Swarm stops scheduling work onto it. A single bad node must
+                    # not abort the rest of the batch, so we continue rather than
+                    # break (unlike the ClickException/generic-exception branches
+                    # below, which indicate a systemic problem).
+                    try:
+                        node_obj = _find_swarm_node(_client, fqdn, shortname)
+                        if node_obj is not None:
+                            _drain_swarm_node(_client, node_obj, log=log)
+                        else:
+                            log.warning(
+                                "[autoscale] Could not find swarm node %s to drain", shortname
+                            )
+                    except Exception as drain_exc:
+                        log.warning(
+                            "[autoscale] Best-effort drain of %s failed: %s", shortname, drain_exc
+                        )
+                    continue
+
                 result.added += 1
                 log.info("[autoscale] scale-up: added node %s (tier=%s)", fqdn, tier.name)
             except _click.ClickException as exc:

@@ -1,9 +1,11 @@
 ---
 id: '003'
 title: Wire post-join provisioning verification into the autoscaler's scale-up path
-status: open
-use-cases: [SUC-003]
-depends-on: ['002']
+status: done
+use-cases:
+- SUC-003
+depends-on:
+- '002'
 github-issue: ''
 issue: container-node-expand-missing-cloud-init.md
 completes_issue: true
@@ -44,47 +46,47 @@ DO token (break, unchanged).
 
 ## Acceptance Criteria
 
-- [ ] `apply_plan`'s scale-up loop (`cs_docker/autoscale.py:991-1022`)
+- [x] `apply_plan`'s scale-up loop (`cs_docker/autoscale.py:991-1022`)
   imports `_verify_node_provisioning`, `_expected_docker_version`,
   `_find_swarm_node`, `_drain_swarm_node` from `cspawn.cli.node`, alongside
   the existing `_create_droplet`, `_configure_node`, `_join_swarm`,
   `_get_next_serial` import (`cs_docker/autoscale.py:960-965`).
-- [ ] After `_join_swarm(ctx, fqdn, _client, docker_uri, tier=tier)`
+- [x] After `_join_swarm(ctx, fqdn, _client, docker_uri, tier=tier)`
   succeeds for a tier (`cs_docker/autoscale.py:1009`), calls
   `_verify_node_provisioning(ip, key_path, expected_docker_version=_expected_docker_version(cfg), log=log)`
   using a fresh `_ensure_priv_key()` key path and the `ip` already returned
   by `_create_droplet` for that node.
-- [ ] On verification failure:
-  - [ ] `result.added` is **not** incremented for that node.
-  - [ ] A descriptive message is appended to `errors` (matching the
+- [x] On verification failure:
+  - [x] `result.added` is **not** incremented for that node.
+  - [x] A descriptive message is appended to `errors` (matching the
     existing `msg = f"scale-up error for tier={tier.name}: ..."` style used
     by the adjacent `ClickException`/generic-exception branches).
-  - [ ] `log.error("[autoscale] %s", msg)` is called.
-  - [ ] The node is looked up via `_find_swarm_node(_client, fqdn,
+  - [x] `log.error("[autoscale] %s", msg)` is called.
+  - [x] The node is looked up via `_find_swarm_node(_client, fqdn,
     shortname)` and, if found, drained via `_drain_swarm_node`; a drain
     failure is itself caught and logged, never raised further.
-  - [ ] If `_find_swarm_node` returns `None` (e.g. the join itself hadn't
+  - [x] If `_find_swarm_node` returns `None` (e.g. the join itself hadn't
     fully propagated), drain is skipped without raising — the error is
     still recorded.
-  - [ ] The loop `continue`s to the next planned tier/node — it does
+  - [x] The loop `continue`s to the next planned tier/node — it does
     **not** `break` (unlike the existing `click.ClickException`/generic
     `Exception` branches at `cs_docker/autoscale.py:1012-1022`, which
     `break` because they indicate a systemic problem, e.g. a bad DO token).
-- [ ] On verification success: unchanged — `result.added += 1`,
+- [x] On verification success: unchanged — `result.added += 1`,
   `log.info("[autoscale] scale-up: added node %s (tier=%s)", fqdn, tier.name)`.
-- [ ] Unit tests extending `test/test_autoscale.py::TestApplyPlan` (patch
+- [x] Unit tests extending `test/test_autoscale.py::TestApplyPlan` (patch
   targets **must** be `cspawn.cli.node.<name>`, matching the existing
   pattern at `test_autoscale.py:1024`, since `apply_plan` imports these
   names locally inside the function body — patching
   `cspawn.cs_docker.autoscale.<name>` would not intercept the call):
-  - [ ] A plan adding two nodes where one fails verification →
+  - [x] A plan adding two nodes where one fails verification →
     `result.added == 1`, `result.errors` contains a message referencing the
     failed node's fqdn, drain attempted only for the failed node (mock
     `_find_swarm_node`/`_drain_swarm_node` and assert call counts/args).
-  - [ ] Verification failure where `_find_swarm_node` returns `None` → no
+  - [x] Verification failure where `_find_swarm_node` returns `None` → no
     call to `_drain_swarm_node`, no unhandled exception propagates out of
     `apply_plan`, the failure is still recorded in `result.errors`.
-  - [ ] All planned nodes pass verification → `result.added` counts every
+  - [x] All planned nodes pass verification → `result.added` counts every
     node, `result.errors` is empty (regression guard matching today's
     pre-ticket behavior).
 
