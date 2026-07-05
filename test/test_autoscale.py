@@ -13,7 +13,8 @@ import json
 import os
 import tempfile
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch, call
+from pathlib import Path
+from unittest.mock import ANY, MagicMock, patch, call
 
 import pytest
 
@@ -1116,6 +1117,163 @@ class TestApplyPlan:
         mock_remove.assert_not_called()
         assert result.removed == 0
         assert len(result.errors) > 0  # should record the skip as an error
+
+
+class TestApplyPlanScaleUpVerification:
+    """Post-join provisioning verification wired into the scale-up loop.
+
+    ``apply_plan`` imports ``_verify_node_provisioning``, ``_expected_docker_version``,
+    ``_find_swarm_node``, ``_drain_swarm_node``, and ``_ensure_priv_key`` locally from
+    ``cspawn.cli.node`` (same pattern as the existing ``_create_droplet``/
+    ``_configure_node``/``_join_swarm`` imports), so all patch targets below use the
+    ``cspawn.cli.node.*`` dotted path — patching ``cspawn.cs_docker.autoscale.*``
+    would not intercept the call.
+    """
+
+    @staticmethod
+    def _base_cfg():
+        return {
+            "NODE_TIERS": NODE_TIERS_JSON,
+            "DEFAULT_CAPACITY": "6",
+            "DO_TOKEN": "tok",
+            "DO_NAMES": "swarm{serial}.example.com",
+            "DOCKER_URI": "ssh://fake",
+        }
+
+    def test_one_of_two_nodes_fails_verification(self):
+        """A plan adding two nodes where one fails verification only counts the other.
+
+        The failed node's fqdn must appear in ``result.errors``, and drain must be
+        attempted only for the failed node (not the healthy one).
+        """
+        plan = ScalePlan(add_large=1, add_small=1, remove_nodes=[], reason="test")
+        ctx = MagicMock()
+        cfg = self._base_cfg()
+
+        mock_client = MagicMock()
+        droplet_calls = [
+            (MagicMock(), "10.0.0.10", "swarm10.example.com", "swarm10"),
+            (MagicMock(), "10.0.0.11", "swarm11.example.com", "swarm11"),
+        ]
+        failed_node_obj = MagicMock()
+
+        with (
+            patch("cspawn.cli.node._create_droplet", side_effect=droplet_calls) as mock_create,
+            patch("cspawn.cli.node._configure_node") as mock_configure,
+            patch("cspawn.cli.node._join_swarm") as mock_join,
+            patch(
+                "cspawn.cli.node._ensure_priv_key",
+                return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+            ),
+            patch("cspawn.cli.node._expected_docker_version", return_value=None),
+            patch(
+                "cspawn.cli.node._verify_node_provisioning",
+                side_effect=[["SSH reachability: 0/3 consecutive connects succeeded"], []],
+            ) as mock_verify,
+            patch(
+                "cspawn.cli.node._find_swarm_node", return_value=failed_node_obj
+            ) as mock_find,
+            patch("cspawn.cli.node._drain_swarm_node") as mock_drain,
+            patch("digitalocean.Manager"),
+        ):
+            result = apply_plan(
+                ctx, plan, cfg, dry_run=False,
+                manager_client=mock_client,
+            )
+
+        assert result.added == 1
+        assert len(result.errors) == 1
+        assert "swarm10.example.com" in result.errors[0]
+        assert mock_verify.call_count == 2
+        # Drain attempted only for the failed node (swarm10), not the healthy one.
+        mock_find.assert_called_once_with(mock_client, "swarm10.example.com", "swarm10")
+        mock_drain.assert_called_once_with(mock_client, failed_node_obj, log=ANY)
+        # Both droplets/configure/join calls still happened (batch was not aborted).
+        assert mock_create.call_count == 2
+        assert mock_configure.call_count == 2
+        assert mock_join.call_count == 2
+
+    def test_verification_failure_with_no_swarm_node_found_skips_drain(self):
+        """When `_find_swarm_node` returns None, drain is skipped without raising.
+
+        The verification failure must still be recorded in ``result.errors``.
+        """
+        plan = ScalePlan(add_large=1, add_small=0, remove_nodes=[], reason="test")
+        ctx = MagicMock()
+        cfg = self._base_cfg()
+
+        mock_client = MagicMock()
+
+        with (
+            patch(
+                "cspawn.cli.node._create_droplet",
+                return_value=(MagicMock(), "10.0.0.10", "swarm10.example.com", "swarm10"),
+            ),
+            patch("cspawn.cli.node._configure_node"),
+            patch("cspawn.cli.node._join_swarm"),
+            patch(
+                "cspawn.cli.node._ensure_priv_key",
+                return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+            ),
+            patch("cspawn.cli.node._expected_docker_version", return_value=None),
+            patch(
+                "cspawn.cli.node._verify_node_provisioning",
+                return_value=["cloud-init status: not done"],
+            ),
+            patch("cspawn.cli.node._find_swarm_node", return_value=None) as mock_find,
+            patch("cspawn.cli.node._drain_swarm_node") as mock_drain,
+            patch("digitalocean.Manager"),
+        ):
+            result = apply_plan(
+                ctx, plan, cfg, dry_run=False,
+                manager_client=mock_client,
+            )
+
+        assert result.added == 0
+        assert len(result.errors) == 1
+        assert "swarm10.example.com" in result.errors[0]
+        mock_find.assert_called_once()
+        mock_drain.assert_not_called()
+
+    def test_all_nodes_pass_verification(self):
+        """All planned nodes passing verification counts every node with no errors.
+
+        Regression guard matching pre-ticket behavior when verification is a no-op.
+        """
+        plan = ScalePlan(add_large=1, add_small=1, remove_nodes=[], reason="test")
+        ctx = MagicMock()
+        cfg = self._base_cfg()
+
+        mock_client = MagicMock()
+        droplet_calls = [
+            (MagicMock(), "10.0.0.10", "swarm10.example.com", "swarm10"),
+            (MagicMock(), "10.0.0.11", "swarm11.example.com", "swarm11"),
+        ]
+
+        with (
+            patch("cspawn.cli.node._create_droplet", side_effect=droplet_calls),
+            patch("cspawn.cli.node._configure_node"),
+            patch("cspawn.cli.node._join_swarm"),
+            patch(
+                "cspawn.cli.node._ensure_priv_key",
+                return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+            ),
+            patch("cspawn.cli.node._expected_docker_version", return_value=None),
+            patch("cspawn.cli.node._verify_node_provisioning", return_value=[]) as mock_verify,
+            patch("cspawn.cli.node._find_swarm_node") as mock_find,
+            patch("cspawn.cli.node._drain_swarm_node") as mock_drain,
+            patch("digitalocean.Manager"),
+        ):
+            result = apply_plan(
+                ctx, plan, cfg, dry_run=False,
+                manager_client=mock_client,
+            )
+
+        assert result.added == 2
+        assert result.errors == []
+        assert mock_verify.call_count == 2
+        mock_find.assert_not_called()
+        mock_drain.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

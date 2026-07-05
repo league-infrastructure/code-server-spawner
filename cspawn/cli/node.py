@@ -553,6 +553,106 @@ def _wait_for_cloud_init(host: str, key_path: Path, *, username: str = "root",
             log.warning(f"[expand] cloud-init wait could not complete ({e}); proceeding")
 
 
+_DOCKER_PIN_RE = re.compile(r'DOCKER_PIN="5:(\d+\.\d+\.\d+)-')
+
+
+def _expected_docker_version(cfg: dict) -> str | None:
+    """Determine the docker-ce version a correctly-provisioned node should report.
+
+    Resolves the configured cloud-init file via `_resolve_cloud_init_path` and
+    regex-parses the `DOCKER_PIN="5:X.Y.Z-..."` pattern documented in
+    `config/cloud-init/swarm-node-init-v2.yaml` (the pin the manager's docker-ce
+    major/minor version is held to). Returns `"X.Y.Z"` on a match.
+
+    Returns `None` — never raises — when cloud-init is unconfigured, the file
+    can't be read, or the pattern isn't found. Callers treat `None` as "skip
+    the version check," not as an error: this is a best-effort lookup of an
+    expected value, not a required configuration input.
+    """
+    cip = _resolve_cloud_init_path(cfg)
+    if cip is None:
+        return None
+    try:
+        text = cip.read_text()
+    except OSError:
+        return None
+    match = _DOCKER_PIN_RE.search(text)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _verify_node_provisioning(ip: str, key_path: Path, *, expected_docker_version: str | None,
+                              ssh_checks: int = 3, retry_delay: float = 2.0, log=None) -> list[str]:
+    """Hard-fail verification that a just-joined node was actually provisioned.
+
+    Distinct from (and run after) `_wait_for_cloud_init`'s best-effort wait:
+    where that function logs-and-proceeds on an unclear outcome so a
+    slow-but-fine node isn't blocked forever, this function aggregates three
+    checks into a verdict the caller can act on.
+
+    Runs three checks over SSH via the existing `_ssh_exec` helper:
+      (a) `ssh_checks` consecutive SSH connect attempts (`retry_delay` seconds
+          apart) — appends a failure naming how many of `ssh_checks` succeeded
+          if fewer than all of them did.
+      (b) `docker --version` — skipped entirely when `expected_docker_version`
+          is `None`; otherwise appends a failure naming expected vs. actual
+          when `expected_docker_version` is not a substring of the output.
+      (c) `cloud-init status` — appends a failure with the actual status text
+          when the output doesn't contain `"status: done"`.
+
+    Returns a list of human-readable failure strings (empty = healthy). Never
+    raises for an expected failure mode (SSH down, version mismatch,
+    cloud-init not done) — only a truly unexpected error (e.g. an invalid key
+    file) may propagate, matching `_ssh_exec`'s own behavior.
+    """
+    failures: list[str] = []
+
+    # Check (a): ssh_checks consecutive connect attempts via a trivial command.
+    successes = 0
+    for attempt in range(1, ssh_checks + 1):
+        try:
+            _ssh_exec(ip, "root", key_path, "true")
+            successes += 1
+        except Exception as e:
+            if log:
+                log.warning(f"[expand] verify: SSH attempt {attempt}/{ssh_checks} failed: {e}")
+        if attempt < ssh_checks:
+            time.sleep(retry_delay)
+    if successes < ssh_checks:
+        failures.append(
+            f"SSH reachability: {successes}/{ssh_checks} consecutive connects succeeded"
+        )
+
+    # Check (b): docker --version matches the expected pin (skipped when unknown).
+    if expected_docker_version is not None:
+        try:
+            _code, out, err = _ssh_exec(ip, "root", key_path, "docker --version")
+            docker_version_output = (out or err or "").strip()
+        except Exception as e:
+            docker_version_output = ""
+            if log:
+                log.warning(f"[expand] verify: docker --version failed: {e}")
+        if expected_docker_version not in docker_version_output:
+            failures.append(
+                f"docker version mismatch: expected {expected_docker_version!r} in "
+                f"output, got {docker_version_output!r}"
+            )
+
+    # Check (c): cloud-init reports done.
+    try:
+        _code, out, err = _ssh_exec(ip, "root", key_path, "cloud-init status")
+        cloud_init_output = (out or err or "").strip()
+    except Exception as e:
+        cloud_init_output = ""
+        if log:
+            log.warning(f"[expand] verify: cloud-init status failed: {e}")
+    if "status: done" not in cloud_init_output:
+        failures.append(f"cloud-init not done: status={cloud_init_output!r}")
+
+    return failures
+
+
 def _ssh_exec(host: str, username: str, key_path: Path, cmd: str, *, connect_timeout: int = 15) -> tuple[int, str, str]:
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -1116,6 +1216,25 @@ def _collect_do_ssh_keys(mgr: digitalocean.Manager, do_token: str, pub_key_path:
     return ssh_keys_param
 
 
+def _resolve_cloud_init_path(cfg: dict) -> Path | None:
+    """Resolve the configured cloud-init file to a path, without checking existence.
+
+    Returns ``None`` when neither ``DO_CLOUD_INIT`` nor ``DO_CLOUD_INIT_FILE`` is set
+    in ``cfg`` — an explicit operator opt-out to proceed without cloud-init. Otherwise
+    returns ``<project-root>/config/cloud-init/<configured-file>``, where
+    ``<project-root>`` is ``find_parent_dir()``.
+
+    Does not check whether the resolved path exists or is readable — that's each
+    caller's job, since "missing" means different things in different contexts
+    (e.g. `_create_droplet` treats it as a hard failure; `_expected_docker_version`
+    treats it as "skip the version check").
+    """
+    cloud_init_file = cfg.get("DO_CLOUD_INIT") or cfg.get("DO_CLOUD_INIT_FILE")
+    if not cloud_init_file:
+        return None
+    return Path(find_parent_dir()) / "config" / "cloud-init" / cloud_init_file
+
+
 def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.DockerClient, name_template: str,
                     do_token: str, do_region: str, do_size: str, do_image: str, project_selector: str | None,
                     desired_serial: int | None, docker_uri: str, do_tag: str | None = None,
@@ -1123,6 +1242,12 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
     """Create droplet for next or specific serial. Idempotent if desired_serial provided.
 
     When ``tier`` is provided it takes precedence over ``do_size`` for the droplet slug.
+
+    Cloud-init user-data is resolved via `_resolve_cloud_init_path` *before* any
+    DigitalOcean side effect (SSH-key upload, `droplet.create()`): if
+    ``DO_CLOUD_INIT``/``DO_CLOUD_INIT_FILE`` is configured but the resolved file is
+    missing or unreadable, this raises `click.ClickException` and creates nothing.
+    If unset, proceeds with ``user_data=None`` (unchanged, explicit opt-out).
 
     Returns (droplet, ip, fqdn, shortname)
     """
@@ -1164,28 +1289,28 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
         log.info(f"[expand] Droplet already exists for {fqdn} (id={existing.id}); reusing")
         droplet = existing
     else:
+        # Resolve cloud-init user-data BEFORE any DigitalOcean side effect
+        # (SSH-key upload, droplet.create()): a misconfigured DO_CLOUD_INIT must
+        # fail with zero side effects, not just before droplet.create(). Unset
+        # is an explicit operator opt-out and proceeds with user_data=None.
+        user_data = None
+        cip = _resolve_cloud_init_path(config)
+        if cip is None:
+            log.info("[expand] No CLOUD_INIT_FILE configured; proceeding without user-data")
+        else:
+            try:
+                user_data = cip.read_text()
+            except OSError as e:
+                raise click.ClickException(
+                    f"[expand] Configured cloud-init file at {cip} could not be read: {e}. "
+                    "Fix the file/permissions, or unset DO_CLOUD_INIT/DO_CLOUD_INIT_FILE to "
+                    "proceed without cloud-init (not recommended)."
+                )
+            log.info(f"[expand] Including cloud-init user-data from {cip}")
+
         # Prepare keys
         priv_key_path, pub_key_path = _ensure_priv_key()
         ssh_keys_param = _collect_do_ssh_keys(mgr, do_token, pub_key_path, shortname, log)
-
-        # Optional cloud-init user-data
-        user_data = None
-        try:
-            cfg = get_config()
-            cloud_init_file = cfg.get("DO_CLOUD_INIT") or cfg.get("DO_CLOUD_INIT_FILE")
-            if cloud_init_file:
-               
-                cip = Path(find_parent_dir()) / 'config' / 'cloud-init' / cloud_init_file
-
-                if cip.exists():
-                    user_data = cip.read_text()
-                    log.info(f"[expand] Including cloud-init user-data from {cip}")
-                else:
-                    log.warning(f"[expand] CLOUD_INIT_FILE not found at {cip}; proceeding without user-data")
-            else:
-                log.info("[expand] No CLOUD_INIT_FILE configured; proceeding without user-data")
-        except Exception as e:
-            log.warning(f"[expand] Error reading CLOUD_INIT_FILE: {e}")
 
         # Create droplet — tier.slug takes precedence over do_size when provided
         effective_size = tier.slug if tier is not None else do_size
@@ -2348,6 +2473,38 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
                 time.sleep(5)
             else:
                 raise click.ClickException("Timed out waiting for node to appear in swarm")
+
+    # Post-join provisioning verification: a separate, later, hard-fail gate
+    # distinct from _wait_for_cloud_init's earlier best-effort wait. Only runs
+    # when this invocation actually configured+joined a node (i.e. we know its
+    # ip and shortname) — not for a standalone --create-only run.
+    if last_ip and last_shortname:
+        log.info("[expand] Verifying node provisioning (SSH, docker version, cloud-init)")
+        verify_key_path, _ = _ensure_priv_key()
+        failures = _verify_node_provisioning(
+            last_ip, verify_key_path,
+            expected_docker_version=_expected_docker_version(cfg),
+            log=log,
+        )
+        if failures:
+            for failure in failures:
+                log.error(f"[expand] Post-join verification failed: {failure}")
+            # Best-effort: keep Swarm from scheduling more work onto a node we
+            # just determined is defective. A drain failure is logged, not
+            # raised — the verification failure is what aborts the command.
+            try:
+                node_obj = _find_swarm_node(manager_client, last_fqdn, last_shortname)
+                if node_obj is not None:
+                    _drain_swarm_node(manager_client, node_obj, log=log)
+                else:
+                    log.warning(f"[expand] Could not find swarm node {last_shortname} to drain")
+            except Exception as e:
+                log.warning(f"[expand] Best-effort drain of {last_shortname} failed: {e}")
+            raise click.ClickException(
+                f"Node {last_shortname} failed post-join provisioning verification and "
+                f"was drained: {'; '.join(failures)}"
+            )
+        log.info(f"[expand] Node {last_shortname} passed post-join provisioning verification")
 
     # Output summary
     if do_all:
