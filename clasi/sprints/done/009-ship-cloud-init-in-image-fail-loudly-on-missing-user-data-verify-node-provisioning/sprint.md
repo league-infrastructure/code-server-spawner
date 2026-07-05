@@ -1,9 +1,12 @@
 ---
 id: 009
 title: Ship cloud-init in image, fail loudly on missing user-data, verify node provisioning
-status: planning-docs
+status: done
 branch: sprint/009-ship-cloud-init-in-image-fail-loudly-on-missing-user-data-verify-node-provisioning
-use-cases: [SUC-001, SUC-002, SUC-003]
+use-cases:
+- SUC-001
+- SUC-002
+- SUC-003
 issues:
 - container-node-expand-missing-cloud-init.md
 ---
