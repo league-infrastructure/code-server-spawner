@@ -1,9 +1,11 @@
 ---
 id: '002'
 title: Post-join provisioning verification in node expand
-status: open
-use-cases: [SUC-003]
-depends-on: ['001']
+status: done
+use-cases:
+- SUC-003
+depends-on:
+- '001'
 github-issue: ''
 issue: container-node-expand-missing-cloud-init.md
 completes_issue: true
@@ -46,7 +48,7 @@ node).
 
 ## Acceptance Criteria
 
-- [ ] New `_expected_docker_version(cfg) -> str | None` added to
+- [x] New `_expected_docker_version(cfg) -> str | None` added to
   `cspawn/cli/node.py` (near `_wait_for_cloud_init`, `cli/node.py:510`):
   resolves the configured cloud-init file via `_resolve_cloud_init_path`
   (ticket 001), regex-parses the `DOCKER_PIN="5:X.Y.Z-..."` pattern already
@@ -54,57 +56,57 @@ node).
   the version string (e.g. `"29.6.1"`). Returns `None` if unconfigured, the
   file can't be read, or the pattern isn't found — callers treat `None` as
   "skip the version check," never as an error.
-- [ ] New `_verify_node_provisioning(ip, key_path, *, expected_docker_version,
+- [x] New `_verify_node_provisioning(ip, key_path, *, expected_docker_version,
   ssh_checks=3, retry_delay=2.0, log=None) -> list[str]` added to
   `cspawn/cli/node.py`: returns a list of human-readable failure strings
   (empty list = healthy). Never raises for an expected failure mode (SSH
   down, version mismatch, cloud-init not done) — only truly unexpected
   errors (e.g. an invalid key file) may propagate.
-  - [ ] Check (a): performs `ssh_checks` consecutive SSH connect attempts
+  - [x] Check (a): performs `ssh_checks` consecutive SSH connect attempts
     (reusing `_ssh_exec`, `cli/node.py:556`) with `retry_delay` seconds
     between attempts; if fewer than `ssh_checks` succeed, appends a failure
     string naming the count (e.g. `"SSH reachability: 2/3 consecutive
     connects succeeded"`).
-  - [ ] Check (b): runs `docker --version` over SSH; if
+  - [x] Check (b): runs `docker --version` over SSH; if
     `expected_docker_version` is not `None` and is not a substring of the
     output, appends a failure string naming expected vs. actual. Skipped
     entirely when `expected_docker_version is None`.
-  - [ ] Check (c): runs `cloud-init status` over SSH; if the output doesn't
+  - [x] Check (c): runs `cloud-init status` over SSH; if the output doesn't
     contain `"status: done"`, appends a failure string with the actual
     status text.
-- [ ] `expand()` (`cspawn/cli/node.py`, the CLI command spanning
+- [x] `expand()` (`cspawn/cli/node.py`, the CLI command spanning
   `cli/node.py:2215-2367`): immediately after the existing "verify node
   appears in swarm membership" block (`cli/node.py:2336-2350`), guarded by
   `last_ip and last_shortname` being known (i.e., this invocation ran
   configure+join), calls `_verify_node_provisioning` with
   `expected_docker_version=_expected_docker_version(cfg)` and a fresh
   `_ensure_priv_key()` key path.
-- [ ] On verification failure: `log.error(...)` with the full failure list;
+- [x] On verification failure: `log.error(...)` with the full failure list;
   best-effort look up the node via `_find_swarm_node` (`cli/node.py:797`)
   and drain it via `_drain_swarm_node` (`cli/node.py:848`) — a drain
   failure itself is caught and logged, never raised; then raise
   `click.ClickException` summarizing the failures and stating the node was
   drained (non-zero CLI exit).
-- [ ] On verification success: log an info line confirming the node passed;
+- [x] On verification success: log an info line confirming the node passed;
   existing summary output (`"Created and joined node: ..."`) and the
   trailing `_sync_domain_records` call are unchanged.
-- [ ] Unit tests (mock `cspawn.cli.node._ssh_exec` directly — no real
+- [x] Unit tests (mock `cspawn.cli.node._ssh_exec` directly — no real
   paramiko/network — following the mocking depth already used elsewhere in
   this file's test suite):
-  - [ ] All three checks pass → `_verify_node_provisioning` returns `[]`.
-  - [ ] SSH flaky (some but not all of `ssh_checks` attempts succeed) →
+  - [x] All three checks pass → `_verify_node_provisioning` returns `[]`.
+  - [x] SSH flaky (some but not all of `ssh_checks` attempts succeed) →
     returned list contains a string mentioning the success count.
-  - [ ] `docker --version` output doesn't contain `expected_docker_version`
+  - [x] `docker --version` output doesn't contain `expected_docker_version`
     → returned list contains a mismatch string with both values.
-  - [ ] `cloud-init status` output lacks `"status: done"` → returned list
+  - [x] `cloud-init status` output lacks `"status: done"` → returned list
     contains a string with the actual status text.
-  - [ ] `expected_docker_version=None` → version check is skipped, no
+  - [x] `expected_docker_version=None` → version check is skipped, no
     false failure appended.
-- [ ] CliRunner test: `expand` with a mocked `_verify_node_provisioning`
+- [x] CliRunner test: `expand` with a mocked `_verify_node_provisioning`
   failure exits non-zero (`result.exit_code != 0`) and drain is attempted
   (assert `_find_swarm_node`/`_drain_swarm_node` — or the docker
   node-lookup+update call chain — was invoked).
-- [ ] CliRunner regression test: `expand` with verification success exits 0
+- [x] CliRunner regression test: `expand` with verification success exits 0
   and prints the existing "Created and joined node" summary, unchanged
   from pre-ticket behavior.
 
