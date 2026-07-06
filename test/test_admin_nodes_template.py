@@ -10,6 +10,9 @@ Covers the template-level acceptance criteria:
 - op-status-<id> and op-log-<id> elements are present for ops.
 - Full log link appears in op panel rows.
 - pollOp JS function is emitted for pending/running ops.
+- 'interrupted' NodeOps render a distinct badge class (bg-dark), surface
+  their message via the badge's title attribute, and are never polled
+  (ticket 010-005).
 - Non-admin access redirected.
 - Empty node_rows (Docker unreachable) still renders 200.
 - Nodes nav link appears in the subnav.
@@ -302,6 +305,67 @@ class TestNodesTemplateRendering:
         html = resp.data.decode()
         assert f'pollOp("{running_id}")' in html
         assert f'pollOp("{done_id}")' not in html
+
+    def test_interrupted_op_renders_distinct_badge_class(self, flask_app, client, admin_user):
+        """An 'interrupted' NodeOp renders with its own badge class (bg-dark),
+        distinct from bg-success/bg-danger/bg-warning/bg-secondary."""
+        with flask_app.app_context():
+            op = NodeOp(kind="expand", tier="large", status="interrupted",
+                        message="spawner restarted while op was in flight")
+            db.session.add(op)
+            db.session.commit()
+            op_id = op.id
+
+        resp = _get_nodes(client, flask_app, admin_user)
+        html = resp.data.decode()
+        assert f'id="op-status-{op_id}"' in html
+        # Isolate the badge span for this op and confirm it carries bg-dark,
+        # not one of the other status colors.
+        needle = f'id="op-status-{op_id}"'
+        idx = html.index(needle)
+        span_start = html.rfind("<span", 0, idx)
+        span_end = html.index("</span>", idx)
+        span_html = html[span_start:span_end]
+        assert "bg-dark" in span_html
+        assert "bg-success" not in span_html
+        assert "bg-danger" not in span_html
+        assert "bg-warning" not in span_html
+        assert "bg-secondary" not in span_html
+
+    def test_interrupted_op_message_visible_via_title_attribute(self, flask_app, client, admin_user):
+        """An 'interrupted' op's message (e.g. naming an orphaned droplet) is
+        rendered in the page output via the badge's title attribute."""
+        with flask_app.app_context():
+            op = NodeOp(
+                kind="expand", tier="large", status="interrupted",
+                message="spawner restarted while op was in flight; droplet "
+                         "swarm4.dojtl.net (id=999) may be orphaned — verify it joined the swarm",
+            )
+            db.session.add(op)
+            db.session.commit()
+
+        resp = _get_nodes(client, flask_app, admin_user)
+        html = resp.data.decode()
+        assert "swarm4.dojtl.net" in html
+        assert "may be orphaned" in html
+
+    def test_interrupted_op_does_not_emit_pollop_js(self, flask_app, client, admin_user):
+        """Regression guard: 'interrupted' ops must never be polled — they are
+        terminal, not in-flight. A 'running' op in the same response is still
+        polled, for contrast."""
+        with flask_app.app_context():
+            op_interrupted = NodeOp(kind="expand", tier="large", status="interrupted",
+                                     message="spawner restarted while op was in flight")
+            op_running = NodeOp(kind="expand", tier="small", status="running")
+            db.session.add_all([op_interrupted, op_running])
+            db.session.commit()
+            interrupted_id = op_interrupted.id
+            running_id = op_running.id
+
+        resp = _get_nodes(client, flask_app, admin_user)
+        html = resp.data.decode()
+        assert f'pollOp("{interrupted_id}")' not in html
+        assert f'pollOp("{running_id}")' in html
 
     def test_non_admin_redirected(self, flask_app, client, plain_user):
         _login(client, flask_app, plain_user)

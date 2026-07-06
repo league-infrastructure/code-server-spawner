@@ -1,5 +1,11 @@
 ---
-status: pending
+status: done
+sprint: '010'
+tickets:
+- 010-002
+- 010-003
+- 010-004
+- 010-005
 ---
 
 # NodeOps orphaned as "running" forever when the spawner container restarts

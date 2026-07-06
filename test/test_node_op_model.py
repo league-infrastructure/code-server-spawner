@@ -1,4 +1,5 @@
-"""Tests for NodeOp model and migration — sprint 006, ticket 001.
+"""Tests for NodeOp model and migration — sprint 006, ticket 001;
+extended by sprint 010, ticket 002 (droplet_id column).
 
 Verifies:
 - NodeOp class is importable from cspawn.models.
@@ -8,6 +9,8 @@ Verifies:
 - Status update (pending → done) persists correctly.
 - The Alembic migration upgrade() creates the node_ops table on SQLite.
 - The Alembic migration downgrade() removes the node_ops table on SQLite.
+- `droplet_id` defaults to None, round-trips when set, and the v007
+  migration's upgrade()/downgrade() add/drop the column on SQLite.
 """
 
 from __future__ import annotations
@@ -71,6 +74,7 @@ def test_node_ops_required_columns_present(app_db):
         "kind",
         "tier",
         "target_fqdn",
+        "droplet_id",
         "status",
         "exit_code",
         "log_path",
@@ -101,6 +105,7 @@ def test_nodeop_create_with_defaults(app_db):
     assert fetched.tier == "large"
     assert fetched.status == "pending"
     assert fetched.target_fqdn is None
+    assert fetched.droplet_id is None
     assert fetched.exit_code is None
     assert fetched.log_path is None
     assert fetched.message is None
@@ -163,6 +168,33 @@ def test_nodeop_status_update(app_db):
     assert updated.status == "done"
     assert updated.exit_code == 0
     assert updated.finished_at is not None
+
+
+def test_nodeop_create_without_droplet_id_defaults_to_none(app_db):
+    """A NodeOp constructed without droplet_id reads back as None (no default, no backfill)."""
+    op = NodeOp(kind="remove", target_fqdn="node-03.example.com")
+    app_db.session.add(op)
+    app_db.session.commit()
+
+    fetched = app_db.session.get(NodeOp, op.id)
+    assert fetched.droplet_id is None
+
+
+def test_nodeop_droplet_id_round_trips(app_db):
+    """A NodeOp created with droplet_id set round-trips the value through the DB."""
+    op = NodeOp(kind="expand", tier="large", droplet_id=123456789)
+    app_db.session.add(op)
+    app_db.session.commit()
+
+    op_id = op.id
+    fetched = app_db.session.get(NodeOp, op_id)
+    assert fetched.droplet_id == 123456789
+
+    # Re-query via a fresh query (not just the identity map) to confirm the
+    # value actually persisted, not just held in the Python object.
+    app_db.session.expire_all()
+    refetched = app_db.session.get(NodeOp, op_id)
+    assert refetched.droplet_id == 123456789
 
 
 def test_nodeop_multiple_rows(app_db):
@@ -264,3 +296,99 @@ def test_migration_downgrade_removes_node_ops_table():
     inspector = sa.inspect(engine)
     tables = inspector.get_table_names()
     assert "node_ops" not in tables, "node_ops table not removed by migration downgrade"
+
+
+# ---------------------------------------------------------------------------
+# v007 migration tests (sprint 010, ticket 002): droplet_id column
+# ---------------------------------------------------------------------------
+
+
+def _make_node_ops_table(conn):
+    """Create a node_ops table matching the post-v006 schema (pre-v007)."""
+    conn.execute(sa.text("""
+        CREATE TABLE node_ops (
+            id VARCHAR(36) NOT NULL PRIMARY KEY,
+            kind VARCHAR(16) NOT NULL,
+            tier VARCHAR(100),
+            target_fqdn VARCHAR(255),
+            status VARCHAR(16) NOT NULL DEFAULT 'pending',
+            exit_code INTEGER,
+            log_path VARCHAR(500),
+            message TEXT,
+            created_by INTEGER,
+            created_at DATETIME NOT NULL,
+            started_at DATETIME,
+            finished_at DATETIME
+        )
+    """))
+
+
+def test_v007_migration_upgrade_adds_droplet_id_column():
+    """The v007 migration's upgrade() adds droplet_id to an existing node_ops table on SQLite."""
+    from alembic.operations import Operations
+    from alembic.runtime.migration import MigrationContext
+
+    from migrations.versions.v007_add_node_op_droplet_id import upgrade
+
+    engine = sa.create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        _make_node_ops_table(conn)
+
+    with engine.begin() as conn:
+        ctx = MigrationContext.configure(conn)
+        with Operations.context(ctx):
+            upgrade()
+
+    inspector = sa.inspect(engine)
+    columns = {c["name"] for c in inspector.get_columns("node_ops")}
+    assert "droplet_id" in columns, "droplet_id column not added by v007 migration upgrade"
+
+
+def test_v007_migration_upgrade_is_idempotent():
+    """Running upgrade() twice (simulating a re-run against an already-migrated DB) does not raise."""
+    from alembic.operations import Operations
+    from alembic.runtime.migration import MigrationContext
+
+    from migrations.versions.v007_add_node_op_droplet_id import upgrade
+
+    engine = sa.create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        _make_node_ops_table(conn)
+
+    with engine.begin() as conn:
+        ctx = MigrationContext.configure(conn)
+        with Operations.context(ctx):
+            upgrade()
+
+    # Second run against the already-migrated table must not raise.
+    with engine.begin() as conn:
+        ctx = MigrationContext.configure(conn)
+        with Operations.context(ctx):
+            upgrade()
+
+    inspector = sa.inspect(engine)
+    columns = {c["name"] for c in inspector.get_columns("node_ops")}
+    assert "droplet_id" in columns
+
+
+def test_v007_migration_downgrade_drops_droplet_id_column():
+    """The v007 migration's downgrade() removes droplet_id, leaving the rest of node_ops intact."""
+    from alembic.operations import Operations
+    from alembic.runtime.migration import MigrationContext
+
+    from migrations.versions.v007_add_node_op_droplet_id import downgrade
+
+    engine = sa.create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        _make_node_ops_table(conn)
+        conn.execute(sa.text("ALTER TABLE node_ops ADD COLUMN droplet_id INTEGER"))
+
+    with engine.begin() as conn:
+        ctx = MigrationContext.configure(conn)
+        with Operations.context(ctx):
+            downgrade()
+
+    inspector = sa.inspect(engine)
+    columns = {c["name"] for c in inspector.get_columns("node_ops")}
+    assert "droplet_id" not in columns, "droplet_id column not removed by v007 migration downgrade"
+    assert "id" in columns, "downgrade must not remove unrelated columns"

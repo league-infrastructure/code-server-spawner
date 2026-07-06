@@ -88,13 +88,26 @@ def ensure_session():
         pass
 
 
-def init_app(config_dir=None, deployment=None, log_level=None) -> App:
-    """Initialize Flask application"""
+def init_app(config_dir=None, deployment=None, log_level=None, sweep_node_ops: bool = False) -> App:
+    """Initialize Flask application.
+
+    sweep_node_ops: when True, marks every NodeOp row stuck in
+        status='running' as 'interrupted' immediately after the database is
+        set up. This must be True ONLY at the one true process-boot call
+        site (cspawn/app.py, Gunicorn's preload_app entrypoint, guaranteed
+        to run exactly once per container start). It must stay False (the
+        default) at every other init_app(...) call site, in particular
+        cspawn/cli/util.py::get_app — the shared bootstrap for every
+        cspawnctl subcommand, including op-run itself. Enabling it there
+        would falsely mark a genuinely in-flight op 'interrupted' the
+        moment an unrelated CLI command boots its own app instance. See
+        sprint 010's architecture-update.md, Step 6.
+    """
 
     from .admin import admin_bp
     from .auth import auth_bp
     from .main import main_bp
-    from .models import db
+    from .models import db, sweep_interrupted_node_ops
 
     app = cast(App, Flask(__name__))
 
@@ -171,6 +184,11 @@ def init_app(config_dir=None, deployment=None, log_level=None) -> App:
     try:
 
         setup_database(app)
+
+        if sweep_node_ops:
+            interrupted_count = sweep_interrupted_node_ops(app)
+            app.logger.info(f"Boot sweep: marked {interrupted_count} stuck 'running' NodeOp row(s) as 'interrupted'")
+
         # Use dev-friendly session cookies (insecure HTTP) when not serving over HTTPS,
         # to avoid silent CSRF failures. OAUTHLIB_INSECURE_TRANSPORT signals local HTTP serving.
         insecure_http = deployment == "devel" or bool(config.get("OAUTHLIB_INSECURE_TRANSPORT"))

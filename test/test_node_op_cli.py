@@ -10,10 +10,21 @@ Covers:
 - op-run failure path: ctx.invoke raises → status='failed', message populated.
 - op-run flock serialization: second invocation fails immediately when lock held.
 
+Also covers sprint-010 ticket-004 (record created droplet id/fqdn on its
+triggering NodeOp):
+- op-run threading: kind='expand' passes node_op_id=op_id into
+  ctx.invoke(expand, ...), wrapped in an app context.
+- _create_droplet: node_op_id set + matching NodeOp row -> droplet_id/
+  target_fqdn recorded and committed.
+- _create_droplet: node_op_id=None (every existing caller) -> complete no-op.
+- _create_droplet: missing NodeOp row / DB write failure -> swallowed,
+  creation still returns its normal tuple.
+
 No live Docker, DigitalOcean, or real database I/O in any test here.
 """
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import os
 from datetime import datetime, timezone
@@ -26,7 +37,7 @@ from click import ClickException
 from click.testing import CliRunner
 from flask import Flask
 
-from cspawn.cli.node import _ensure_priv_key, op_run
+from cspawn.cli.node import _create_droplet, _ensure_priv_key, op_run
 from cspawn.models import NodeOp, db
 
 
@@ -58,6 +69,57 @@ def _make_op(app_db_pair, kind: str = "expand", tier: str | None = "large",
         _db.session.add(op)
         _db.session.commit()
         return op.id
+
+
+def _invoke_create_droplet(app, *, node_op_id: str | None = None, droplet_id: int = 4242,
+                            patch_commit_raises: bool = False):
+    """Call `_create_droplet` with the DigitalOcean/SSH/network surface mocked
+    out (follows `test_node_cloud_init.py`'s conventions), inside `app`'s app
+    context so the optional node_op_id DB write-back (ticket 004) can run.
+
+    Returns ((droplet, ip, fqdn, shortname), mock_droplet_instance).
+    """
+    mgr = MagicMock()
+    mgr.get_all_droplets.return_value = []
+    manager_client = MagicMock()
+
+    mock_instance = MagicMock()
+    mock_instance.id = droplet_id
+    droplet_cls = MagicMock(return_value=mock_instance)
+
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(app.app_context())
+        stack.enter_context(patch("cspawn.cli.node.get_config", return_value={}))
+        stack.enter_context(patch("cspawn.cli.node.get_logger", return_value=MagicMock()))
+        stack.enter_context(patch(
+            "cspawn.cli.node._ensure_priv_key",
+            return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+        ))
+        stack.enter_context(patch("cspawn.cli.node._collect_do_ssh_keys", return_value=[]))
+        stack.enter_context(patch("cspawn.cli.node.digitalocean.Droplet", droplet_cls))
+        stack.enter_context(patch("cspawn.cli.node._wait_for_droplet_active", return_value="10.0.0.5"))
+        stack.enter_context(patch("cspawn.cli.node._find_manager_droplet", return_value=None))
+        if patch_commit_raises:
+            stack.enter_context(patch.object(db.session, "commit", side_effect=RuntimeError("simulated DB failure")))
+
+        result = _create_droplet(
+            ctx=MagicMock(),
+            mgr=mgr,
+            manager_client=manager_client,
+            name_template="swarm{serial}.example.com",
+            do_token="fake-token",
+            do_region="nyc3",
+            do_size="s-1vcpu-2gb",
+            do_image="docker-20-04",
+            project_selector=None,
+            desired_serial=5,
+            docker_uri="ssh://root@manager.example.com",
+            do_tag=None,
+            tier=None,
+            node_op_id=node_op_id,
+        )
+
+    return result, mock_instance
 
 
 # ---------------------------------------------------------------------------
@@ -251,8 +313,13 @@ class TestOpRunExpand:
             # Log file must exist
             assert Path(op.log_path).exists(), f"Log file missing at {op.log_path}"
 
-    def test_expand_invokes_expand_with_tier(self, app_db, tmp_path):
-        """kind='expand' calls ctx.invoke(expand, tier_name=op.tier)."""
+    def test_expand_invokes_expand_with_tier_and_node_op_id(self, app_db, tmp_path):
+        """kind='expand' calls ctx.invoke(expand, tier_name=op.tier, node_op_id=op.id).
+
+        node_op_id threading is ticket 004: op_run must pass the triggering
+        NodeOp's id through so _create_droplet can record the created
+        droplet's id/fqdn back onto this exact row.
+        """
         app, _db = app_db
         op_id = _make_op(app_db, kind="expand", tier="large")
 
@@ -261,14 +328,43 @@ class TestOpRunExpand:
         @click.command(name="expand")
         @click.option("--tier", "tier_name", default=None)
         @click.pass_context
-        def mock_expand(ctx, tier_name):
-            captured_kwargs.append({"tier_name": tier_name})
+        def mock_expand(ctx, tier_name, node_op_id=None):
+            captured_kwargs.append({"tier_name": tier_name, "node_op_id": node_op_id})
 
         result = _run_op(op_id, app, tmp_path, expand_cmd=mock_expand)
         assert result.exit_code == 0, result.output
 
         assert len(captured_kwargs) == 1, f"Expected one expand call, got {captured_kwargs}"
         assert captured_kwargs[0]["tier_name"] == "large"
+        assert captured_kwargs[0]["node_op_id"] == op_id
+
+    def test_expand_invocation_runs_inside_app_context(self, app_db, tmp_path):
+        """kind='expand' invokes expand() inside an active app context.
+
+        _create_droplet's node_op_id write-back needs `db.session` to be
+        usable. If op_run's kind=='expand' branch weren't wrapped in `with
+        app.app_context():`, a DB operation performed by the invoked command
+        would raise "working outside of application context" — this test
+        performs exactly such an operation inside the mocked expand and
+        asserts it succeeds and is durably committed.
+        """
+        app, _db = app_db
+        op_id = _make_op(app_db, kind="expand", tier="large")
+
+        @click.command(name="expand")
+        @click.option("--tier", "tier_name", default=None)
+        @click.pass_context
+        def mock_expand(ctx, tier_name, node_op_id=None):
+            op = db.session.get(NodeOp, node_op_id)
+            op.message = "app-context-probe-ok"
+            db.session.commit()
+
+        result = _run_op(op_id, app, tmp_path, expand_cmd=mock_expand)
+        assert result.exit_code == 0, result.output
+
+        with app.app_context():
+            op = _db.session.get(NodeOp, op_id)
+            assert op.message == "app-context-probe-ok"
 
 
 class TestOpRunRemove:
@@ -361,7 +457,7 @@ class TestOpRunFailurePath:
         @click.command(name="expand")
         @click.option("--tier", "tier_name", default=None)
         @click.pass_context
-        def failing_expand(ctx, tier_name):
+        def failing_expand(ctx, tier_name, node_op_id=None):
             raise RuntimeError("simulated expansion failure")
 
         result = _run_op(op_id, app, tmp_path, expand_cmd=failing_expand)
@@ -387,7 +483,7 @@ class TestOpRunFailurePath:
         @click.command(name="expand")
         @click.option("--tier", "tier_name", default=None)
         @click.pass_context
-        def failing_expand(ctx, tier_name):
+        def failing_expand(ctx, tier_name, node_op_id=None):
             raise RuntimeError("disk full")
 
         _run_op(op_id, app, tmp_path, expand_cmd=failing_expand)
@@ -414,7 +510,7 @@ class TestOpRunFailurePath:
         @click.command(name="expand")
         @click.option("--tier", "tier_name", default=None)
         @click.pass_context
-        def chatty_expand(ctx, tier_name):
+        def chatty_expand(ctx, tier_name, node_op_id=None):
             _logging.getLogger("cspawn.cli").info("EXPAND-LOG-MARKER step one")
             _logging.getLogger("cspawn.docker").warning("DOCKER-LOG-MARKER step two")
             click.echo("ECHO-MARKER done")
@@ -487,3 +583,84 @@ class TestOpRunLogPath:
         with app.app_context():
             op = _db.session.get(NodeOp, op_id)
             assert op.log_path == str(expected_log)
+
+
+# ---------------------------------------------------------------------------
+# _create_droplet: node_op_id write-back (sprint 010 ticket 004)
+# ---------------------------------------------------------------------------
+
+
+class TestCreateDropletRecordsNodeOp:
+    """_create_droplet's optional node_op_id write-back.
+
+    When an admin-triggered `expand` op creates a droplet, its id/fqdn must
+    be recorded onto the triggering NodeOp row as soon as creation succeeds
+    — so a later container restart (which ticket 003's sweep detects) can
+    name the specific droplet that might have been orphaned. See
+    `nodeop-orphaned-on-container-restart.md`.
+    """
+
+    def test_records_droplet_id_and_fqdn_when_node_op_id_set(self, app_db):
+        """node_op_id matching a pending NodeOp row: droplet_id/target_fqdn
+        are updated and committed after creation succeeds."""
+        app, _db = app_db
+        op_id = _make_op(app_db, kind="expand", tier="large")
+
+        result, mock_instance = _invoke_create_droplet(app, node_op_id=op_id, droplet_id=99887)
+        droplet, ip, fqdn, shortname = result
+
+        assert droplet is mock_instance
+        assert ip == "10.0.0.5"
+        assert fqdn == "swarm5.example.com"
+
+        with app.app_context():
+            op = _db.session.get(NodeOp, op_id)
+            assert op.droplet_id == 99887
+            assert op.target_fqdn == "swarm5.example.com"
+
+    def test_node_op_id_none_is_complete_noop(self, app_db):
+        """node_op_id=None (every existing caller: bare CLI `expand`, the
+        autoscaler's `apply_plan`): no NodeOp row is affected, and creation
+        succeeds identically to before this ticket."""
+        app, _db = app_db
+        op_id = _make_op(app_db, kind="expand", tier="large")
+
+        result, mock_instance = _invoke_create_droplet(app, node_op_id=None)
+        droplet, ip, fqdn, shortname = result
+
+        assert droplet is mock_instance
+        assert ip == "10.0.0.5"
+        assert fqdn == "swarm5.example.com"
+
+        with app.app_context():
+            op = _db.session.get(NodeOp, op_id)
+            assert op.droplet_id is None
+            assert op.target_fqdn is None
+
+    def test_missing_node_op_row_does_not_raise(self, app_db):
+        """node_op_id set but no matching NodeOp row exists: creation still
+        returns its normal tuple, no exception propagates."""
+        app, _db = app_db
+
+        result, mock_instance = _invoke_create_droplet(app, node_op_id="does-not-exist", droplet_id=1234)
+        droplet, ip, fqdn, shortname = result
+
+        assert droplet is mock_instance
+        assert ip == "10.0.0.5"
+        assert fqdn == "swarm5.example.com"
+
+    def test_db_write_failure_is_swallowed(self, app_db):
+        """A DB error during the best-effort write (commit raises) is caught
+        and logged as a warning; creation still returns its normal tuple —
+        node creation must never fail because of this write-back."""
+        app, _db = app_db
+        op_id = _make_op(app_db, kind="expand", tier="large")
+
+        result, mock_instance = _invoke_create_droplet(
+            app, node_op_id=op_id, droplet_id=5555, patch_commit_raises=True,
+        )
+        droplet, ip, fqdn, shortname = result
+
+        assert droplet is mock_instance
+        assert ip == "10.0.0.5"
+        assert fqdn == "swarm5.example.com"

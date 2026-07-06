@@ -1051,6 +1051,52 @@ def _ensure_node_labels(
         return False
 
 
+def _apply_labels_after_join(
+    manager_client: docker.DockerClient,
+    target: str,
+    labels: dict[str, str],
+    *,
+    deadline_seconds: float = 90.0,
+    poll_interval: float = 3.0,
+    log=None,
+) -> bool:
+    """Poll for the just-joined swarm node and apply `labels`, matching by hostname.
+
+    Locates the node via `_find_swarm_node(manager_client, target, short)` —
+    hostname/short-name matching, never by comparing `Status.Addr` to an IP.
+    Nodes join with `--advertise-addr <VPC-ip>`, so `Status.Addr` is always
+    the private VPC address and can never match a droplet's public IP; that
+    mismatch is what silently dropped `cs.tier`/`cs.capacity` on every
+    VPC-advertised expand before this helper existed.
+
+    Returns True if labels were applied via `_ensure_node_labels` once the
+    node was found, False if the deadline passed with no match (logging a
+    WARNING naming `target` and the label keys that were not applied) or if
+    `labels` is empty. Never raises.
+    """
+    if not labels:
+        return False
+    short = target.split(".")[0] if target else target
+    deadline = time.time() + deadline_seconds
+    while True:
+        try:
+            node_obj = _find_swarm_node(manager_client, target, short)
+        except Exception:
+            node_obj = None
+        if node_obj:
+            name = node_obj.attrs.get("Description", {}).get("Hostname") or target
+            return _ensure_node_labels(manager_client, name, labels, log=log)
+        if time.time() >= deadline:
+            break
+        time.sleep(poll_interval)
+    if log:
+        log.warning(
+            f"[expand] Timed out waiting for node '{target}' to appear in swarm; "
+            f"labels not applied: {sorted(labels.keys())}"
+        )
+    return False
+
+
 def _find_project_id_for_droplet(token: str, droplet_id: int, log=None) -> str | None:
     """Find the Project ID that contains the given droplet using python-digitalocean."""
     urn = f"do:droplet:{droplet_id}"
@@ -1238,7 +1284,7 @@ def _resolve_cloud_init_path(cfg: dict) -> Path | None:
 def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.DockerClient, name_template: str,
                     do_token: str, do_region: str, do_size: str, do_image: str, project_selector: str | None,
                     desired_serial: int | None, docker_uri: str, do_tag: str | None = None,
-                    tier: "Tier | None" = None) -> tuple[digitalocean.Droplet, str, str, str]:
+                    tier: "Tier | None" = None, node_op_id: str | None = None) -> tuple[digitalocean.Droplet, str, str, str]:
     """Create droplet for next or specific serial. Idempotent if desired_serial provided.
 
     When ``tier`` is provided it takes precedence over ``do_size`` for the droplet slug.
@@ -1248,6 +1294,17 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
     ``DO_CLOUD_INIT``/``DO_CLOUD_INIT_FILE`` is configured but the resolved file is
     missing or unreadable, this raises `click.ClickException` and creates nothing.
     If unset, proceeds with ``user_data=None`` (unchanged, explicit opt-out).
+
+    When ``node_op_id`` is provided (the admin-triggered `op-run` path passes
+    the triggering `NodeOp`'s id), the created droplet's id/fqdn are recorded
+    on that `NodeOp` row as a best-effort write once creation succeeds — so
+    that if the container dies before the node joins the swarm, the op names
+    the droplet an operator should check for orphaning. This requires an
+    active Flask app context (provided by the caller). The write never
+    raises: any failure (missing row, DB error) is logged as a warning and
+    node creation proceeds unaffected. ``node_op_id`` defaults to ``None``,
+    which is a complete no-op — every existing caller (bare CLI `expand`,
+    the autoscaler's `apply_plan`) is unchanged.
 
     Returns (droplet, ip, fqdn, shortname)
     """
@@ -1378,6 +1435,25 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
     except Exception as e:
         log.warning(f"[expand] Error during project assignment: {e}")
 
+    # Best-effort: record the created droplet against the triggering NodeOp row
+    # (admin-triggered `op-run` -> `expand(node_op_id=...)` path only). Never
+    # allowed to fail node creation — a DB hiccup here just means an
+    # interrupted op's message can't name the orphaned droplet, not that
+    # creation itself failed. No-op when node_op_id is None (every other
+    # caller: bare CLI `expand`, the autoscaler's `apply_plan`).
+    if node_op_id is not None:
+        try:
+            from cspawn.models import NodeOp, db
+            op = db.session.get(NodeOp, node_op_id)
+            if op is not None:
+                op.droplet_id = droplet.id
+                op.target_fqdn = fqdn
+                db.session.commit()
+            else:
+                log.warning(f"[expand] NodeOp {node_op_id!r} not found; could not record droplet {fqdn} (id={getattr(droplet, 'id', None)})")
+        except Exception as e:
+            log.warning(f"[expand] Could not record droplet {fqdn} (id={getattr(droplet, 'id', None)}) on NodeOp {node_op_id!r}: {e}")
+
     return droplet, ip, fqdn, shortname
 
 
@@ -1433,7 +1509,11 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
     """Join the node to the swarm as worker. Idempotent.
 
     When ``tier`` is provided, stamps ``cs.tier`` and ``cs.capacity`` labels on the
-    node after it joins the swarm.
+    node after it joins the swarm, via ``_apply_labels_after_join``. That helper
+    matches the joined node by hostname/short-name (``target``), not by comparing
+    ``Status.Addr`` to a public IP — nodes join with ``--advertise-addr <VPC-ip>``,
+    so ``Status.Addr`` is always the private VPC address and an IP-based match
+    against the droplet's public IP can never succeed.
     """
     log = get_logger(ctx)
     priv_key_path, _ = _ensure_priv_key()
@@ -1648,34 +1728,17 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
     except Exception:
         pass
 
-    # Apply cs.tier and cs.capacity labels if tier is known
+    # Apply cs.tier and cs.capacity labels if tier is known. Matched by
+    # hostname (via _apply_labels_after_join), not by comparing Status.Addr
+    # to a public IP — nodes join with --advertise-addr <VPC-ip>, so
+    # Status.Addr is always the private VPC address.
     if tier is not None:
-        try:
-            deadline_labels = time.time() + 90
-            cs_applied = False
-            while time.time() < deadline_labels and not cs_applied:
-                try:
-                    for n in manager_client.nodes.list():
-                        try:
-                            info = manager_client.api.inspect_node(n.id)  # type: ignore[attr-defined]
-                            addr = ((info or {}).get("Status", {}) or {}).get("Addr")
-                            if addr == ip:
-                                name = ((info or {}).get("Description", {}) or {}).get("Hostname") or ""
-                                if name:
-                                    cs_applied = _ensure_node_labels(
-                                        manager_client, name,
-                                        {"cs.tier": tier.name, "cs.capacity": str(tier.capacity)},
-                                        log=log,
-                                    ) or cs_applied
-                                    break
-                        except Exception:
-                            continue
-                except Exception:
-                    pass
-                if not cs_applied:
-                    time.sleep(3)
-        except Exception:
-            pass
+        _apply_labels_after_join(
+            manager_client,
+            target,
+            {"cs.tier": tier.name, "cs.capacity": str(tier.capacity)},
+            log=log,
+        )
 
 
 # ----- Node info and purge commands -----
@@ -2349,11 +2412,17 @@ def stop_node(ctx, force: bool, dry_run: bool, node_spec: str):
               help="Node size tier from NODE_TIERS (default: DEFAULT_TIER). "
                    "See 'cspawnctl node tiers' or NODE_TIERS config key.")
 @click.pass_context
-def expand(ctx, project_selector: str | None, create_only: bool, create_serial: int | None, configure_name: str | None, join_name: str | None, domains_only: bool, ssh_timeout_opt: int | None, tier_name: str | None):
+def expand(ctx, project_selector: str | None, create_only: bool, create_serial: int | None, configure_name: str | None, join_name: str | None, domains_only: bool, ssh_timeout_opt: int | None, tier_name: str | None, node_op_id: str | None = None):
     """Provision and/or configure and/or join a node.
 
     If none of --create/--configure/--join are supplied, performs all three in order.
     Use --tier to select a node size tier defined in NODE_TIERS config (e.g. --tier large).
+
+    ``node_op_id`` is an optional, internal-only parameter (not a `--option`;
+    only reachable via `ctx.invoke(expand, node_op_id=...)`) used by the
+    admin-triggered `op-run` worker to link a created droplet back to the
+    `NodeOp` row that triggered this call. See `_create_droplet` for details.
+    Defaults to `None` for every CLI/autoscaler caller, which is a no-op.
     """
     log = get_logger(ctx)
     log.info("[expand] Starting node expansion")
@@ -2434,6 +2503,7 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
             docker_uri=docker_uri,
             do_tag=do_tag,
             tier=tier,
+            node_op_id=node_op_id,
         )
         last_ip, last_shortname, last_fqdn = ip, shortname, fqdn
 
@@ -2938,7 +3008,11 @@ def op_run(ctx, op_id: str):
             target_fqdn = op.target_fqdn if op is not None else None
 
         if kind == "expand":
-            ctx.invoke(expand, tier_name=tier)
+            # _create_droplet's optional NodeOp write-back needs an active app
+            # context; op_run's other invocations don't create droplets and so
+            # don't need one here (each still opens its own context as needed).
+            with app.app_context():
+                ctx.invoke(expand, tier_name=tier, node_op_id=op_id)
         elif kind == "remove":
             ctx.invoke(stop_node, node_spec=target_fqdn, force=False, dry_run=False)
         elif kind == "rebalance":

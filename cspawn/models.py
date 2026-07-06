@@ -522,7 +522,14 @@ class NodeOp(db.Model):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     kind = Column(String(16), nullable=False)          # 'expand' | 'remove' | 'rebalance'
     tier = Column(String(100), nullable=True)           # tier label, e.g. 'large'
-    target_fqdn = Column(String(255), nullable=True)   # FQDN for remove operations
+    # FQDN for 'remove' ops (existing use); for 'expand' ops, the FQDN of the
+    # droplet that _create_droplet() created for this op (populated by a later
+    # ticket, not set here).
+    target_fqdn = Column(String(255), nullable=True)
+    # DigitalOcean droplet id, recorded once _create_droplet() succeeds for an
+    # 'expand' op launched via op-run; used to name a possible orphan if the
+    # op is later marked 'interrupted'. Nullable, never backfilled.
+    droplet_id = Column(Integer, nullable=True)
     status = Column(String(16), nullable=False, default="pending")  # pending|running|done|failed
     exit_code = Column(Integer, nullable=True)
     log_path = Column(String(500), nullable=True)
@@ -623,6 +630,46 @@ def ensure_database_exists(app: Flask):
     engine = create_engine(uri)
     if not database_exists(engine.url):
         create_database(engine.url)
+
+
+def sweep_interrupted_node_ops(app: Flask) -> int:
+    """Mark every NodeOp row stuck in status='running' as 'interrupted'.
+
+    This is always correct by construction: a `NodeOp`'s `running` status is
+    set exclusively by a detached `op-run` subprocess (`cspawn/cli/node.py`),
+    which writes its terminal status (`done`/`failed`) in a `finally` block.
+    No such subprocess can survive its container's restart — if the process
+    is killed mid-run (deploy restart, OOM, host reboot), the `finally` never
+    executes and the row is orphaned at `running` forever. Therefore any row
+    found `running` at boot time cannot reflect a genuinely in-flight op; it
+    can only be a leftover from a container that died before finishing.
+
+    CAUTION: call this only from the one true process-boot path
+    (`cspawn/app.py`, gated behind `init_app(sweep_node_ops=True)`) — never
+    from the shared CLI bootstrap (`cspawn/cli/util.py::get_app`), which is
+    invoked by every `cspawnctl` subcommand, including `op-run` itself. See
+    `architecture-update.md` Step 6 in sprint 010 for the full rationale.
+
+    Returns the number of rows updated.
+    """
+    with app.app_context():
+        now = datetime.now(timezone.utc)
+        running_ops = NodeOp.query.filter_by(status="running").all()
+
+        for op in running_ops:
+            message = "spawner restarted while op was in flight"
+            if op.target_fqdn or op.droplet_id:
+                message += (
+                    f"; droplet {op.target_fqdn} (id={op.droplet_id}) may be "
+                    "orphaned — verify it joined the swarm"
+                )
+            op.status = "interrupted"
+            op.exit_code = 1
+            op.message = message
+            op.finished_at = now
+
+        db.session.commit()
+        return len(running_ops)
 
 
 def export_dict():
