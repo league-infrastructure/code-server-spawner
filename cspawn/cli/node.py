@@ -582,6 +582,31 @@ def _expected_docker_version(cfg: dict) -> str | None:
     return match.group(1)
 
 
+def _major(v: str | None) -> int | None:
+    """Extract the major-version integer from a docker version string.
+
+    Searches for the first `X.Y.Z`-shaped dotted version number anywhere in
+    the input and returns its leading integer `X`. This handles both a bare
+    pinned version (`"29.6.1"` -> `29`) and free-form `docker --version`/
+    `docker version --format` output (e.g. `"Docker version 29.6.0, build
+    fb59821"` -> `29`), since in both cases the version number is the same
+    shape — only what precedes it differs. Returns `None` on no match, a
+    falsy input, or any exception — never raises.
+
+    Shared by `_join_swarm`'s pre-join preflight and
+    `_verify_node_provisioning`'s post-join docker-version check, so there
+    is exactly one definition of "what is this docker version's major
+    number." Do not reintroduce a second, drifting copy of this logic.
+    """
+    try:
+        if not v:
+            return None
+        m = re.search(r"(\d+)\.\d+\.\d+", str(v))
+        return int(m.group(1)) if m else None
+    except Exception:
+        return None
+
+
 def _verify_node_provisioning(ip: str, key_path: Path, *, expected_docker_version: str | None,
                               ssh_checks: int = 3, retry_delay: float = 2.0, log=None) -> list[str]:
     """Hard-fail verification that a just-joined node was actually provisioned.
@@ -597,7 +622,10 @@ def _verify_node_provisioning(ip: str, key_path: Path, *, expected_docker_versio
           if fewer than all of them did.
       (b) `docker --version` — skipped entirely when `expected_docker_version`
           is `None`; otherwise appends a failure naming expected vs. actual
-          when `expected_docker_version` is not a substring of the output.
+          when the node's docker major version (parsed via the shared
+          `_major()` helper) doesn't match the expected major. Docker Swarm
+          only requires major-version compatibility, so a patch/minor-only
+          difference passes.
       (c) `cloud-init status` — appends a failure with the actual status text
           when the output doesn't contain `"status: done"`.
 
@@ -624,7 +652,9 @@ def _verify_node_provisioning(ip: str, key_path: Path, *, expected_docker_versio
             f"SSH reachability: {successes}/{ssh_checks} consecutive connects succeeded"
         )
 
-    # Check (b): docker --version matches the expected pin (skipped when unknown).
+    # Check (b): docker --version's major matches the expected pin's major
+    # (skipped when unknown). Swarm only requires major-version compatibility,
+    # so a patch/minor difference is not a failure.
     if expected_docker_version is not None:
         try:
             _code, out, err = _ssh_exec(ip, "root", key_path, "docker --version")
@@ -633,10 +663,12 @@ def _verify_node_provisioning(ip: str, key_path: Path, *, expected_docker_versio
             docker_version_output = ""
             if log:
                 log.warning(f"[expand] verify: docker --version failed: {e}")
-        if expected_docker_version not in docker_version_output:
+        expected_major = _major(expected_docker_version)
+        actual_major = _major(docker_version_output)
+        if expected_major is None or actual_major is None or expected_major != actual_major:
             failures.append(
-                f"docker version mismatch: expected {expected_docker_version!r} in "
-                f"output, got {docker_version_output!r}"
+                f"docker version mismatch: expected {expected_docker_version!r}, "
+                f"got {docker_version_output!r}"
             )
 
     # Check (c): cloud-init reports done.
@@ -1563,15 +1595,8 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
 
     # Preflight: manager/worker Docker major versions should match.
     # Mismatch can fail swarm TLS handshakes (e.g., ALPN-related errors).
-    def _major(v: str | None) -> int | None:
-        try:
-            if not v:
-                return None
-            m = re.match(r"^(\d+)", str(v).strip())
-            return int(m.group(1)) if m else None
-        except Exception:
-            return None
-
+    # Uses the module-level `_major()` helper (shared with
+    # `_verify_node_provisioning`'s post-join docker-version check).
     manager_ver = None
     worker_ver = None
     try:

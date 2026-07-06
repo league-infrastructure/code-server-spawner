@@ -27,6 +27,7 @@ from click.testing import CliRunner
 
 from cspawn.cli.node import (
     _expected_docker_version,
+    _major,
     _verify_node_provisioning,
     expand,
 )
@@ -104,6 +105,30 @@ class TestExpectedDockerVersion:
 
 
 # ---------------------------------------------------------------------------
+# _major
+# ---------------------------------------------------------------------------
+
+class TestMajor:
+    """Direct unit coverage for the module-level `_major` helper, shared by
+    `_join_swarm`'s pre-join preflight and `_verify_node_provisioning`'s
+    post-join docker-version check."""
+
+    def test_bare_pinned_version_string(self):
+        """A "29.6.1"-shaped pinned version yields its leading integer."""
+        assert _major("29.6.1") == 29
+
+    def test_free_form_docker_version_output(self):
+        """A "Docker version 29.6.0, build abc"-shaped string still yields 29."""
+        assert _major("Docker version 29.6.0, build abc") == 29
+
+    def test_none_input_returns_none(self):
+        assert _major(None) is None
+
+    def test_unparseable_input_returns_none(self):
+        assert _major("not a version at all") is None
+
+
+# ---------------------------------------------------------------------------
 # _verify_node_provisioning
 # ---------------------------------------------------------------------------
 
@@ -163,6 +188,25 @@ class TestVerifyNodeProvisioning:
         assert "2/3" in result[0]
 
     def test_docker_version_mismatch_reports_both_values(self, monkeypatch):
+        """A genuine major-version mismatch (29 vs. 28) is a failure naming both
+        full version strings."""
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec",
+            _make_ssh_exec(docker_output="Docker version 28.4.0, build xyz"),
+        )
+
+        result = _verify_node_provisioning(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="29.6.1", retry_delay=0,
+        )
+
+        assert len(result) == 1
+        assert "29.6.1" in result[0]
+        assert "28.4.0" in result[0]
+
+    def test_docker_version_patch_difference_passes(self, monkeypatch):
+        """Same major, different patch (29.6.0 vs. expected 29.6.1) is not a
+        failure: Docker Swarm only requires major-version compatibility."""
         monkeypatch.setattr(
             "cspawn.cli.node._ssh_exec",
             _make_ssh_exec(docker_output="Docker version 29.6.0, build xyz"),
@@ -173,9 +217,23 @@ class TestVerifyNodeProvisioning:
             expected_docker_version="29.6.1", retry_delay=0,
         )
 
+        assert result == []
+
+    def test_docker_version_unparseable_actual_fails_check(self, monkeypatch):
+        """Garbled/empty `docker --version` output has no parseable major ->
+        the check fails, conservatively, rather than silently passing."""
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec",
+            _make_ssh_exec(docker_output=""),
+        )
+
+        result = _verify_node_provisioning(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="29.6.1", retry_delay=0,
+        )
+
         assert len(result) == 1
         assert "29.6.1" in result[0]
-        assert "29.6.0" in result[0]
 
     def test_cloud_init_not_done_reports_actual_status(self, monkeypatch):
         monkeypatch.setattr(
