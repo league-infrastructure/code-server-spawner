@@ -1,7 +1,7 @@
 ---
 id: '004'
 title: Record created droplet id/fqdn on its triggering NodeOp
-status: open
+status: done
 use-cases:
 - SUC-004
 depends-on:
@@ -57,33 +57,38 @@ callback-based alternative considered and rejected.
 
 ## Acceptance Criteria
 
-- [ ] `_create_droplet` accepts a new optional `node_op_id: str | None =
+- [x] `_create_droplet` accepts a new optional `node_op_id: str | None =
   None` parameter.
-- [ ] When `node_op_id` is set and droplet creation succeeds, the matching
+- [x] When `node_op_id` is set and droplet creation succeeds, the matching
   `NodeOp` row's `droplet_id` and `target_fqdn` are updated and committed,
   using a local import of `NodeOp, db` (matching `op_run`'s existing
   pattern).
-- [ ] When `node_op_id` is `None` (every existing caller: bare CLI
+- [x] When `node_op_id` is `None` (every existing caller: bare CLI
   `node expand`, the autoscaler's `apply_plan`), `_create_droplet`'s
   behavior is completely unchanged — no DB import attempted, no behavior
   difference from before this ticket.
-- [ ] A failure during this best-effort DB write (e.g. the `NodeOp` row
+- [x] A failure during this best-effort DB write (e.g. the `NodeOp` row
   doesn't exist, or a DB error) is caught, logged as a warning, and never
   propagates — node creation succeeds normally regardless.
-- [ ] `expand()` accepts a new optional `node_op_id: str | None = None`
+- [x] `expand()` accepts a new optional `node_op_id: str | None = None`
   parameter, not exposed as a `--option`; passes it through to
   `_create_droplet`.
-- [ ] `op_run()`, for `kind == 'expand'`, invokes `ctx.invoke(expand,
+- [x] `op_run()`, for `kind == 'expand'`, invokes `ctx.invoke(expand,
   tier_name=tier, node_op_id=op_id)` wrapped in `with
   app.app_context():`.
-- [ ] `op_run()`'s `remove`/`rebalance` branches are unchanged (verified by
+- [x] `op_run()`'s `remove`/`rebalance` branches are unchanged (verified by
   running the existing `test/test_node_op_cli.py` suite with no
   modification needed for those branches).
-- [ ] An interrupted `expand` op whose droplet was recorded by this ticket
+- [x] An interrupted `expand` op whose droplet was recorded by this ticket
   (i.e. `target_fqdn`/`droplet_id` are set) produces, via ticket 003's
   sweep, a message naming that droplet — end-to-end coverage may live in
   ticket 003's or this ticket's test suite (either is acceptable; avoid
-  duplicating the same scenario in both).
+  duplicating the same scenario in both). Covered by ticket 003's own
+  `sweep_interrupted_node_ops` tests, which already assert the composed
+  message includes `target_fqdn`/`droplet_id` when present — this ticket
+  populates those same fields (`test_records_droplet_id_and_fqdn_when_node_op_id_set`
+  in `test/test_node_op_cli.py`), so the two suites compose end-to-end
+  without duplicating the scenario.
 
 ## Implementation Plan
 
