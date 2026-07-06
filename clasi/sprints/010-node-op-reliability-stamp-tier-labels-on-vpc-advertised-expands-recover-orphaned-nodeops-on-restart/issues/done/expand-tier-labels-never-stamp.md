@@ -1,5 +1,8 @@
 ---
-status: pending
+status: done
+sprint: '010'
+tickets:
+- 010-001
 ---
 
 # `node expand` never stamps cs.tier/cs.capacity labels (matches node by public IP, but Status.Addr is the VPC address)
@@ -22,6 +25,17 @@ Observed live 2026-07-06: both expand runs of the day (small and large tiers)
 stamped only `code-host-user=true`; `cs.tier`/`cs.capacity` were missing on
 swarm3 (and swarm2 had no labels at all). Restored manually via
 `node label-backfill --apply`.
+
+Re-confirmed 2026-07-06 ~15:15 UTC: a freshly re-expanded swarm4 (large tier,
+`s-8vcpu-16gb-amd`, `Status.Addr=10.124.0.6` vs public `164.92.116.173`, already
+carrying 9 hosts) again stamped only `code-host-user=true` — Tier/Capacity blank
+in the Nodes tab. swarm3 was still unlabeled from earlier. Both relabeled by hand
+this session: swarm3 → `cs.tier=small`/`cs.capacity=6`, swarm4 →
+`cs.tier=large`/`cs.capacity=14`. This is a deterministic regression on every
+VPC-advertised expand, not a one-off. Note the missing `cs.capacity` is not purely
+cosmetic: `node_capacity()` ([tiers.py:101-109](cspawn/cs_docker/tiers.py#L101-L109))
+falls back to `DEFAULT_CAPACITY` (6) when the label is absent, so a large node
+(true capacity 14) is under-counted by the autoscaler until backfilled.
 
 ## Fix
 
