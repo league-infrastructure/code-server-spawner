@@ -522,7 +522,14 @@ class NodeOp(db.Model):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     kind = Column(String(16), nullable=False)          # 'expand' | 'remove' | 'rebalance'
     tier = Column(String(100), nullable=True)           # tier label, e.g. 'large'
-    target_fqdn = Column(String(255), nullable=True)   # FQDN for remove operations
+    # FQDN for 'remove' ops (existing use); for 'expand' ops, the FQDN of the
+    # droplet that _create_droplet() created for this op (populated by a later
+    # ticket, not set here).
+    target_fqdn = Column(String(255), nullable=True)
+    # DigitalOcean droplet id, recorded once _create_droplet() succeeds for an
+    # 'expand' op launched via op-run; used to name a possible orphan if the
+    # op is later marked 'interrupted'. Nullable, never backfilled.
+    droplet_id = Column(Integer, nullable=True)
     status = Column(String(16), nullable=False, default="pending")  # pending|running|done|failed
     exit_code = Column(Integer, nullable=True)
     log_path = Column(String(500), nullable=True)

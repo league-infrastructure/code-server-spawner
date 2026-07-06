@@ -1,7 +1,7 @@
 ---
 id: '002'
 title: Add droplet_id column to node_ops (schema + model)
-status: open
+status: done
 use-cases:
 - SUC-004
 depends-on: []
@@ -50,23 +50,23 @@ columns") for the full design and rationale.
 
 ## Acceptance Criteria
 
-- [ ] New Alembic migration in `migrations/versions/`, `down_revision =
+- [x] New Alembic migration in `migrations/versions/`, `down_revision =
   "v006_add_node_op_table"`, adding `node_ops.droplet_id INTEGER NULL`.
-- [ ] Migration is idempotent and dialect-branched like
+- [x] Migration is idempotent and dialect-branched like
   `v006_add_node_op_table.py`: PostgreSQL uses `ALTER TABLE node_ops ADD
   COLUMN IF NOT EXISTS droplet_id INTEGER`; SQLite/other uses
   `op.add_column(...)` wrapped in `try/except OperationalError` (table
   already has the column).
-- [ ] `downgrade()` drops the column: PostgreSQL `ALTER TABLE node_ops DROP
+- [x] `downgrade()` drops the column: PostgreSQL `ALTER TABLE node_ops DROP
   COLUMN IF EXISTS droplet_id`; SQLite `op.drop_column("node_ops",
   "droplet_id")`.
-- [ ] `NodeOp` model (`cspawn/models.py`) gains `droplet_id = Column(Integer,
+- [x] `NodeOp` model (`cspawn/models.py`) gains `droplet_id = Column(Integer,
   nullable=True)` with an explanatory comment.
-- [ ] `NodeOp.target_fqdn`'s existing comment is updated to note its dual
+- [x] `NodeOp.target_fqdn`'s existing comment is updated to note its dual
   use (remove target vs. expand's created droplet).
-- [ ] Existing rows (and any row created without setting `droplet_id`)
+- [x] Existing rows (and any row created without setting `droplet_id`)
   read back as `None` — no default value, no backfill.
-- [ ] Applying the migration to a fresh SQLite/in-memory test database
+- [x] Applying the migration to a fresh SQLite/in-memory test database
   (matching `test/test_node_op_cli.py`'s `app_db` fixture pattern) and then
   running `db.create_all()` produces a `node_ops` table with the new
   column, confirmed via a direct attribute read on a constructed `NodeOp`
