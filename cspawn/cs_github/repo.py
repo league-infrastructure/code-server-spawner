@@ -80,7 +80,15 @@ class CodeHostRepo:
                 so a wedged SSH/docker-exec never hangs the calling thread
                 forever.
         """
+        import shutil
         import subprocess
+
+        # Fail loud: without `ssh` on PATH there is no way to reach the node,
+        # and shelling out would otherwise surface as a bare
+        # `[Errno 2] No such file or directory`. Check this before any
+        # container lookup or subprocess call (sprint 011).
+        if shutil.which("ssh") is None:
+            raise RuntimeError("ssh binary not found on PATH — cannot push via docker exec")
 
         effective_timeout = timeout or self.app.app_config.get("CODEHOST_PUSH_TIMEOUT_S", 30)
 
@@ -89,8 +97,9 @@ class CodeHostRepo:
 
         repo = service.env['JTL_REPO']
         owner, repo_name = _parse_repo(repo)
-        # Token comes in via `docker exec -e GITHUB_TOKEN=...`, referenced as a
-        # shell var so it never appears in the process argument list.
+        # Token is exported as a shell var inside the piped stdin script (see
+        # below), never as an argv element, so it never appears in the process
+        # argument list.
         remote = f"https://x-access-token:${{GITHUB_TOKEN}}@github.com/{owner}/{repo_name}.git"
 
         refspec = f" {branch}" if branch else ""
@@ -102,22 +111,38 @@ class CodeHostRepo:
             f'git commit -a -m"Automated commit" || true && git push "{remote}"{refspec}'
         )
 
-        # Exec via the docker CLI, not docker-py's exec_run: exec_run over the
-        # SSH transport throws BrokenPipeError (the connection dies between the
-        # service inspect and the exec hijack). The docker CLI handles SSH
-        # robustly — this is the same `docker -H ssh://... exec` that works by
-        # hand. The container's node was attached in CodeServerManager.containers().
+        # The token is prepended as an `export` line to the script piped over
+        # stdin — it must never be materialized as an argv element (not in the
+        # spawner's `ssh` argv, not in the node's sshd/docker-exec command
+        # line). `sh -s` (below) reads this whole script from stdin.
+        script = f'export GITHUB_TOKEN="{env["GITHUB_TOKEN"]}"\n' + cmd + "\n"
+
+        # Reach the node over a plain `ssh` connection and run `docker exec`
+        # on the node itself, against its own local Docker socket. This
+        # replaces the old `docker -H ssh://... exec` CLI transport, which (a)
+        # depended on a `docker` CLI binary the spawner image never shipped,
+        # and (b) still performed an SSH-tunneled Docker API hijack that threw
+        # BrokenPipeError under docker-py's exec_run — the very problem that
+        # CLI transport was meant to avoid (commit 692537f). Node-local exec
+        # removes both failure modes with no spawner image change. See
+        # sprint 011's architecture-update.md (M1 — Push transport) for the
+        # full rationale.
         node_host = container.node.attrs["Description"]["Hostname"]
-        node_uri = f"ssh://root@{self.app.app_config['NODE_HOSTNAME_TEMPLATE'].format(nodename=node_host)}"
-        self.app.logger.info(f"Executing git push for {self.username} on {node_host} ({node_uri})")
+        node_fqdn = self.app.app_config['NODE_HOSTNAME_TEMPLATE'].format(nodename=node_host)
+        self.app.logger.info(f"Executing git push for {self.username} on {node_host} ({node_fqdn})")
 
         argv = [
-            "docker", "-H", node_uri, "exec", "-u", "vscode",
-            "-e", f"GITHUB_TOKEN={env['GITHUB_TOKEN']}",
-            container.id, "sh", "-c", cmd,
+            "ssh",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "BatchMode=yes",
+            f"root@{node_fqdn}",
+            "docker", "exec", "-u", "vscode", "-i", container.id, "sh", "-s",
         ]
         try:
-            proc = subprocess.run(argv, capture_output=True, text=True, timeout=effective_timeout)
+            proc = subprocess.run(
+                argv, input=script, capture_output=True, text=True, timeout=effective_timeout
+            )
         except subprocess.TimeoutExpired as e:
             raise RuntimeError(
                 f"git push timed out after {effective_timeout}s for {self.username} on {node_host}"
