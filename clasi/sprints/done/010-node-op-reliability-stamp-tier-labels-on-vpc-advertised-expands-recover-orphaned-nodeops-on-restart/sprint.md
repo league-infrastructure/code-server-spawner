@@ -2,7 +2,7 @@
 id: '010'
 title: "Node op reliability \u2014 stamp tier labels on VPC-advertised expands + recover\
   \ orphaned NodeOps on restart"
-status: planning-docs
+status: done
 branch: sprint/010-node-op-reliability-stamp-tier-labels-on-vpc-advertised-expands-recover-orphaned-nodeops-on-restart
 use-cases:
 - SUC-001
