@@ -2,7 +2,7 @@
 id: '011'
 title: "Fix push-on-stop transport \u2014 ssh node docker exec instead of missing\
   \ docker CLI"
-status: planning-docs
+status: done
 branch: sprint/011-fix-push-on-stop-transport-ssh-node-docker-exec-instead-of-missing-docker-cli
 use-cases: []
 issues:
