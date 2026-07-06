@@ -517,6 +517,96 @@ class TestCodeHostRepoPush:
                 with pytest.raises(RuntimeError, match="7s"):
                     repo.push()
 
+    def test_push_argv_uses_ssh_not_docker_cli(self):
+        """The subprocess argv must invoke `ssh` (not `docker -H ssh://`),
+        targeting `root@<node-fqdn>` with a non-interactive `docker exec`
+        remote command."""
+        app, db = _make_flask_app()
+        with app.app_context():
+            repo, _, mock_container = _make_repo_with_mock_service(app)
+
+            fake_proc = MagicMock(returncode=0, stdout="", stderr="")
+            with patch("subprocess.run", return_value=fake_proc) as mock_run:
+                repo.push()
+
+            args, kwargs = mock_run.call_args
+            argv = args[0]
+
+            assert argv[0] == "ssh"
+            assert "-o" in argv
+            assert "StrictHostKeyChecking=no" in argv
+            assert "UserKnownHostsFile=/dev/null" in argv
+            assert "BatchMode=yes" in argv
+            assert "root@swarm2.example.com" in argv
+            assert "docker" in argv
+            assert "exec" in argv
+            assert "-u" in argv
+            assert "vscode" in argv
+            assert "-i" in argv
+            assert mock_container.id in argv
+            assert argv[-2:] == ["sh", "-s"]
+
+            # No trace of the old docker -H ssh:// transport anywhere.
+            assert "-H" not in argv
+            assert not any("ssh://" in str(a) for a in argv)
+            assert argv.count("docker") == 1  # not argv[0]
+
+    def test_push_token_never_appears_in_argv(self):
+        """GITHUB_TOKEN must never appear in any argv element passed to
+        subprocess.run — no -e GITHUB_TOKEN=..., no literal token value."""
+        app, db = _make_flask_app()
+        with app.app_context():
+            repo, _, _ = _make_repo_with_mock_service(app)
+
+            fake_proc = MagicMock(returncode=0, stdout="", stderr="")
+            with patch("subprocess.run", return_value=fake_proc) as mock_run:
+                repo.push()
+
+            args, _ = mock_run.call_args
+            argv = args[0]
+
+            assert not any("test-token" in str(a) for a in argv)
+            assert not any("GITHUB_TOKEN" in str(a) for a in argv)
+            assert "-e" not in argv
+
+    def test_push_token_delivered_via_stdin(self):
+        """The token is delivered as an `export GITHUB_TOKEN=...` line in the
+        stdin-piped script (kwargs["input"]), not in argv."""
+        app, db = _make_flask_app()
+        with app.app_context():
+            repo, _, _ = _make_repo_with_mock_service(app)
+
+            fake_proc = MagicMock(returncode=0, stdout="", stderr="")
+            with patch("subprocess.run", return_value=fake_proc) as mock_run:
+                repo.push()
+
+            _, kwargs = mock_run.call_args
+            script = kwargs["input"]
+
+            assert "GITHUB_TOKEN" in script
+            assert "test-token" in script
+            assert script.startswith('export GITHUB_TOKEN="test-token"')
+            # The existing git semantics are preserved, unchanged, in the
+            # piped script.
+            assert 'cd "$WORKSPACE_FOLDER"' in script
+            assert "GIT_TERMINAL_PROMPT=0" in script
+            assert 'git commit -a -m"Automated commit" || true' in script
+            assert "git push" in script
+
+    def test_push_missing_ssh_raises_named_error(self):
+        """A missing `ssh` binary raises a clear, named RuntimeError before
+        any container lookup or subprocess.run call is attempted."""
+        app, db = _make_flask_app()
+        with app.app_context():
+            repo, _, _ = _make_repo_with_mock_service(app)
+
+            with patch("shutil.which", return_value=None):
+                with patch("subprocess.run") as mock_run:
+                    with pytest.raises(RuntimeError, match="ssh"):
+                        repo.push()
+
+            mock_run.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # CodeHostRepo._get_service_container — ValueError on missing service
