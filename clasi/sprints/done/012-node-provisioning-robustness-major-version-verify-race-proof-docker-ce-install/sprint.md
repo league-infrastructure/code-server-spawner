@@ -2,7 +2,7 @@
 id: '012'
 title: "Node provisioning robustness \u2014 major-version verify + race-proof docker-ce\
   \ install"
-status: planning-docs
+status: done
 branch: sprint/012-node-provisioning-robustness-major-version-verify-race-proof-docker-ce-install
 use-cases: []
 issues:
