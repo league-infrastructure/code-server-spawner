@@ -632,6 +632,46 @@ def ensure_database_exists(app: Flask):
         create_database(engine.url)
 
 
+def sweep_interrupted_node_ops(app: Flask) -> int:
+    """Mark every NodeOp row stuck in status='running' as 'interrupted'.
+
+    This is always correct by construction: a `NodeOp`'s `running` status is
+    set exclusively by a detached `op-run` subprocess (`cspawn/cli/node.py`),
+    which writes its terminal status (`done`/`failed`) in a `finally` block.
+    No such subprocess can survive its container's restart — if the process
+    is killed mid-run (deploy restart, OOM, host reboot), the `finally` never
+    executes and the row is orphaned at `running` forever. Therefore any row
+    found `running` at boot time cannot reflect a genuinely in-flight op; it
+    can only be a leftover from a container that died before finishing.
+
+    CAUTION: call this only from the one true process-boot path
+    (`cspawn/app.py`, gated behind `init_app(sweep_node_ops=True)`) — never
+    from the shared CLI bootstrap (`cspawn/cli/util.py::get_app`), which is
+    invoked by every `cspawnctl` subcommand, including `op-run` itself. See
+    `architecture-update.md` Step 6 in sprint 010 for the full rationale.
+
+    Returns the number of rows updated.
+    """
+    with app.app_context():
+        now = datetime.now(timezone.utc)
+        running_ops = NodeOp.query.filter_by(status="running").all()
+
+        for op in running_ops:
+            message = "spawner restarted while op was in flight"
+            if op.target_fqdn or op.droplet_id:
+                message += (
+                    f"; droplet {op.target_fqdn} (id={op.droplet_id}) may be "
+                    "orphaned — verify it joined the swarm"
+                )
+            op.status = "interrupted"
+            op.exit_code = 1
+            op.message = message
+            op.finished_at = now
+
+        db.session.commit()
+        return len(running_ops)
+
+
 def export_dict():
     users = [u.to_dict() for u in User.query.all()]
     classes = [c.to_dict() for c in Class.query.all()]

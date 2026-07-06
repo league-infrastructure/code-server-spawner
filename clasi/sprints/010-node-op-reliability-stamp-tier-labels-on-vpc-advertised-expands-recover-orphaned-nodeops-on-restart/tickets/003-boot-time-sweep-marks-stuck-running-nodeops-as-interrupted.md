@@ -1,7 +1,7 @@
 ---
 id: '003'
 title: Boot-time sweep marks stuck running NodeOps as interrupted
-status: open
+status: done
 use-cases:
 - SUC-003
 depends-on:
@@ -62,7 +62,7 @@ considered and rejected (unconditional sweep; implicit
 
 ## Acceptance Criteria
 
-- [ ] New `sweep_interrupted_node_ops(app) -> int` in `cspawn/models.py`:
+- [x] New `sweep_interrupted_node_ops(app) -> int` in `cspawn/models.py`:
   inside `app.app_context()`, finds every `NodeOp` with `status='running'`,
   sets `status='interrupted'`, `exit_code=1`, `finished_at=now()`, and a
   `message` of `"spawner restarted while op was in flight"` (optionally
@@ -70,20 +70,20 @@ considered and rejected (unconditional sweep; implicit
   — see ticket 004 for how those get populated; this ticket's tests may
   construct rows with those fields already set). Commits once; returns the
   count of rows updated.
-- [ ] Rows with `status` in `pending`, `done`, `failed`, or already
+- [x] Rows with `status` in `pending`, `done`, `failed`, or already
   `interrupted` are left completely untouched by the sweep (no field
   changes, including `finished_at`).
-- [ ] `init_app(..., sweep_node_ops: bool = False)`: when `True` (and only
+- [x] `init_app(..., sweep_node_ops: bool = False)`: when `True` (and only
   after `setup_database(app)` succeeds), calls
   `sweep_interrupted_node_ops(app)` and logs the returned count at `INFO`.
   When `False` (the default), the sweep is never called.
-- [ ] `cspawn/app.py` is the only call site passing `sweep_node_ops=True`.
-- [ ] Every other existing `init_app(...)` call site
+- [x] `cspawn/app.py` is the only call site passing `sweep_node_ops=True`.
+- [x] Every other existing `init_app(...)` call site
   (`cspawn/cli/util.py::get_app`, `cspawn/cli/devel.py::run`,
   `cspawn/util/test_fixture.py`) is unmodified and therefore keeps the
   default `False` — verified by grepping for `init_app(` call sites and
   confirming only `cspawn/app.py` passes the new kwarg.
-- [ ] A regression test proves the boot-gating distinction end-to-end: a
+- [x] A regression test proves the boot-gating distinction end-to-end: a
   `NodeOp` row with `status='running'`, after `init_app(sweep_node_ops=True)`
   is called against an app pointed at that row's database, becomes
   `interrupted`; the same row, if `init_app` were called with the default
