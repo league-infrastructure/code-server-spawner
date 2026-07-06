@@ -17,14 +17,22 @@ Covers:
 Follows `test/test_node_unpin.py`'s MagicMock/`patch()` conventions and
 `test/test_config.py`'s real-`tmp_path`-as-project-root convention (patching
 `find_parent_dir` rather than mocking the filesystem).
+
+Also covers sprint-012 ticket-002: race-proofing + fail-loud hardening of the
+docker-ce pin install in the real `config/cloud-init/swarm-node-init-v2.yaml`
+(read from its actual repo path, not a `tmp_path` fixture, since these tests
+assert on the shipped file's content -- the same content-assertion style this
+file already uses, extended to `runcmd` rather than `write_files`).
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import click
 import pytest
+import yaml
 
 from cspawn.cli.node import _create_droplet, _resolve_cloud_init_path
 
@@ -240,3 +248,135 @@ class TestCreateDropletCloudInitUnset:
         mocks["droplet_cls"].assert_called_once()
         _, kwargs = mocks["droplet_cls"].call_args
         assert kwargs["user_data"] is None
+
+
+# ---------------------------------------------------------------------------
+# sprint-012 ticket-002: race-proof + fail-loud the docker-ce pin install
+# ---------------------------------------------------------------------------
+
+_V2_CLOUD_INIT_PATH = (
+    Path(__file__).resolve().parent.parent / "config" / "cloud-init" / "swarm-node-init-v2.yaml"
+)
+
+
+def _v2_runcmd_text() -> str:
+    """Return the real `swarm-node-init-v2.yaml`'s `runcmd` entries joined
+    into a single order-preserving string, so tests can assert both presence
+    and relative ordering of hardening steps.
+
+    Reads the actual shipped file at its real repo path (not a `tmp_path`
+    fixture) since these tests assert on the file's real content, matching
+    the "content assertions, not live provisioning" convention this file
+    already uses for `write_files`.
+    """
+    data = yaml.safe_load(_V2_CLOUD_INIT_PATH.read_text())
+    return "\n".join(data["runcmd"])
+
+
+class TestSwarmNodeInitV2DockerPinHardening:
+    """The docker-ce pin install used to race `unattended-upgrades` for
+    `/var/lib/dpkg/lock-frontend` and silently no-op under contention
+    (confirmed live on swarm5, 2026-07-06 -- see architecture-update.md /
+    sprint-012 ticket-002). These assert the hardened `runcmd` content; they
+    do not execute real apt/dpkg/systemctl.
+    """
+
+    def test_yaml_still_parses(self):
+        """A broken YAML would fail the Dockerfile's build-time cloud-init
+        self-check (`RUN ls /app/config/cloud-init/*.yaml` plus, more
+        importantly, `_create_droplet` reading it as real user-data)."""
+        data = yaml.safe_load(_V2_CLOUD_INIT_PATH.read_text())
+        assert isinstance(data.get("runcmd"), list)
+
+    def test_stop_and_mask_names_lock_contender_units(self):
+        text = _v2_runcmd_text()
+        assert "systemctl stop" in text
+        assert "systemctl mask" in text
+        for unit in (
+            "unattended-upgrades.service",
+            "apt-daily.service",
+            "apt-daily.timer",
+            "apt-daily-upgrade.service",
+            "apt-daily-upgrade.timer",
+        ):
+            assert unit in text
+
+    def test_stop_and_mask_run_before_pin_install(self):
+        text = _v2_runcmd_text()
+        stop_idx = text.index("systemctl stop")
+        mask_idx = text.index("systemctl mask")
+        install_idx = text.index("DPkg::Lock::Timeout")
+        assert stop_idx < mask_idx < install_idx
+
+    def test_pin_install_has_dpkg_lock_timeout(self):
+        text = _v2_runcmd_text()
+        assert "DPkg::Lock::Timeout=600" in text
+
+    def test_pin_install_wrapped_in_retry_with_backoff(self):
+        text = _v2_runcmd_text()
+        loop_match = re.search(r"for \w+ in ((?:\d+\s*){2,}); do", text)
+        assert loop_match is not None, "expected a bounded for-loop retry construct"
+        attempts = loop_match.group(1).split()
+        assert len(attempts) >= 2, "retry loop should attempt more than once"
+        assert "sleep" in text
+
+    def test_retry_loop_wraps_the_pin_install_command(self):
+        text = _v2_runcmd_text()
+        loop_idx = text.index("for attempt")
+        timeout_idx = text.index("DPkg::Lock::Timeout")
+        done_idx = text.index("done", timeout_idx)
+        assert loop_idx < timeout_idx < done_idx
+
+    def test_apt_mark_hold_preserved(self):
+        text = _v2_runcmd_text()
+        assert "apt-mark hold docker-ce docker-ce-cli" in text
+
+    def test_hold_runs_after_install_attempts(self):
+        text = _v2_runcmd_text()
+        install_idx = text.index("DPkg::Lock::Timeout")
+        hold_idx = text.index("apt-mark hold docker-ce docker-ce-cli")
+        assert install_idx < hold_idx
+
+    def test_fail_loud_marker_and_nonzero_exit_present_after_hold(self):
+        text = _v2_runcmd_text()
+        hold_idx = text.index("apt-mark hold docker-ce docker-ce-cli")
+        assert "CLOUD_INIT_DOCKER_PIN_FAILED" in text
+        marker_idx = text.index("CLOUD_INIT_DOCKER_PIN_FAILED")
+        assert marker_idx > hold_idx
+        # A non-zero exit construct (a literal "exit 1") after the hold.
+        exit_idx = text.index("exit 1", hold_idx)
+        assert exit_idx > hold_idx
+        # The marker also lands in a file, per the greppable-sentinel design.
+        assert "/var/log/cspawn-docker-pin-failed" in text
+
+    def test_fail_loud_step_does_not_use_set_dash_e(self):
+        """The fail-loud `exit 1` must not abort the rest of `runcmd` (do-agent
+        install, UFW config, sshd restart) -- cloud-init's existing
+        continue-on-error behavior between `runcmd` entries is preserved by
+        construction (no `set -e`), which this guards against regressing."""
+        text = _v2_runcmd_text()
+        assert "set -e" not in text
+
+    def test_unmask_and_reenable_step_present_after_fail_loud_step(self):
+        text = _v2_runcmd_text()
+        marker_idx = text.index("CLOUD_INIT_DOCKER_PIN_FAILED")
+        unmask_idx = text.index("systemctl unmask", marker_idx)
+        assert unmask_idx > marker_idx
+
+    def test_unmask_reenable_names_same_units_as_stop_mask(self):
+        text = _v2_runcmd_text()
+        unmask_idx = text.index("systemctl unmask")
+        reenable_segment = text[unmask_idx:]
+        for unit in (
+            "unattended-upgrades.service",
+            "apt-daily.service",
+            "apt-daily.timer",
+            "apt-daily-upgrade.service",
+            "apt-daily-upgrade.timer",
+        ):
+            assert unit in reenable_segment
+
+    def test_reenable_uses_systemctl_enable(self):
+        text = _v2_runcmd_text()
+        unmask_idx = text.index("systemctl unmask")
+        assert "systemctl enable --now" in text[unmask_idx:]

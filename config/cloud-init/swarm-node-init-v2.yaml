@@ -96,13 +96,69 @@ runcmd:
   #
   # IMPORTANT: when the manager's docker-ce major version changes, update
   # DOCKER_PIN below (and upgrade the existing swarm nodes to match).
+  #
+  # Race-proofing (swarm5 incident, 2026-07-06): the pin install below used to
+  # fail silently under a dpkg-lock race with unattended-upgrades, leaving a
+  # node quietly on the base image's stock docker-ce while cloud-init still
+  # reported "status: done" (runcmd does not abort later entries when one
+  # entry fails -- that continue-on-error behavior is deliberately kept, see
+  # below). The steps are, in order:
+  #   1. stop + mask unattended-upgrades and the apt-daily*/apt-daily-upgrade*
+  #      services/timers so none of them can hold /var/lib/dpkg/lock-frontend
+  #      for the rest of provisioning;
+  #   2. install the pin with -o DPkg::Lock::Timeout=600 (wait out any other
+  #      lock holder instead of failing immediately) inside a small bounded
+  #      retry-with-backoff loop (absorbs a transient apt/network failure that
+  #      survives the lock wait);
+  #   3. apt-mark hold docker-ce/docker-ce-cli unconditionally -- whatever
+  #      build is installed at this point gets held against automatic-upgrade
+  #      drift, regardless of whether the pin install actually converged;
+  #   4. assert the installed docker-ce major matches the pin's major; on
+  #      mismatch, write a greppable marker file and an ERROR-labeled line to
+  #      cloud-init's own log, and exit non-zero for this step so `cloud-init
+  #      status` reflects the failure instead of silently reporting done;
+  #   5. unmask + re-enable unattended-upgrades and apt-daily*/apt-daily-upgrade*
+  #      afterward so the node keeps receiving normal OS security patches for
+  #      its lifetime -- safe specifically because step 3's hold (not the
+  #      masking) is what protects docker-ce/docker-ce-cli from drifting under
+  #      automatic upgrades; a still-wrong version is caught by step 4 and by
+  #      `_verify_node_provisioning`, not by leaving patching disabled forever.
+  #
+  # (swarm-node-init-v1.yaml has no docker-ce install step and is confirmed
+  # unreachable in every deployment -- DO_CLOUD_INIT=swarm-node-init-v2.yaml
+  # in config/{devel,local-prod,prod}/public.env -- so it is intentionally
+  # left unhardened.)
   - apt-get update -qq
+  - >-
+    systemctl stop unattended-upgrades.service apt-daily.service apt-daily.timer
+    apt-daily-upgrade.service apt-daily-upgrade.timer || true;
+    systemctl mask unattended-upgrades.service apt-daily.service apt-daily.timer
+    apt-daily-upgrade.service apt-daily-upgrade.timer || true
   - >-
     . /etc/os-release;
     DOCKER_PIN="5:29.6.1-1~ubuntu.${VERSION_ID}~${VERSION_CODENAME}";
+    EXPECTED_MAJOR="${DOCKER_PIN#*:}";
+    EXPECTED_MAJOR="${EXPECTED_MAJOR%%.*}";
+    for attempt in 1 2 3; do
     apt-get install -y --allow-downgrades --allow-change-held-packages
-    "docker-ce=${DOCKER_PIN}" "docker-ce-cli=${DOCKER_PIN}"
-  - apt-mark hold docker-ce docker-ce-cli
+    -o DPkg::Lock::Timeout=600
+    "docker-ce=${DOCKER_PIN}" "docker-ce-cli=${DOCKER_PIN}" && break;
+    echo "docker-ce pin install attempt ${attempt} failed; retrying" >&2;
+    sleep $((attempt * 10));
+    done;
+    apt-mark hold docker-ce docker-ce-cli;
+    ACTUAL="$(docker --version 2>/dev/null || true)";
+    ACTUAL_MAJOR="$(echo "$ACTUAL" | grep -oE '[0-9]+' | head -n1)";
+    if [ "$ACTUAL_MAJOR" != "$EXPECTED_MAJOR" ]; then
+    echo "CLOUD_INIT_DOCKER_PIN_FAILED: expected docker-ce major ${EXPECTED_MAJOR} (pin ${DOCKER_PIN}), got '${ACTUAL}'" >&2;
+    printf 'CLOUD_INIT_DOCKER_PIN_FAILED expected_major=%s expected_pin=%s actual=%s\n' "$EXPECTED_MAJOR" "$DOCKER_PIN" "$ACTUAL" > /var/log/cspawn-docker-pin-failed;
+    exit 1;
+    fi
+  - >-
+    systemctl unmask unattended-upgrades.service apt-daily.service apt-daily.timer
+    apt-daily-upgrade.service apt-daily-upgrade.timer || true;
+    systemctl enable --now unattended-upgrades.service apt-daily.timer
+    apt-daily-upgrade.timer || true
   - systemctl enable --now docker
 
   # Install the DigitalOcean metrics agent (do-agent). The install script
