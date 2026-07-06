@@ -1051,6 +1051,52 @@ def _ensure_node_labels(
         return False
 
 
+def _apply_labels_after_join(
+    manager_client: docker.DockerClient,
+    target: str,
+    labels: dict[str, str],
+    *,
+    deadline_seconds: float = 90.0,
+    poll_interval: float = 3.0,
+    log=None,
+) -> bool:
+    """Poll for the just-joined swarm node and apply `labels`, matching by hostname.
+
+    Locates the node via `_find_swarm_node(manager_client, target, short)` —
+    hostname/short-name matching, never by comparing `Status.Addr` to an IP.
+    Nodes join with `--advertise-addr <VPC-ip>`, so `Status.Addr` is always
+    the private VPC address and can never match a droplet's public IP; that
+    mismatch is what silently dropped `cs.tier`/`cs.capacity` on every
+    VPC-advertised expand before this helper existed.
+
+    Returns True if labels were applied via `_ensure_node_labels` once the
+    node was found, False if the deadline passed with no match (logging a
+    WARNING naming `target` and the label keys that were not applied) or if
+    `labels` is empty. Never raises.
+    """
+    if not labels:
+        return False
+    short = target.split(".")[0] if target else target
+    deadline = time.time() + deadline_seconds
+    while True:
+        try:
+            node_obj = _find_swarm_node(manager_client, target, short)
+        except Exception:
+            node_obj = None
+        if node_obj:
+            name = node_obj.attrs.get("Description", {}).get("Hostname") or target
+            return _ensure_node_labels(manager_client, name, labels, log=log)
+        if time.time() >= deadline:
+            break
+        time.sleep(poll_interval)
+    if log:
+        log.warning(
+            f"[expand] Timed out waiting for node '{target}' to appear in swarm; "
+            f"labels not applied: {sorted(labels.keys())}"
+        )
+    return False
+
+
 def _find_project_id_for_droplet(token: str, droplet_id: int, log=None) -> str | None:
     """Find the Project ID that contains the given droplet using python-digitalocean."""
     urn = f"do:droplet:{droplet_id}"
@@ -1433,7 +1479,11 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
     """Join the node to the swarm as worker. Idempotent.
 
     When ``tier`` is provided, stamps ``cs.tier`` and ``cs.capacity`` labels on the
-    node after it joins the swarm.
+    node after it joins the swarm, via ``_apply_labels_after_join``. That helper
+    matches the joined node by hostname/short-name (``target``), not by comparing
+    ``Status.Addr`` to a public IP — nodes join with ``--advertise-addr <VPC-ip>``,
+    so ``Status.Addr`` is always the private VPC address and an IP-based match
+    against the droplet's public IP can never succeed.
     """
     log = get_logger(ctx)
     priv_key_path, _ = _ensure_priv_key()
@@ -1648,34 +1698,17 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
     except Exception:
         pass
 
-    # Apply cs.tier and cs.capacity labels if tier is known
+    # Apply cs.tier and cs.capacity labels if tier is known. Matched by
+    # hostname (via _apply_labels_after_join), not by comparing Status.Addr
+    # to a public IP — nodes join with --advertise-addr <VPC-ip>, so
+    # Status.Addr is always the private VPC address.
     if tier is not None:
-        try:
-            deadline_labels = time.time() + 90
-            cs_applied = False
-            while time.time() < deadline_labels and not cs_applied:
-                try:
-                    for n in manager_client.nodes.list():
-                        try:
-                            info = manager_client.api.inspect_node(n.id)  # type: ignore[attr-defined]
-                            addr = ((info or {}).get("Status", {}) or {}).get("Addr")
-                            if addr == ip:
-                                name = ((info or {}).get("Description", {}) or {}).get("Hostname") or ""
-                                if name:
-                                    cs_applied = _ensure_node_labels(
-                                        manager_client, name,
-                                        {"cs.tier": tier.name, "cs.capacity": str(tier.capacity)},
-                                        log=log,
-                                    ) or cs_applied
-                                    break
-                        except Exception:
-                            continue
-                except Exception:
-                    pass
-                if not cs_applied:
-                    time.sleep(3)
-        except Exception:
-            pass
+        _apply_labels_after_join(
+            manager_client,
+            target,
+            {"cs.tier": tier.name, "cs.capacity": str(tier.capacity)},
+            log=log,
+        )
 
 
 # ----- Node info and purge commands -----

@@ -11,7 +11,7 @@ import pytest
 from click.testing import CliRunner
 
 from cspawn.cs_docker.tiers import Tier
-from cspawn.cli.node import _ensure_node_labels
+from cspawn.cli.node import _ensure_node_labels, _apply_labels_after_join
 
 
 # ---------------------------------------------------------------------------
@@ -25,7 +25,8 @@ NODE_TIERS_JSON = json.dumps([
 
 
 def _make_manager_client(node_id="node-abc", node_hostname="worker1",
-                         existing_labels=None, version_index=42):
+                         existing_labels=None, version_index=42,
+                         status_addr="10.0.0.1"):
     """Build a minimal mock docker.DockerClient with swarm node list/inspect/update."""
     client = MagicMock()
 
@@ -45,7 +46,7 @@ def _make_manager_client(node_id="node-abc", node_hostname="worker1",
             "Labels": dict(existing_labels) if existing_labels else {},
         },
         "Description": {"Hostname": node_hostname},
-        "Status": {"Addr": "10.0.0.1"},
+        "Status": {"Addr": status_addr},
     }
     client.api.update_node.return_value = None
 
@@ -286,3 +287,98 @@ def test_ensure_node_labels_preserves_existing_unrelated_labels():
     # Original label must still be present
     assert updated_spec["Labels"]["code-host-user"] == "true"
     assert updated_spec["Labels"]["cs.tier"] == "small"
+
+
+# ---------------------------------------------------------------------------
+# _apply_labels_after_join: matches by hostname, never by public-IP comparison
+#
+# Regression coverage for the live-confirmed defect: nodes join with
+# --advertise-addr <VPC-ip>, so Status.Addr is always the private VPC
+# address and can never equal the droplet's public IP. These tests never
+# even pass a public IP into _apply_labels_after_join — hostname/short-name
+# matching via _find_swarm_node is the only lookup path.
+# ---------------------------------------------------------------------------
+
+
+def test_apply_labels_after_join_matches_by_hostname_with_vpc_private_addr():
+    """Status.Addr is a private VPC address (mirrors the live swarm4 regression);
+    the node is still found and labeled because matching is by hostname."""
+    client = _make_manager_client(
+        node_hostname="swarm4.example.com",
+        existing_labels={},
+        status_addr="10.124.0.6",  # private VPC address; droplet's public IP
+                                    # (e.g. 164.92.116.173) is never consulted
+    )
+
+    result = _apply_labels_after_join(
+        client, "swarm4.example.com", {"cs.tier": "large", "cs.capacity": "14"}
+    )
+
+    assert result is True
+    client.api.update_node.assert_called_once()
+    updated_spec = client.api.update_node.call_args[0][2]
+    assert updated_spec["Labels"]["cs.tier"] == "large"
+    assert updated_spec["Labels"]["cs.capacity"] == "14"
+
+
+def test_apply_labels_after_join_matches_by_short_name():
+    """A short-name match (target has no domain suffix) also succeeds."""
+    client = _make_manager_client(node_hostname="swarm4.example.com", existing_labels={})
+
+    result = _apply_labels_after_join(
+        client, "swarm4", {"cs.tier": "large", "cs.capacity": "14"}
+    )
+
+    assert result is True
+    client.api.update_node.assert_called_once()
+
+
+def test_apply_labels_after_join_no_sleep_on_immediate_match():
+    """When the node is found on the first poll, time.sleep is never called."""
+    client = _make_manager_client(node_hostname="swarm4.example.com", existing_labels={})
+
+    with patch("cspawn.cli.node.time.sleep") as mock_sleep:
+        result = _apply_labels_after_join(
+            client, "swarm4.example.com", {"cs.tier": "large", "cs.capacity": "14"}
+        )
+
+    assert result is True
+    mock_sleep.assert_not_called()
+
+
+def test_apply_labels_after_join_timeout_logs_warning_and_returns_false(caplog):
+    """When the target node never appears, returns False, never calls update_node,
+    and logs a WARNING naming the target and the un-applied label keys."""
+    import logging
+
+    client = _make_manager_client(node_hostname="some-other-node.example.com")
+    log = logging.getLogger("test")
+
+    with patch("cspawn.cli.node.time.sleep"), \
+         caplog.at_level(logging.WARNING, logger="test"):
+        result = _apply_labels_after_join(
+            client,
+            "swarm4.example.com",
+            {"cs.tier": "large", "cs.capacity": "14"},
+            deadline_seconds=0.01,
+            poll_interval=0.01,
+            log=log,
+        )
+
+    assert result is False
+    client.api.update_node.assert_not_called()
+    assert any(
+        "swarm4.example.com" in r.message and "cs.tier" in r.message
+        for r in caplog.records
+    )
+
+
+def test_apply_labels_after_join_empty_labels_is_noop():
+    """An empty labels dict is a no-op — returns False without any lookup."""
+    client = _make_manager_client(node_hostname="swarm4.example.com")
+
+    result = _apply_labels_after_join(client, "swarm4.example.com", {})
+
+    assert result is False
+    client.api.update_node.assert_not_called()
+    client.nodes.list.assert_not_called()
