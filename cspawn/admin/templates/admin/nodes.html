@@ -136,12 +136,18 @@
                     <td>{{ op.kind }}</td>
                     <td>{{ op.tier or op.target_fqdn or "---" }}</td>
                     <td>
+                        {# interrupted (sprint 010, nodeop-orphaned-on-container-restart):
+                           a container-restart sweep may mark a formerly-'running' op
+                           'interrupted' — give it its own badge color so it isn't
+                           mistaken for a live in-flight op, and surface op.message
+                           (e.g. an orphaned droplet note) via a tooltip. #}
                         <span id="op-status-{{ op.id }}" class="badge
                             {%- if op.status == 'done' %} bg-success
                             {%- elif op.status == 'failed' %} bg-danger
                             {%- elif op.status == 'running' %} bg-warning text-dark
+                            {%- elif op.status == 'interrupted' %} bg-dark text-white
                             {%- else %} bg-secondary
-                            {%- endif %}">{{ op.status }}</span>
+                            {%- endif %}" title="{{ op.message or '' }}">{{ op.status }}</span>
                     </td>
                     <td><small>{{ op.created_at.strftime('%Y-%m-%d %H:%M') if op.created_at else "---" }}</small></td>
                     <td>
@@ -180,6 +186,8 @@
                             statusEl.classList.add('bg-danger');
                         } else if (data.status === 'running') {
                             statusEl.classList.add('bg-warning', 'text-dark');
+                        } else if (data.status === 'interrupted') {
+                            statusEl.classList.add('bg-dark', 'text-white');
                         } else {
                             statusEl.classList.add('bg-secondary');
                         }

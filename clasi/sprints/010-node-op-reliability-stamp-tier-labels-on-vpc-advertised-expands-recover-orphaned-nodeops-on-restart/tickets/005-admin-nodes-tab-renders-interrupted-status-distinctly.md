@@ -1,7 +1,7 @@
 ---
 id: '005'
 title: Admin Nodes tab renders interrupted status distinctly
-status: open
+status: done
 use-cases:
 - SUC-005
 depends-on:
@@ -57,25 +57,25 @@ criterion: "Admin UI renders `interrupted` distinctly (not spinning)") and
 
 ## Acceptance Criteria
 
-- [ ] The status badge Jinja block in `admin/templates/admin/nodes.html`
+- [x] The status badge Jinja block in `admin/templates/admin/nodes.html`
   gains an `{%- elif op.status == 'interrupted' %}` branch with a badge
   class distinct from `bg-success` (done), `bg-danger` (failed),
   `bg-warning text-dark` (running), and `bg-secondary` (pending/unknown) —
   e.g. `bg-dark text-white`.
-- [ ] The status badge span carries `title="{{ op.message or '' }}"` so the
+- [x] The status badge span carries `title="{{ op.message or '' }}"` so the
   message (including any orphan-droplet note from ticket 003) is visible
   as a browser tooltip.
-- [ ] The `pollOp()` JavaScript's color-mapping `if/else` chain gains the
+- [x] The `pollOp()` JavaScript's color-mapping `if/else` chain gains the
   matching `interrupted` → dark branch, for consistency with the
   server-rendered initial state.
-- [ ] A rendered page containing an `interrupted` op does *not* call
+- [x] A rendered page containing an `interrupted` op does *not* call
   `pollOp(...)` for that op's id (regression guard confirming the existing
   `{% if op.status in ('pending', 'running') %}` gate still excludes it).
-- [ ] A rendered page containing an `interrupted` op with a non-empty
+- [x] A rendered page containing an `interrupted` op with a non-empty
   `message` renders that message text somewhere in the page output (via
   the `title` attribute or equivalent) — verified by asserting the message
   string appears in the rendered HTML.
-- [ ] No changes to `cspawn/admin/routes.py` are required or made.
+- [x] No changes to `cspawn/admin/routes.py` are required or made.
 
 ## Implementation Plan
 
