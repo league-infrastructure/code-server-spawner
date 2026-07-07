@@ -32,8 +32,12 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-DO_TOKEN="${DO_TOKEN:-$(grep -E '^DO_TOKEN' .env 2>/dev/null | sed -E "s/^DO_TOKEN=//; s/^'//; s/'\$//")}"
-[ -n "${DO_TOKEN:-}" ] || { echo "FATAL: DO_TOKEN not set (env or .env)"; exit 1; }
+# Read the token from .env (dotconfig source of truth). Do NOT fall back to a
+# $DO_TOKEN already in the shell env — it is often a stale token from a previous
+# dotconfig load and causes a confusing 401. An explicit DO_TOKEN_OVERRIDE wins
+# if you really need to force one.
+DO_TOKEN="${DO_TOKEN_OVERRIDE:-$(grep -E '^DO_TOKEN' .env 2>/dev/null | sed -E "s/^DO_TOKEN=//; s/^'//; s/'\$//")}"
+[ -n "${DO_TOKEN:-}" ] || { echo "FATAL: DO_TOKEN not found in .env (or DO_TOKEN_OVERRIDE)"; exit 1; }
 
 DOCKER_CONTEXT="${DOCKER_CONTEXT:-swarm1}"
 BASE_IMAGE="${BASE_IMAGE:-ubuntu-22-04-x64}"
