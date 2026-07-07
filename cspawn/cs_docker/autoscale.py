@@ -973,6 +973,7 @@ def apply_plan(
             _join_swarm,
             _get_next_serial,
             _verify_node_provisioning,
+            _check_docker_staleness,
             _expected_docker_version,
             _manager_docker_version,
             _find_swarm_node,
@@ -1067,9 +1068,10 @@ def apply_plan(
                     )
 
                 verify_key_path, _ = _ensure_priv_key()
+                expected_docker_version = _manager_docker_version(_client) or _expected_docker_version(cfg)
                 verify_failures = _verify_node_provisioning(
                     ip, verify_key_path,
-                    expected_docker_version=(_manager_docker_version(_client) or _expected_docker_version(cfg)),
+                    expected_docker_version=expected_docker_version,
                     log=log,
                 )
                 if verify_failures:
@@ -1100,6 +1102,16 @@ def apply_plan(
                             "[autoscale] Best-effort drain of %s failed: %s", shortname, drain_exc
                         )
                     continue
+
+                # Purely diagnostic: warn if the node's docker-ce major has
+                # drifted from the manager's (e.g. a stale golden snapshot).
+                # Never alters the verify verdict above -- reuses the same
+                # expected_docker_version already resolved for that call, no
+                # second resolution.
+                _check_docker_staleness(
+                    ip, verify_key_path,
+                    expected_docker_version=expected_docker_version, log=log,
+                )
 
                 # Warm the node's image cache before it can be scheduled onto,
                 # then reactivate it. Best-effort: a pre-pull failure never

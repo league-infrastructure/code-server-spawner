@@ -1,6 +1,7 @@
 """Unit tests for sprint-009 ticket-002: post-join provisioning verification
-in `cspawnctl node expand`, and sprint-013 ticket-001: pre-pull codehost
-images at node-expand (drain, warm, activate).
+in `cspawnctl node expand`, sprint-013 ticket-001: pre-pull codehost
+images at node-expand (drain, warm, activate), and sprint-013 ticket-002:
+snapshot staleness WARNING on a docker major mismatch.
 
 Covers:
 - `_expected_docker_version`: parses the `DOCKER_PIN="5:X.Y.Z-..."` pattern
@@ -20,6 +21,12 @@ Covers:
 - `_prepull_images`: best-effort per-image `docker pull` over SSH.
 - `_ssh_exec`'s extended `command_timeout` parameter.
 - `expand()`'s new drain-before-verify and pre-pull-then-activate wiring.
+- `_check_docker_staleness`: purely diagnostic WARNING when a node's
+  docker-ce major differs from the manager's, naming golden-snapshot
+  staleness and the rebuild script -- never raises, never alters
+  `_verify_node_provisioning`'s pass/fail verdict.
+- `expand()`'s wiring of `_check_docker_staleness`, called once after verify
+  succeeds, reusing the same already-computed `expected_docker_version`.
 
 Follows `test/test_node_cloud_init.py`'s `find_parent_dir`-patch /
 `tmp_path`-as-project-root convention and `test/test_node_labels.py`'s
@@ -27,6 +34,7 @@ Follows `test/test_node_cloud_init.py`'s `find_parent_dir`-patch /
 """
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
@@ -35,6 +43,7 @@ from click.testing import CliRunner
 
 from cspawn.cli.node import (
     _activate_swarm_node,
+    _check_docker_staleness,
     _expected_docker_version,
     _get_prepull_images,
     _major,
@@ -336,7 +345,8 @@ class TestVerifyNodeProvisioning:
 
 def _invoke_expand(cfg: dict, *, verify_failures=None, manager_docker_version=None,
                     call_order: list[str] | None = None, prepull_result=None,
-                    prepull_images_list=None):
+                    prepull_images_list=None, mock_check_staleness: bool = True,
+                    node_docker_version_output: str | None = None):
     """Invoke `expand` (default all-steps flow) with DO/Docker/SSH infra mocked.
 
     `verify_failures` is the return value of the mocked
@@ -358,8 +368,21 @@ def _invoke_expand(cfg: dict, *, verify_failures=None, manager_docker_version=No
     `{}`); `prepull_images_list` configures `_get_prepull_images`'s return
     value (default `[]`).
 
+    `mock_check_staleness` (default `True`) replaces `_check_docker_staleness`
+    with a no-op `MagicMock` — the default for every test that doesn't care
+    about its internals, since the real function would otherwise attempt a
+    genuine SSH connection. Pass `False` to exercise the REAL
+    `_check_docker_staleness` end-to-end through `expand()`'s wiring; in that
+    mode `_ssh_exec` is faked instead (only `"docker --version"` is a valid
+    call in this mode, since `_verify_node_provisioning` itself stays mocked
+    and never reaches `_ssh_exec`), reporting `node_docker_version_output`
+    (default: a `"29.6.1"`-shaped string) as the node's docker-ce version.
+
     Returns (result, mocks) so callers can assert on both CLI outcome and
-    which collaborators were invoked.
+    which collaborators were invoked. `mocks["log"]` is the `MagicMock`
+    returned by the patched `get_logger`, useful for asserting on log calls
+    made by code (like the real `_check_docker_staleness`) that isn't itself
+    mocked out.
     """
     verify_failures = [] if verify_failures is None else verify_failures
     prepull_result = {} if prepull_result is None else prepull_result
@@ -402,6 +425,16 @@ def _invoke_expand(cfg: dict, *, verify_failures=None, manager_docker_version=No
     mock_prepull_images = MagicMock(side_effect=_prepull_side_effect)
     mock_activate_swarm_node = MagicMock(side_effect=_activate_side_effect)
     mock_get_app = MagicMock(return_value=MagicMock())
+    mock_check_docker_staleness = MagicMock(return_value=None)
+    mock_log = MagicMock()
+
+    def _fake_ssh_exec_for_staleness(host, username, key_path, cmd, **kwargs):
+        # Only reachable when mock_check_staleness=False: _verify_node_provisioning
+        # stays mocked (never calls _ssh_exec itself), so the real
+        # _check_docker_staleness's "docker --version" call is the only caller.
+        if cmd == "docker --version":
+            return (0, node_docker_version_output or "Docker version 29.6.1, build abc", "")
+        raise AssertionError(f"unexpected _ssh_exec call in staleness-only mode: {cmd!r}")
 
     node_mock = MagicMock()
     node_mock.attrs = {"Description": {"Hostname": "swarm5.example.com"}}
@@ -414,24 +447,32 @@ def _invoke_expand(cfg: dict, *, verify_failures=None, manager_docker_version=No
     mock_docker_client_cls = MagicMock(return_value=manager_client)
     mock_do_manager_cls = MagicMock(return_value=MagicMock())
 
-    with (
-        patch("cspawn.cli.node.get_config", return_value=cfg),
-        patch("cspawn.cli.node.get_logger", return_value=MagicMock()),
-        patch("cspawn.cli.node.docker.DockerClient", mock_docker_client_cls),
-        patch("cspawn.cli.node.digitalocean.Manager", mock_do_manager_cls),
-        patch("cspawn.cli.node._create_droplet", mock_create_droplet),
-        patch("cspawn.cli.node._configure_node", mock_configure_node),
-        patch("cspawn.cli.node._join_swarm", mock_join_swarm),
-        patch("cspawn.cli.node._verify_node_provisioning", mock_verify),
-        patch("cspawn.cli.node._ensure_priv_key", mock_ensure_priv_key),
-        patch("cspawn.cli.node._find_swarm_node", mock_find_swarm_node),
-        patch("cspawn.cli.node._drain_swarm_node", mock_drain_swarm_node),
-        patch("cspawn.cli.node._sync_domain_records", mock_sync_domains),
-        patch("cspawn.cli.node._get_prepull_images", mock_get_prepull_images),
-        patch("cspawn.cli.node._prepull_images", mock_prepull_images),
-        patch("cspawn.cli.node._activate_swarm_node", mock_activate_swarm_node),
-        patch("cspawn.cli.util.get_app", mock_get_app),
-    ):
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch("cspawn.cli.node.get_config", return_value=cfg))
+        stack.enter_context(patch("cspawn.cli.node.get_logger", return_value=mock_log))
+        stack.enter_context(patch("cspawn.cli.node.docker.DockerClient", mock_docker_client_cls))
+        stack.enter_context(patch("cspawn.cli.node.digitalocean.Manager", mock_do_manager_cls))
+        stack.enter_context(patch("cspawn.cli.node._create_droplet", mock_create_droplet))
+        stack.enter_context(patch("cspawn.cli.node._configure_node", mock_configure_node))
+        stack.enter_context(patch("cspawn.cli.node._join_swarm", mock_join_swarm))
+        stack.enter_context(patch("cspawn.cli.node._verify_node_provisioning", mock_verify))
+        stack.enter_context(patch("cspawn.cli.node._ensure_priv_key", mock_ensure_priv_key))
+        stack.enter_context(patch("cspawn.cli.node._find_swarm_node", mock_find_swarm_node))
+        stack.enter_context(patch("cspawn.cli.node._drain_swarm_node", mock_drain_swarm_node))
+        stack.enter_context(patch("cspawn.cli.node._sync_domain_records", mock_sync_domains))
+        stack.enter_context(patch("cspawn.cli.node._get_prepull_images", mock_get_prepull_images))
+        stack.enter_context(patch("cspawn.cli.node._prepull_images", mock_prepull_images))
+        stack.enter_context(patch("cspawn.cli.node._activate_swarm_node", mock_activate_swarm_node))
+        stack.enter_context(patch("cspawn.cli.util.get_app", mock_get_app))
+        if mock_check_staleness:
+            stack.enter_context(
+                patch("cspawn.cli.node._check_docker_staleness", mock_check_docker_staleness)
+            )
+        else:
+            stack.enter_context(
+                patch("cspawn.cli.node._ssh_exec", _fake_ssh_exec_for_staleness)
+            )
+
         runner = CliRunner()
         result = runner.invoke(expand, [])
 
@@ -448,6 +489,8 @@ def _invoke_expand(cfg: dict, *, verify_failures=None, manager_docker_version=No
         "prepull_images": mock_prepull_images,
         "activate_swarm_node": mock_activate_swarm_node,
         "get_app": mock_get_app,
+        "check_docker_staleness": mock_check_docker_staleness if mock_check_staleness else None,
+        "log": mock_log,
         "call_order": order,
     }
     return result, mocks
@@ -992,3 +1035,267 @@ class TestSshExecCommandTimeout:
         )
 
         client.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _check_docker_staleness (sprint-013 ticket-002)
+# ---------------------------------------------------------------------------
+
+class TestCheckDockerStaleness:
+    """Direct unit coverage for `_check_docker_staleness`: a purely additive
+    diagnostic that warns when a node's docker-ce major differs from the
+    manager's -- naming golden-snapshot staleness as the likely cause and
+    `scripts/build-golden-node-snapshot.sh` as the remedy. Never raises, and
+    entirely independent of `_verify_node_provisioning` (not called here at
+    all) -- so nothing about that function's pass/fail verdict is exercised
+    or affected by this class.
+    """
+
+    def test_major_mismatch_logs_warning_naming_versions_and_remedy(self, monkeypatch):
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec",
+            lambda *a, **kw: (0, "Docker version 28.4.0, build xyz", ""),
+        )
+        log = MagicMock()
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="29.6.1", log=log,
+        )
+
+        assert result is None
+        log.warning.assert_called_once()
+        msg = log.warning.call_args[0][0]
+        assert "28" in msg
+        assert "29" in msg
+        assert "golden snapshot" in msg.lower()
+        assert "scripts/build-golden-node-snapshot.sh" in msg
+
+    def test_major_mismatch_reverse_direction_also_warns(self, monkeypatch):
+        """Node ahead of the manager (29 vs. manager 28) is symmetric -- also
+        a resolvable mismatch, not just node-behind-manager."""
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec",
+            lambda *a, **kw: (0, "Docker version 29.6.1, build abc", ""),
+        )
+        log = MagicMock()
+
+        _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="28.4.0", log=log,
+        )
+
+        log.warning.assert_called_once()
+        msg = log.warning.call_args[0][0]
+        assert "29" in msg
+        assert "28" in msg
+
+    def test_matching_major_logs_no_warning(self, monkeypatch):
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec",
+            lambda *a, **kw: (0, "Docker version 29.6.0, build abc", ""),
+        )
+        log = MagicMock()
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="29.6.1", log=log,
+        )
+
+        assert result is None
+        log.warning.assert_not_called()
+
+    def test_matching_major_correctly_provisioned_golden_snapshot(self, monkeypatch):
+        """A node correctly provisioned from a golden snapshot that still
+        matches the manager must never warn -- same check, identical
+        version strings."""
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec",
+            lambda *a, **kw: (0, "Docker version 29.6.1, build abc123", ""),
+        )
+        log = MagicMock()
+
+        _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="29.6.1", log=log,
+        )
+
+        log.warning.assert_not_called()
+
+    def test_expected_docker_version_none_is_a_complete_noop(self, monkeypatch):
+        """No SSH call at all, and no log line whatsoever, when there's
+        nothing to compare against -- matches
+        `_verify_node_provisioning`'s own skip condition for this case."""
+        mock_ssh = MagicMock()
+        monkeypatch.setattr("cspawn.cli.node._ssh_exec", mock_ssh)
+        log = MagicMock()
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version=None, log=log,
+        )
+
+        assert result is None
+        mock_ssh.assert_not_called()
+        log.warning.assert_not_called()
+        log.info.assert_not_called()
+        log.debug.assert_not_called()
+
+    def test_ssh_failure_is_not_escalated_to_warning(self, monkeypatch):
+        """An SSH failure here is treated as "can't compare," not itself a
+        staleness finding -- `_verify_node_provisioning`'s own
+        SSH-reachability check already surfaces node unreachability loudly,
+        so this function must not double-report it as a WARNING."""
+        def _raise(*a, **kw):
+            raise Exception("simulated SSH connect failure")
+
+        monkeypatch.setattr("cspawn.cli.node._ssh_exec", _raise)
+        log = MagicMock()
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="29.6.1", log=log,
+        )
+
+        assert result is None
+        log.warning.assert_not_called()
+
+    def test_unparseable_node_version_does_not_crash_or_warn(self, monkeypatch):
+        """Garbled/empty `docker --version` output on the node has no
+        parseable major -- handled gracefully: no crash, and no WARNING
+        (there's nothing resolvable to compare)."""
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec", lambda *a, **kw: (0, "", ""),
+        )
+        log = MagicMock()
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="29.6.1", log=log,
+        )
+
+        assert result is None
+        log.warning.assert_not_called()
+
+    def test_absent_node_version_output_in_stderr_only_does_not_crash(self, monkeypatch):
+        """Some SSH failures surface only via stderr with a zero-ish exit;
+        an unparseable stderr string is handled the same as unparseable
+        stdout -- no crash, no WARNING."""
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec",
+            lambda *a, **kw: (127, "", "bash: docker: command not found"),
+        )
+        log = MagicMock()
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="29.6.1", log=log,
+        )
+
+        assert result is None
+        log.warning.assert_not_called()
+
+    def test_no_log_object_does_not_crash_on_mismatch(self, monkeypatch):
+        """`log=None` (the default) must not crash even when a genuine
+        mismatch is found -- there's simply nowhere to log it."""
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec",
+            lambda *a, **kw: (0, "Docker version 28.4.0, build xyz", ""),
+        )
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"), expected_docker_version="29.6.1",
+        )
+
+        assert result is None
+
+    def test_never_raises_on_unexpected_exception(self, monkeypatch):
+        """Even a non-connection-related exception from `_ssh_exec` (e.g. a
+        key-file error) is swallowed -- this helper is purely diagnostic and
+        must never abort the caller."""
+        def _raise(*a, **kw):
+            raise ValueError("unexpected failure mode")
+
+        monkeypatch.setattr("cspawn.cli.node._ssh_exec", _raise)
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"), expected_docker_version="29.6.1",
+        )
+
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# expand() sprint-013 ticket-002: docker major mismatch staleness WARNING
+# wiring
+# ---------------------------------------------------------------------------
+
+class TestExpandDockerStalenessWarning:
+    """Wiring coverage: `expand()` calls `_check_docker_staleness` exactly
+    once, after `_verify_node_provisioning` succeeds, reusing the exact same
+    `expected_docker_version` value already computed for that verify call --
+    no second, independent resolution. Purely additive: never affects
+    `expand()`'s exit code, and never runs at all when verify itself fails
+    (matching `TestExpandVerificationFailure`/`TestExpandVerificationSuccess`,
+    left otherwise unmodified by this ticket).
+    """
+
+    def test_staleness_check_runs_after_verify_success_with_same_expected_version(self):
+        result, mocks = _invoke_expand(
+            BASE_CFG, verify_failures=[], manager_docker_version="29.7.2",
+        )
+
+        assert result.exit_code == 0, result.output
+        mocks["check_docker_staleness"].assert_called_once()
+        _, verify_kwargs = mocks["verify"].call_args
+        staleness_args, staleness_kwargs = mocks["check_docker_staleness"].call_args
+        assert staleness_kwargs["expected_docker_version"] == "29.7.2"
+        assert (
+            staleness_kwargs["expected_docker_version"]
+            == verify_kwargs["expected_docker_version"]
+        )
+        assert staleness_args[0] == "10.0.0.5"
+
+    def test_staleness_check_not_called_when_verify_fails(self):
+        result, mocks = _invoke_expand(
+            BASE_CFG, verify_failures=["docker version mismatch: ..."],
+        )
+
+        assert result.exit_code != 0
+        mocks["check_docker_staleness"].assert_not_called()
+
+    def test_major_mismatch_warns_but_exit_code_and_summary_are_unchanged(self):
+        """End-to-end: the REAL `_check_docker_staleness` runs (only
+        `_ssh_exec` is faked to report a stale node's docker-ce version);
+        verify itself still passes (it is mocked separately), and the
+        WARNING fires -- but `expand()`'s exit code and summary output are
+        exactly the same as the plain success case."""
+        result, mocks = _invoke_expand(
+            BASE_CFG, verify_failures=[], manager_docker_version="29.7.2",
+            mock_check_staleness=False,
+            node_docker_version_output="Docker version 28.4.0, build xyz",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Created and joined node: swarm5.example.com" in result.output
+        log = mocks["log"]
+        warning_texts = [c.args[0] for c in log.warning.call_args_list if c.args]
+        assert any(
+            "golden snapshot" in t.lower() and "scripts/build-golden-node-snapshot.sh" in t
+            for t in warning_texts
+        )
+
+    def test_matching_major_end_to_end_produces_no_staleness_warning(self):
+        """End-to-end with the REAL `_check_docker_staleness`: a node whose
+        docker-ce major matches the manager's produces no staleness
+        WARNING."""
+        result, mocks = _invoke_expand(
+            BASE_CFG, verify_failures=[], manager_docker_version="29.7.2",
+            mock_check_staleness=False,
+            node_docker_version_output="Docker version 29.7.0, build xyz",
+        )
+
+        assert result.exit_code == 0, result.output
+        log = mocks["log"]
+        warning_texts = [c.args[0] for c in log.warning.call_args_list if c.args]
+        assert not any("golden snapshot" in t.lower() for t in warning_texts)

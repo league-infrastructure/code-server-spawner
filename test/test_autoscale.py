@@ -1178,6 +1178,7 @@ class TestApplyPlanScaleUpVerification:
                 "cspawn.cli.node._find_swarm_node", return_value=failed_node_obj
             ) as mock_find,
             patch("cspawn.cli.node._drain_swarm_node") as mock_drain,
+            patch("cspawn.cli.node._check_docker_staleness"),
             patch("digitalocean.Manager"),
         ):
             result = apply_plan(
@@ -1280,6 +1281,7 @@ class TestApplyPlanScaleUpVerification:
             patch("cspawn.cli.node._get_prepull_images", return_value=["img:1"]) as mock_get_images,
             patch("cspawn.cli.node._prepull_images", return_value={}) as mock_prepull,
             patch("cspawn.cli.node._activate_swarm_node", return_value=True) as mock_activate,
+            patch("cspawn.cli.node._check_docker_staleness"),
             patch("digitalocean.Manager"),
         ):
             result = apply_plan(
@@ -1330,6 +1332,7 @@ class TestApplyPlanScaleUpVerification:
             ) as mock_verify,
             patch("cspawn.cli.node._find_swarm_node"),
             patch("cspawn.cli.node._drain_swarm_node"),
+            patch("cspawn.cli.node._check_docker_staleness") as mock_staleness,
             patch("digitalocean.Manager"),
         ):
             result = apply_plan(
@@ -1343,6 +1346,10 @@ class TestApplyPlanScaleUpVerification:
         assert kwargs["expected_docker_version"] == "29.7.2"
         # The file-literal fallback must not win when the manager is reachable.
         assert kwargs["expected_docker_version"] != "28.0.0"
+        # The staleness check reuses the exact same resolved value -- no
+        # second, independent resolution.
+        _, staleness_kwargs = mock_staleness.call_args
+        assert staleness_kwargs["expected_docker_version"] == "29.7.2"
 
     def test_verify_falls_back_to_expected_docker_version_when_manager_unreachable(self):
         """When the manager's live version can't be determined, scale-up
@@ -1371,6 +1378,7 @@ class TestApplyPlanScaleUpVerification:
             ) as mock_verify,
             patch("cspawn.cli.node._find_swarm_node"),
             patch("cspawn.cli.node._drain_swarm_node"),
+            patch("cspawn.cli.node._check_docker_staleness") as mock_staleness,
             patch("digitalocean.Manager"),
         ):
             result = apply_plan(
@@ -1382,6 +1390,8 @@ class TestApplyPlanScaleUpVerification:
         assert result.errors == []
         _, kwargs = mock_verify.call_args
         assert kwargs["expected_docker_version"] == "28.0.0"
+        _, staleness_kwargs = mock_staleness.call_args
+        assert staleness_kwargs["expected_docker_version"] == "28.0.0"
 
 
 class TestApplyPlanPrepullAndActivate:
@@ -1404,7 +1414,8 @@ class TestApplyPlanPrepullAndActivate:
 
     def test_drain_before_verify_prepull_before_activate(self):
         """Ordering per node: the new early drain fires before verify runs;
-        activate fires only after pre-pull completes."""
+        activate fires only after pre-pull completes. The staleness check
+        (sprint-013 ticket-002) runs between verify and pre-pull."""
         plan = ScalePlan(add_large=1, add_small=0, remove_nodes=[], reason="test")
         ctx = MagicMock()
         cfg = self._base_cfg()
@@ -1417,6 +1428,9 @@ class TestApplyPlanPrepullAndActivate:
         def _verify_side_effect(*a, **k):
             order.append("verify")
             return []
+
+        def _staleness_side_effect(*a, **k):
+            order.append("staleness")
 
         def _prepull_side_effect(*a, **k):
             order.append("prepull")
@@ -1441,6 +1455,7 @@ class TestApplyPlanPrepullAndActivate:
             patch("cspawn.cli.node._verify_node_provisioning", side_effect=_verify_side_effect),
             patch("cspawn.cli.node._find_swarm_node", return_value=MagicMock()),
             patch("cspawn.cli.node._drain_swarm_node", side_effect=_drain_side_effect),
+            patch("cspawn.cli.node._check_docker_staleness", side_effect=_staleness_side_effect),
             patch("cspawn.cli.node._prepull_images", side_effect=_prepull_side_effect),
             patch("cspawn.cli.node._activate_swarm_node", side_effect=_activate_side_effect),
             patch("digitalocean.Manager"),
@@ -1451,7 +1466,7 @@ class TestApplyPlanPrepullAndActivate:
             )
 
         assert result.added == 1
-        assert order == ["drain", "verify", "prepull", "activate"]
+        assert order == ["drain", "verify", "staleness", "prepull", "activate"]
 
     def test_pull_failure_is_best_effort_node_still_added(self):
         """A failed pre-pull never blocks the node from counting as added --
@@ -1476,6 +1491,7 @@ class TestApplyPlanPrepullAndActivate:
             patch("cspawn.cli.node._verify_node_provisioning", return_value=[]),
             patch("cspawn.cli.node._find_swarm_node", return_value=MagicMock()),
             patch("cspawn.cli.node._drain_swarm_node"),
+            patch("cspawn.cli.node._check_docker_staleness"),
             patch(
                 "cspawn.cli.node._prepull_images",
                 return_value={"ghcr.io/example/code-server:latest": False},
@@ -1519,6 +1535,7 @@ class TestApplyPlanPrepullAndActivate:
             patch("cspawn.cli.node._verify_node_provisioning", return_value=[]),
             patch("cspawn.cli.node._find_swarm_node", return_value=MagicMock()),
             patch("cspawn.cli.node._drain_swarm_node"),
+            patch("cspawn.cli.node._check_docker_staleness"),
             patch(
                 "cspawn.cli.node._get_prepull_images", return_value=["img:a"]
             ) as mock_get_images,
@@ -1564,6 +1581,7 @@ class TestApplyPlanPrepullAndActivate:
             patch("cspawn.cli.node._verify_node_provisioning", return_value=[]),
             patch("cspawn.cli.node._find_swarm_node", return_value=MagicMock()),
             patch("cspawn.cli.node._drain_swarm_node"),
+            patch("cspawn.cli.node._check_docker_staleness"),
             patch("cspawn.cli.node._get_prepull_images") as mock_get_images,
             patch("cspawn.cli.node._prepull_images", return_value={}) as mock_prepull,
             patch("cspawn.cli.node._activate_swarm_node", return_value=True) as mock_activate,
@@ -1602,6 +1620,7 @@ class TestApplyPlanPrepullAndActivate:
             patch("cspawn.cli.node._verify_node_provisioning", return_value=[]),
             patch("cspawn.cli.node._find_swarm_node", return_value=MagicMock()),
             patch("cspawn.cli.node._drain_swarm_node"),
+            patch("cspawn.cli.node._check_docker_staleness"),
             patch("cspawn.cli.node._prepull_images", return_value={}) as mock_prepull,
             patch("cspawn.cli.node._activate_swarm_node", return_value=True),
             patch("digitalocean.Manager"),
@@ -1614,6 +1633,199 @@ class TestApplyPlanPrepullAndActivate:
         assert result.added == 1
         _, kwargs = mock_prepull.call_args
         assert kwargs["timeout"] == 120
+
+
+# ---------------------------------------------------------------------------
+# apply_plan() sprint-013 ticket-002: docker major mismatch staleness
+# WARNING wiring (scale-up loop)
+# ---------------------------------------------------------------------------
+
+class TestApplyPlanDockerStalenessWarning:
+    """`apply_plan()`'s scale-up loop calls `_check_docker_staleness` once
+    per successfully-verified node, reusing the exact `expected_docker_version`
+    value already resolved for that node's `_verify_node_provisioning` call --
+    mirroring `expand()`'s identical wiring (see
+    `TestExpandDockerStalenessWarning` in `test_node_provisioning_verify.py`).
+    Patched at `cspawn.cli.node._check_docker_staleness`, per this file's own
+    documented convention (patching `cspawn.cs_docker.autoscale.*` would not
+    intercept the lazily-imported call). Purely additive: never affects
+    `result.added`/`result.errors`.
+    """
+
+    @staticmethod
+    def _base_cfg():
+        return {
+            "NODE_TIERS": NODE_TIERS_JSON,
+            "DEFAULT_CAPACITY": "6",
+            "DO_TOKEN": "tok",
+            "DO_NAMES": "swarm{serial}.example.com",
+            "DOCKER_URI": "ssh://fake",
+        }
+
+    def test_called_once_per_successfully_verified_node(self):
+        plan = ScalePlan(add_large=1, add_small=1, remove_nodes=[], reason="test")
+        ctx = MagicMock()
+        cfg = self._base_cfg()
+        mock_client = MagicMock()
+        droplet_calls = [
+            (MagicMock(), "10.0.0.10", "swarm10.example.com", "swarm10"),
+            (MagicMock(), "10.0.0.11", "swarm11.example.com", "swarm11"),
+        ]
+
+        with (
+            patch("cspawn.cli.node._create_droplet", side_effect=droplet_calls),
+            patch("cspawn.cli.node._configure_node"),
+            patch("cspawn.cli.node._join_swarm"),
+            patch(
+                "cspawn.cli.node._ensure_priv_key",
+                return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+            ),
+            patch("cspawn.cli.node._expected_docker_version", return_value=None),
+            patch("cspawn.cli.node._verify_node_provisioning", return_value=[]),
+            patch("cspawn.cli.node._find_swarm_node", return_value=MagicMock()),
+            patch("cspawn.cli.node._drain_swarm_node"),
+            patch("cspawn.cli.node._check_docker_staleness") as mock_staleness,
+            patch("cspawn.cli.node._prepull_images", return_value={}),
+            patch("cspawn.cli.node._activate_swarm_node", return_value=True),
+            patch("digitalocean.Manager"),
+        ):
+            result = apply_plan(
+                ctx, plan, cfg, dry_run=False,
+                manager_client=mock_client,
+            )
+
+        assert result.added == 2
+        assert mock_staleness.call_count == 2
+
+    def test_not_called_for_a_node_that_fails_verification(self):
+        """A node that fails post-join verification never reaches the
+        staleness check -- it's drained and the batch continues without it."""
+        plan = ScalePlan(add_large=1, add_small=0, remove_nodes=[], reason="test")
+        ctx = MagicMock()
+        cfg = self._base_cfg()
+        mock_client = MagicMock()
+
+        with (
+            patch(
+                "cspawn.cli.node._create_droplet",
+                return_value=(MagicMock(), "10.0.0.10", "swarm10.example.com", "swarm10"),
+            ),
+            patch("cspawn.cli.node._configure_node"),
+            patch("cspawn.cli.node._join_swarm"),
+            patch(
+                "cspawn.cli.node._ensure_priv_key",
+                return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+            ),
+            patch("cspawn.cli.node._expected_docker_version", return_value=None),
+            patch(
+                "cspawn.cli.node._verify_node_provisioning",
+                return_value=["docker version mismatch: expected 29, got 28"],
+            ),
+            patch("cspawn.cli.node._find_swarm_node", return_value=MagicMock()),
+            patch("cspawn.cli.node._drain_swarm_node"),
+            patch("cspawn.cli.node._check_docker_staleness") as mock_staleness,
+            patch("digitalocean.Manager"),
+        ):
+            result = apply_plan(
+                ctx, plan, cfg, dry_run=False,
+                manager_client=mock_client,
+            )
+
+        assert result.added == 0
+        assert len(result.errors) == 1
+        mock_staleness.assert_not_called()
+
+    def test_major_mismatch_warns_but_does_not_affect_result(self, caplog):
+        """End-to-end: the REAL `_check_docker_staleness` runs (only
+        `_ssh_exec` is faked); verify itself passes -- the node is still
+        counted as added and no error is recorded, but a staleness WARNING
+        is logged naming golden-snapshot staleness and the rebuild remedy."""
+        plan = ScalePlan(add_large=1, add_small=0, remove_nodes=[], reason="test")
+        ctx = MagicMock()
+        cfg = self._base_cfg()
+        mock_client = MagicMock()
+        mock_client.version.return_value = {"Version": "29.7.2"}
+
+        def _fake_ssh_exec(host, username, key_path, cmd, **kwargs):
+            if cmd == "docker --version":
+                return (0, "Docker version 28.4.0, build xyz", "")
+            raise AssertionError(f"unexpected _ssh_exec call: {cmd!r}")
+
+        with (
+            patch(
+                "cspawn.cli.node._create_droplet",
+                return_value=(MagicMock(), "10.0.0.10", "swarm10.example.com", "swarm10"),
+            ),
+            patch("cspawn.cli.node._configure_node"),
+            patch("cspawn.cli.node._join_swarm"),
+            patch(
+                "cspawn.cli.node._ensure_priv_key",
+                return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+            ),
+            patch("cspawn.cli.node._verify_node_provisioning", return_value=[]),
+            patch("cspawn.cli.node._find_swarm_node", return_value=MagicMock()),
+            patch("cspawn.cli.node._drain_swarm_node"),
+            patch("cspawn.cli.node._ssh_exec", _fake_ssh_exec),
+            patch("cspawn.cli.node._prepull_images", return_value={}),
+            patch("cspawn.cli.node._activate_swarm_node", return_value=True),
+            patch("digitalocean.Manager"),
+        ):
+            with caplog.at_level("WARNING", logger="cspawn.autoscale"):
+                result = apply_plan(
+                    ctx, plan, cfg, dry_run=False,
+                    manager_client=mock_client,
+                )
+
+        assert result.added == 1
+        assert result.errors == []
+        assert any(
+            "golden snapshot" in rec.message.lower()
+            and "scripts/build-golden-node-snapshot.sh" in rec.message
+            for rec in caplog.records
+        )
+
+    def test_matching_major_end_to_end_produces_no_staleness_warning(self, caplog):
+        """End-to-end with the REAL `_check_docker_staleness`: a node whose
+        docker-ce major matches the manager's produces no staleness
+        WARNING."""
+        plan = ScalePlan(add_large=1, add_small=0, remove_nodes=[], reason="test")
+        ctx = MagicMock()
+        cfg = self._base_cfg()
+        mock_client = MagicMock()
+        mock_client.version.return_value = {"Version": "29.7.2"}
+
+        def _fake_ssh_exec(host, username, key_path, cmd, **kwargs):
+            if cmd == "docker --version":
+                return (0, "Docker version 29.7.0, build xyz", "")
+            raise AssertionError(f"unexpected _ssh_exec call: {cmd!r}")
+
+        with (
+            patch(
+                "cspawn.cli.node._create_droplet",
+                return_value=(MagicMock(), "10.0.0.10", "swarm10.example.com", "swarm10"),
+            ),
+            patch("cspawn.cli.node._configure_node"),
+            patch("cspawn.cli.node._join_swarm"),
+            patch(
+                "cspawn.cli.node._ensure_priv_key",
+                return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+            ),
+            patch("cspawn.cli.node._verify_node_provisioning", return_value=[]),
+            patch("cspawn.cli.node._find_swarm_node", return_value=MagicMock()),
+            patch("cspawn.cli.node._drain_swarm_node"),
+            patch("cspawn.cli.node._ssh_exec", _fake_ssh_exec),
+            patch("cspawn.cli.node._prepull_images", return_value={}),
+            patch("cspawn.cli.node._activate_swarm_node", return_value=True),
+            patch("digitalocean.Manager"),
+        ):
+            with caplog.at_level("WARNING", logger="cspawn.autoscale"):
+                result = apply_plan(
+                    ctx, plan, cfg, dry_run=False,
+                    manager_client=mock_client,
+                )
+
+        assert result.added == 1
+        assert not any("golden snapshot" in rec.message.lower() for rec in caplog.records)
 
 
 # ---------------------------------------------------------------------------

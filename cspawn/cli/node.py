@@ -721,6 +721,64 @@ def _verify_node_provisioning(ip: str, key_path: Path, *, expected_docker_versio
     return failures
 
 
+def _check_docker_staleness(ip: str, key_path: Path, *, expected_docker_version: str | None,
+                            log=None) -> None:
+    """Purely diagnostic: warn an operator when a node's docker-ce major
+    differs from the manager's, naming golden-snapshot staleness as the
+    likely cause.
+
+    This complements -- and must never replace or alter -- the hard-fail
+    verdict of `_verify_node_provisioning` (sprint 009/012), which already
+    blocks a real major mismatch. That function's failure message doesn't
+    explain *why* a node that should have been correctly baked ended up
+    wrong; this function exists solely to add that explanation as a WARNING,
+    called independently, alongside the hard gate -- never feeding into its
+    pass/fail verdict, failure message, or drain behavior in any way.
+
+    Skips entirely (no-op, no log line at all, not even at debug level) when
+    `expected_docker_version` is `None` -- matching
+    `_verify_node_provisioning`'s own skip condition for "nothing to compare
+    against."
+
+    Otherwise runs `docker --version` over SSH (best-effort, via the shared
+    `_ssh_exec`): an SSH failure here is treated as "can't compare" and is
+    *not* itself escalated to WARNING, since `_verify_node_provisioning`'s own
+    SSH-reachability check already surfaces node unreachability loudly.
+    Computes both majors via the existing shared `_major()` helper (no
+    second, divergent parsing definition) and, only when both are resolvable
+    and differ, logs a WARNING naming the node's docker-ce version, the
+    manager's, golden-snapshot staleness as the likely cause, and
+    `scripts/build-golden-node-snapshot.sh` as the remedy.
+
+    Never raises.
+    """
+    if expected_docker_version is None:
+        return
+
+    try:
+        _code, out, err = _ssh_exec(ip, "root", key_path, "docker --version")
+        docker_version_output = (out or err or "").strip()
+    except Exception as e:
+        if log:
+            log.debug(f"[expand] staleness check: docker --version failed on {ip}: {e}")
+        return
+
+    expected_major = _major(expected_docker_version)
+    actual_major = _major(docker_version_output)
+    if expected_major is None or actual_major is None or expected_major == actual_major:
+        return
+
+    if log:
+        log.warning(
+            f"[expand] Node {ip} docker-ce major {actual_major} "
+            f"({docker_version_output!r}) differs from manager major "
+            f"{expected_major} ({expected_docker_version!r}); if this node was "
+            f"provisioned from a golden snapshot, its baked docker-ce may have "
+            f"drifted -- rebuild it via scripts/build-golden-node-snapshot.sh "
+            f"(see docs/golden-node-snapshot.md)"
+        )
+
+
 def _ssh_exec(host: str, username: str, key_path: Path, cmd: str, *, connect_timeout: int = 15,
               command_timeout: float | None = None) -> tuple[int, str, str]:
     """Run `cmd` over a fresh SSH connection and return (exit_code, stdout, stderr).
@@ -2846,9 +2904,10 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
 
         log.info("[expand] Verifying node provisioning (SSH, docker version, cloud-init)")
         verify_key_path, _ = _ensure_priv_key()
+        expected_docker_version = _manager_docker_version(manager_client) or _expected_docker_version(cfg)
         failures = _verify_node_provisioning(
             last_ip, verify_key_path,
-            expected_docker_version=(_manager_docker_version(manager_client) or _expected_docker_version(cfg)),
+            expected_docker_version=expected_docker_version,
             log=log,
         )
         if failures:
@@ -2873,6 +2932,15 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
                 f"was drained: {'; '.join(failures)}"
             )
         log.info(f"[expand] Node {last_shortname} passed post-join provisioning verification")
+
+        # Purely diagnostic: warn if the node's docker-ce major has drifted
+        # from the manager's (e.g. a stale golden snapshot). Never alters the
+        # verify verdict above -- reuses the same expected_docker_version
+        # already resolved for that call, no second resolution.
+        _check_docker_staleness(
+            last_ip, verify_key_path,
+            expected_docker_version=expected_docker_version, log=log,
+        )
 
         # Warm the node's image cache before it can be scheduled onto, then
         # reactivate it. Best-effort: a pre-pull failure never blocks
