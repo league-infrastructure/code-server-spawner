@@ -974,6 +974,7 @@ def apply_plan(
             _get_next_serial,
             _verify_node_provisioning,
             _expected_docker_version,
+            _manager_docker_version,
             _find_swarm_node,
             _drain_swarm_node,
             _ensure_priv_key,
@@ -1026,7 +1027,7 @@ def apply_plan(
                 verify_key_path, _ = _ensure_priv_key()
                 verify_failures = _verify_node_provisioning(
                     ip, verify_key_path,
-                    expected_docker_version=_expected_docker_version(cfg),
+                    expected_docker_version=(_manager_docker_version(_client) or _expected_docker_version(cfg)),
                     log=log,
                 )
                 if verify_failures:

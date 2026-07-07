@@ -28,6 +28,7 @@ from click.testing import CliRunner
 from cspawn.cli.node import (
     _expected_docker_version,
     _major,
+    _manager_docker_version,
     _verify_node_provisioning,
     expand,
 )
@@ -102,6 +103,41 @@ class TestExpectedDockerVersion:
             unreadable.chmod(0o644)
 
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# _manager_docker_version
+# ---------------------------------------------------------------------------
+
+class TestManagerDockerVersion:
+    """Direct unit coverage for the live manager-version query helper, shared
+    by `_join_swarm`'s pre-join preflight, `_create_droplet`'s cloud-init
+    `__DOCKER_VERSION__` substitution, and `expand`'s post-join verification.
+    """
+
+    def test_returns_version_field_from_manager_client(self):
+        manager_client = MagicMock()
+        manager_client.version.return_value = {"Version": "29.7.2", "ApiVersion": "1.51"}
+
+        assert _manager_docker_version(manager_client) == "29.7.2"
+
+    def test_returns_none_when_version_call_raises(self):
+        manager_client = MagicMock()
+        manager_client.version.side_effect = Exception("connection refused")
+
+        assert _manager_docker_version(manager_client) is None
+
+    def test_returns_none_when_version_field_missing(self):
+        manager_client = MagicMock()
+        manager_client.version.return_value = {"ApiVersion": "1.51"}
+
+        assert _manager_docker_version(manager_client) is None
+
+    def test_returns_none_when_version_call_returns_none(self):
+        manager_client = MagicMock()
+        manager_client.version.return_value = None
+
+        assert _manager_docker_version(manager_client) is None
 
 
 # ---------------------------------------------------------------------------
@@ -286,11 +322,19 @@ class TestVerifyNodeProvisioning:
 # expand() CLI wiring
 # ---------------------------------------------------------------------------
 
-def _invoke_expand(cfg: dict, *, verify_failures=None):
+def _invoke_expand(cfg: dict, *, verify_failures=None, manager_docker_version=None):
     """Invoke `expand` (default all-steps flow) with DO/Docker/SSH infra mocked.
 
     `verify_failures` is the return value of the mocked
     `_verify_node_provisioning` (default: `[]`, i.e. verification passes).
+
+    `manager_docker_version` configures what `manager_client.version()`
+    reports (via `_manager_docker_version`): `None` (default) simulates a
+    manager whose version can't be determined (`.version()` returns `{}`,
+    same as `_manager_docker_version`'s "not found" case), so `expand`'s
+    `expected_docker_version` falls through to the `_expected_docker_version`
+    file-literal fallback. Pass a string (e.g. "29.7.2") to simulate a
+    reachable manager reporting that docker-ce version.
 
     Returns (result, mocks) so callers can assert on both CLI outcome and
     which collaborators were invoked.
@@ -314,6 +358,9 @@ def _invoke_expand(cfg: dict, *, verify_failures=None):
     node_mock.attrs = {"Description": {"Hostname": "swarm5.example.com"}}
     manager_client = MagicMock()
     manager_client.nodes.list.return_value = [node_mock]
+    manager_client.version.return_value = (
+        {"Version": manager_docker_version} if manager_docker_version else {}
+    )
 
     mock_docker_client_cls = MagicMock(return_value=manager_client)
     mock_do_manager_cls = MagicMock(return_value=MagicMock())
@@ -395,3 +442,28 @@ class TestExpandVerificationSuccess:
         assert args[0] == "10.0.0.5"
         assert args[1] == Path("/fake/id_rsa")
         assert kwargs["expected_docker_version"] is None
+
+    def test_verify_uses_manager_docker_version_when_available(self):
+        """When the manager's live docker-ce version can be determined,
+        expand() passes it as expected_docker_version -- not the (possibly
+        stale) file-literal fallback."""
+        result, mocks = _invoke_expand(
+            BASE_CFG, verify_failures=[], manager_docker_version="29.7.2",
+        )
+
+        assert result.exit_code == 0, result.output
+        _, kwargs = mocks["verify"].call_args
+        assert kwargs["expected_docker_version"] == "29.7.2"
+
+    def test_verify_falls_back_to_expected_docker_version_when_manager_unknown(self):
+        """When the manager's live version can't be determined,
+        expand() falls back to the _expected_docker_version file-literal
+        parse rather than skipping the check outright."""
+        with patch("cspawn.cli.node._expected_docker_version", return_value="28.1.0"):
+            result, mocks = _invoke_expand(
+                BASE_CFG, verify_failures=[], manager_docker_version=None,
+            )
+
+        assert result.exit_code == 0, result.output
+        _, kwargs = mocks["verify"].call_args
+        assert kwargs["expected_docker_version"] == "28.1.0"

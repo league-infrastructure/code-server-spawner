@@ -557,12 +557,19 @@ _DOCKER_PIN_RE = re.compile(r'DOCKER_PIN="5:(\d+\.\d+\.\d+)-')
 
 
 def _expected_docker_version(cfg: dict) -> str | None:
-    """Determine the docker-ce version a correctly-provisioned node should report.
+    """Best-effort fallback: parse a hardcoded docker-ce pin literal from cloud-init.
 
     Resolves the configured cloud-init file via `_resolve_cloud_init_path` and
-    regex-parses the `DOCKER_PIN="5:X.Y.Z-..."` pattern documented in
-    `config/cloud-init/swarm-node-init-v2.yaml` (the pin the manager's docker-ce
-    major/minor version is held to). Returns `"X.Y.Z"` on a match.
+    regex-parses the `DOCKER_PIN="5:X.Y.Z-..."` pattern. This only matches when
+    the file has a literal version baked in — the shipped
+    `config/cloud-init/swarm-node-init-v2.yaml` instead uses the
+    `__DOCKER_VERSION__` placeholder (resolved live from the manager by
+    `_manager_docker_version` in `_create_droplet`, so this regex won't match
+    it and this function returns `None`). Callers should prefer
+    `_manager_docker_version(manager_client)` and only fall back to this
+    function when the manager can't be queried live — this exists purely for
+    backward compatibility with an operator-supplied cloud-init that still
+    hardcodes a literal pin.
 
     Returns `None` — never raises — when cloud-init is unconfigured, the file
     can't be read, or the pattern isn't found. Callers treat `None` as "skip
@@ -580,6 +587,35 @@ def _expected_docker_version(cfg: dict) -> str | None:
     if not match:
         return None
     return match.group(1)
+
+
+def _manager_docker_version(manager_client: docker.DockerClient) -> str | None:
+    """Query the swarm manager's own docker-ce version, live, via the Engine API.
+
+    Calls `manager_client.version()` (the daemon's `/version` endpoint) and
+    returns its `Version` field — e.g. `"29.6.1"` — the docker-ce version of
+    the daemon `manager_client` is connected to (the swarm manager). Returns
+    `None` on any failure (connection error, missing/malformed response) —
+    never raises.
+
+    This is the single code path for "what docker-ce version is the manager
+    running right now," shared by:
+      - `_join_swarm`'s pre-join major-version preflight,
+      - `_create_droplet`'s cloud-init `__DOCKER_VERSION__` substitution, and
+      - `expand`'s post-join `_verify_node_provisioning` call.
+    Do not reintroduce a second, drifting inline `.version()` read — callers
+    that used to inline this (the join preflight) now call this instead.
+
+    Callers treat `None` as "the manager's version could not be determined,"
+    not as an error to propagate on its own: each caller decides whether
+    that's fatal (`_create_droplet` fails fast when a placeholder needs
+    filling) or a reason to fall back to a file-literal
+    (`_expected_docker_version`).
+    """
+    try:
+        return (manager_client.version() or {}).get("Version")
+    except Exception:
+        return None
 
 
 def _major(v: str | None) -> int | None:
@@ -1327,6 +1363,16 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
     missing or unreadable, this raises `click.ClickException` and creates nothing.
     If unset, proceeds with ``user_data=None`` (unchanged, explicit opt-out).
 
+    If the resolved cloud-init text contains the ``__DOCKER_VERSION__``
+    placeholder, it is substituted here — also before any DigitalOcean side
+    effect — with the swarm manager's live docker-ce version from
+    `_manager_docker_version(manager_client)`. If that placeholder is present
+    but the manager's version cannot be determined, this raises
+    `click.ClickException` and creates nothing: provisioning a node without a
+    guaranteed-matching docker-ce pin defeats the point of pinning at all.
+    Cloud-init with no placeholder (e.g. an operator-hardcoded literal pin) is
+    left untouched, for backward compatibility.
+
     When ``node_op_id`` is provided (the admin-triggered `op-run` path passes
     the triggering `NodeOp`'s id), the created droplet's id/fqdn are recorded
     on that `NodeOp` row as a best-effort write once creation succeeds — so
@@ -1396,6 +1442,29 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
                     "proceed without cloud-init (not recommended)."
                 )
             log.info(f"[expand] Including cloud-init user-data from {cip}")
+
+            # Cloud-init may contain the __DOCKER_VERSION__ placeholder (see
+            # config/cloud-init/swarm-node-init-v2.yaml) in place of a
+            # hand-maintained docker-ce version literal. Resolve it here —
+            # before user-data is baked into the droplet — against the
+            # swarm manager's *live* docker-ce version, so new nodes always
+            # pin to whatever the manager is actually running (surviving
+            # future manager upgrades, including major bumps) without
+            # anyone needing to edit the cloud-init file. If the manager's
+            # version can't be determined, fail fast and create no droplet
+            # rather than provision a node with an unresolved/broken pin.
+            if "__DOCKER_VERSION__" in user_data:
+                mgr_docker_version = _manager_docker_version(manager_client)
+                if not mgr_docker_version:
+                    raise click.ClickException(
+                        f"[expand] Cloud-init at {cip} requires the swarm manager's docker-ce "
+                        "version (placeholder __DOCKER_VERSION__) but it could not be determined "
+                        f"from the manager at docker_uri={docker_uri!r}. Refusing to provision a "
+                        "node without a guaranteed matching docker-ce pin -- check manager "
+                        "connectivity and retry."
+                    )
+                user_data = user_data.replace("__DOCKER_VERSION__", mgr_docker_version)
+                log.info(f"[expand] Resolved manager docker-ce version {mgr_docker_version} into cloud-init DOCKER_PIN")
 
         # Prepare keys
         priv_key_path, pub_key_path = _ensure_priv_key()
@@ -1597,12 +1666,8 @@ def _join_swarm(ctx, target: str, manager_client: docker.DockerClient, docker_ur
     # Mismatch can fail swarm TLS handshakes (e.g., ALPN-related errors).
     # Uses the module-level `_major()` helper (shared with
     # `_verify_node_provisioning`'s post-join docker-version check).
-    manager_ver = None
+    manager_ver = _manager_docker_version(manager_client)
     worker_ver = None
-    try:
-        manager_ver = (manager_client.version() or {}).get("Version")
-    except Exception:
-        manager_ver = None
 
     try:
         code_v, out_v, err_v = _ssh_exec_retry(
@@ -2578,7 +2643,7 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
         verify_key_path, _ = _ensure_priv_key()
         failures = _verify_node_provisioning(
             last_ip, verify_key_path,
-            expected_docker_version=_expected_docker_version(cfg),
+            expected_docker_version=(_manager_docker_version(manager_client) or _expected_docker_version(cfg)),
             log=log,
         )
         if failures:

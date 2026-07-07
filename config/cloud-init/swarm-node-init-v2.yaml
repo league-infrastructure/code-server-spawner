@@ -85,17 +85,24 @@ write_files:
       echo "UFW configured for Docker Swarm dataplane (iface='${VPC_IFACE:-<cidr-only>}', ${VPC_CIDR})"
 
 runcmd:
-  # Pin docker-ce to the swarm manager's major version to prevent a major-version
+  # Pin docker-ce to the swarm manager's version to prevent a version
   # mismatch at swarm join (a worker on a different Docker major than the manager
   # is refused by the expand join preflight).
   #
-  # The pin target is the 29.6 series, matching the swarm manager (swarm1/swarm2
-  # run docker-ce 29.6.1 as of 2026-06-27). The distro codename is resolved at
-  # runtime from the droplet's own OS (lsb_release) rather than hardcoded, so the
-  # pin works regardless of whether the DO base image is focal or jammy.
+  # DOCKER_PIN below contains the literal token __DOCKER_VERSION__. That token
+  # is NOT resolved on this node -- it is substituted by `_create_droplet` in
+  # cspawn/cli/node.py *before* this file is ever sent to DigitalOcean as
+  # droplet user-data. `_create_droplet` queries the swarm manager's live
+  # docker-ce version via `_manager_docker_version()` and replaces the token
+  # with it, so by the time cloud-init actually runs here, DOCKER_PIN is
+  # already a fully-resolved version string (e.g. "5:29.6.1-1~ubuntu...").
+  # This means the pin always tracks the manager automatically -- there is no
+  # longer a hand-maintained version constant to update in this file when the
+  # manager's docker-ce version changes, including major bumps.
   #
-  # IMPORTANT: when the manager's docker-ce major version changes, update
-  # DOCKER_PIN below (and upgrade the existing swarm nodes to match).
+  # ${VERSION_ID}/${VERSION_CODENAME} ARE still resolved on this node at boot
+  # (from /etc/os-release), so the pin works regardless of whether the DO base
+  # image is focal, jammy, or noble.
   #
   # Race-proofing (swarm5 incident, 2026-07-06): the pin install below used to
   # fail silently under a dpkg-lock race with unattended-upgrades, leaving a
@@ -136,7 +143,7 @@ runcmd:
     apt-daily-upgrade.service apt-daily-upgrade.timer || true
   - >-
     . /etc/os-release;
-    DOCKER_PIN="5:29.6.1-1~ubuntu.${VERSION_ID}~${VERSION_CODENAME}";
+    DOCKER_PIN="5:__DOCKER_VERSION__-1~ubuntu.${VERSION_ID}~${VERSION_CODENAME}";
     EXPECTED_MAJOR="${DOCKER_PIN#*:}";
     EXPECTED_MAJOR="${EXPECTED_MAJOR%%.*}";
     for attempt in 1 2 3; do

@@ -1275,6 +1275,90 @@ class TestApplyPlanScaleUpVerification:
         mock_find.assert_not_called()
         mock_drain.assert_not_called()
 
+    def test_verify_prefers_manager_docker_version_over_file_literal(self):
+        """Scale-up's post-join verification passes the swarm manager's live
+        docker-ce version (via `_manager_docker_version`) as
+        `expected_docker_version`, not the `_expected_docker_version`
+        file-literal fallback, when the manager's version is available."""
+        plan = ScalePlan(add_large=1, add_small=0, remove_nodes=[], reason="test")
+        ctx = MagicMock()
+        cfg = self._base_cfg()
+
+        mock_client = MagicMock()
+        mock_client.version.return_value = {"Version": "29.7.2"}
+
+        with (
+            patch(
+                "cspawn.cli.node._create_droplet",
+                return_value=(MagicMock(), "10.0.0.10", "swarm10.example.com", "swarm10"),
+            ),
+            patch("cspawn.cli.node._configure_node"),
+            patch("cspawn.cli.node._join_swarm"),
+            patch(
+                "cspawn.cli.node._ensure_priv_key",
+                return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+            ),
+            patch(
+                "cspawn.cli.node._expected_docker_version", return_value="28.0.0"
+            ) as mock_expected_fallback,
+            patch(
+                "cspawn.cli.node._verify_node_provisioning", return_value=[]
+            ) as mock_verify,
+            patch("cspawn.cli.node._find_swarm_node"),
+            patch("cspawn.cli.node._drain_swarm_node"),
+            patch("digitalocean.Manager"),
+        ):
+            result = apply_plan(
+                ctx, plan, cfg, dry_run=False,
+                manager_client=mock_client,
+            )
+
+        assert result.added == 1
+        assert result.errors == []
+        _, kwargs = mock_verify.call_args
+        assert kwargs["expected_docker_version"] == "29.7.2"
+        # The file-literal fallback must not win when the manager is reachable.
+        assert kwargs["expected_docker_version"] != "28.0.0"
+
+    def test_verify_falls_back_to_expected_docker_version_when_manager_unreachable(self):
+        """When the manager's live version can't be determined, scale-up
+        falls back to the `_expected_docker_version` file-literal parse."""
+        plan = ScalePlan(add_large=1, add_small=0, remove_nodes=[], reason="test")
+        ctx = MagicMock()
+        cfg = self._base_cfg()
+
+        mock_client = MagicMock()
+        mock_client.version.side_effect = Exception("connection refused")
+
+        with (
+            patch(
+                "cspawn.cli.node._create_droplet",
+                return_value=(MagicMock(), "10.0.0.10", "swarm10.example.com", "swarm10"),
+            ),
+            patch("cspawn.cli.node._configure_node"),
+            patch("cspawn.cli.node._join_swarm"),
+            patch(
+                "cspawn.cli.node._ensure_priv_key",
+                return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+            ),
+            patch("cspawn.cli.node._expected_docker_version", return_value="28.0.0"),
+            patch(
+                "cspawn.cli.node._verify_node_provisioning", return_value=[]
+            ) as mock_verify,
+            patch("cspawn.cli.node._find_swarm_node"),
+            patch("cspawn.cli.node._drain_swarm_node"),
+            patch("digitalocean.Manager"),
+        ):
+            result = apply_plan(
+                ctx, plan, cfg, dry_run=False,
+                manager_client=mock_client,
+            )
+
+        assert result.added == 1
+        assert result.errors == []
+        _, kwargs = mock_verify.call_args
+        assert kwargs["expected_docker_version"] == "28.0.0"
+
 
 # ---------------------------------------------------------------------------
 # run_autoscale — kill-switch and dry-run enforcement

@@ -23,6 +23,16 @@ docker-ce pin install in the real `config/cloud-init/swarm-node-init-v2.yaml`
 (read from its actual repo path, not a `tmp_path` fixture, since these tests
 assert on the shipped file's content -- the same content-assertion style this
 file already uses, extended to `runcmd` rather than `write_files`).
+
+Also covers: the manager-version-pinning follow-up that replaces the
+hardcoded `DOCKER_PIN="5:29.6.1-..."` literal with a `__DOCKER_VERSION__`
+placeholder, resolved live at expand-time. `_create_droplet` substitutes the
+placeholder with the swarm manager's live docker-ce version
+(`_manager_docker_version`) before the cloud-init text is baked into the
+droplet as user_data; if the placeholder is present but the manager's
+version can't be determined, it raises and creates no droplet (fail fast
+rather than provision a node we can't pin correctly). Cloud-init with no
+placeholder (an operator-hardcoded literal) passes through unchanged.
 """
 from __future__ import annotations
 
@@ -91,10 +101,18 @@ class TestResolveCloudInitPath:
 # _create_droplet: cloud-init resolution
 # ---------------------------------------------------------------------------
 
-def _invoke_create_droplet(tmp_path, cfg: dict, *, droplet_cls: MagicMock):
+def _invoke_create_droplet(tmp_path, cfg: dict, *, droplet_cls: MagicMock, manager_docker_version: str | None = None):
     """Call `_create_droplet` with the DigitalOcean/SSH/network surface mocked
     out, but real `tmp_path`-backed cloud-init path resolution (per
     test_config.py's convention: patch `find_parent_dir`, don't mock the fs).
+
+    `manager_docker_version` configures what the mocked `manager_client`
+    reports via `.version()` (consumed by `_manager_docker_version`): `None`
+    (default) simulates a manager whose version can't be determined
+    (`.version()` returns `{}`); pass a string (e.g. "29.7.2") to simulate a
+    reachable manager reporting that docker-ce version. Only relevant to
+    cloud-init content containing the `__DOCKER_VERSION__` placeholder --
+    ignored otherwise.
 
     Returns (result_or_None, exception_or_None, mocks) so callers can assert
     on both the happy path and the failure path with one helper.
@@ -102,6 +120,9 @@ def _invoke_create_droplet(tmp_path, cfg: dict, *, droplet_cls: MagicMock):
     mgr = MagicMock()
     mgr.get_all_droplets.return_value = []
     manager_client = MagicMock()
+    manager_client.version.return_value = (
+        {"Version": manager_docker_version} if manager_docker_version else {}
+    )
 
     mock_ensure_priv_key = MagicMock(return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")))
     mock_collect_ssh_keys = MagicMock(return_value=[])
@@ -234,6 +255,84 @@ class TestCreateDropletCloudInitFound:
         mocks["collect_ssh_keys"].assert_called_once()
 
 
+class TestCreateDropletDockerVersionPlaceholder:
+    """`_create_droplet` substitutes the `__DOCKER_VERSION__` placeholder
+    (see config/cloud-init/swarm-node-init-v2.yaml) with the swarm manager's
+    live docker-ce version, queried via `_manager_docker_version`, before the
+    cloud-init text is baked into the droplet as user_data.
+    """
+
+    def test_placeholder_substituted_with_manager_version(self, tmp_path):
+        """The placeholder is replaced with the manager's live version in the
+        user_data passed to the droplet, and no placeholder remains."""
+        cloud_init_dir = tmp_path / "config" / "cloud-init"
+        cloud_init_dir.mkdir(parents=True)
+        content = (
+            "#cloud-config\nruncmd:\n"
+            "  - >-\n"
+            '    DOCKER_PIN="5:__DOCKER_VERSION__-1~ubuntu.${VERSION_ID}~${VERSION_CODENAME}"\n'
+        )
+        (cloud_init_dir / "swarm-node-init-v2.yaml").write_text(content)
+
+        cfg = {"DO_CLOUD_INIT": "swarm-node-init-v2.yaml"}
+        mock_instance = MagicMock()
+        droplet_cls = MagicMock(return_value=mock_instance)
+
+        result, exc, mocks = _invoke_create_droplet(
+            tmp_path, cfg, droplet_cls=droplet_cls, manager_docker_version="29.7.2",
+        )
+
+        assert exc is None
+        assert result is not None
+        _, kwargs = mocks["droplet_cls"].call_args
+        assert "__DOCKER_VERSION__" not in kwargs["user_data"]
+        assert 'DOCKER_PIN="5:29.7.2-1~ubuntu' in kwargs["user_data"]
+
+    def test_manager_version_unknown_raises_and_creates_no_droplet(self, tmp_path):
+        """Placeholder present but the manager's version can't be determined:
+        fail fast, before any DigitalOcean side effect -- never provision a
+        node we can't guarantee a matching docker-ce pin for."""
+        cloud_init_dir = tmp_path / "config" / "cloud-init"
+        cloud_init_dir.mkdir(parents=True)
+        content = '#cloud-config\nruncmd:\n  - \'DOCKER_PIN="5:__DOCKER_VERSION__-1"\'\n'
+        (cloud_init_dir / "swarm-node-init-v2.yaml").write_text(content)
+
+        cfg = {"DO_CLOUD_INIT": "swarm-node-init-v2.yaml"}
+        droplet_cls = MagicMock()
+
+        result, exc, mocks = _invoke_create_droplet(
+            tmp_path, cfg, droplet_cls=droplet_cls, manager_docker_version=None,
+        )
+
+        assert result is None
+        assert exc is not None
+        assert "__DOCKER_VERSION__" in exc.format_message()
+        mocks["droplet_cls"].assert_not_called()
+        mocks["ensure_priv_key"].assert_not_called()
+        mocks["collect_ssh_keys"].assert_not_called()
+
+    def test_no_placeholder_leaves_content_unchanged(self, tmp_path):
+        """No __DOCKER_VERSION__ token (e.g. an operator-hardcoded literal
+        pin) -- content passes through untouched, backward compatible."""
+        cloud_init_dir = tmp_path / "config" / "cloud-init"
+        cloud_init_dir.mkdir(parents=True)
+        content = '#cloud-config\nruncmd:\n  - \'DOCKER_PIN="5:29.6.1-1"\'\n'
+        (cloud_init_dir / "swarm-node-init-v2.yaml").write_text(content)
+
+        cfg = {"DO_CLOUD_INIT": "swarm-node-init-v2.yaml"}
+        mock_instance = MagicMock()
+        droplet_cls = MagicMock(return_value=mock_instance)
+
+        result, exc, mocks = _invoke_create_droplet(
+            tmp_path, cfg, droplet_cls=droplet_cls, manager_docker_version=None,
+        )
+
+        assert exc is None
+        assert result is not None
+        _, kwargs = mocks["droplet_cls"].call_args
+        assert kwargs["user_data"] == content
+
+
 class TestCreateDropletCloudInitUnset:
     def test_unset_config_proceeds_with_user_data_none(self, tmp_path):
         """No DO_CLOUD_INIT/DO_CLOUD_INIT_FILE: proceeds with user_data=None, no exception."""
@@ -287,6 +386,17 @@ class TestSwarmNodeInitV2DockerPinHardening:
         importantly, `_create_droplet` reading it as real user-data)."""
         data = yaml.safe_load(_V2_CLOUD_INIT_PATH.read_text())
         assert isinstance(data.get("runcmd"), list)
+
+    def test_docker_pin_uses_manager_version_placeholder_not_a_hardcoded_literal(self):
+        """DOCKER_PIN's version segment is the `__DOCKER_VERSION__` token,
+        substituted live from the swarm manager by `_create_droplet`
+        (`_manager_docker_version` in cspawn/cli/node.py) *before* this file
+        is ever sent to DigitalOcean as user-data -- not a hardcoded literal
+        that needs manual updates when the manager's docker-ce version
+        changes (including major bumps)."""
+        text = _v2_runcmd_text()
+        assert 'DOCKER_PIN="5:__DOCKER_VERSION__-1~ubuntu' in text
+        assert "29.6.1" not in text
 
     def test_stop_and_mask_names_lock_contender_units(self):
         text = _v2_runcmd_text()
