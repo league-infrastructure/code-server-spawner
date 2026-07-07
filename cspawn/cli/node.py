@@ -66,7 +66,15 @@ def count_hosts_per_node(client: docker.DockerClient) -> dict[str, int]:
 
     per_node: dict[str, int] = defaultdict(int)
     for svc in client.services.list(filters={"label": "jtl.codeserver=true"}):
-        for t in svc.tasks(filters={"desired-state": "running"}):
+        # A codehost service can be removed (host stop/purge) between the
+        # services.list() above and this svc.tasks() call. That makes tasks()
+        # raise 404 NotFound; swallow it so one vanishing service never breaks
+        # the whole count (and the admin Nodes page that renders it).
+        try:
+            tasks = svc.tasks(filters={"desired-state": "running"})
+        except Exception:
+            continue
+        for t in tasks:
             if (t.get("Status", {}) or {}).get("State") != "running":
                 continue
             nid = t.get("NodeID")
@@ -114,7 +122,13 @@ def hosts(ctx, summary):
     for svc in client.services.list(filters={"label": "jtl.codeserver=true"}):
         labels = svc.attrs.get("Spec", {}).get("Labels", {})
         uname = labels.get("jtl.codeserver.username") or svc.name
-        for t in svc.tasks(filters={"desired-state": "running"}):
+        # A service can be removed between list() and tasks() — skip it rather
+        # than letting a 404 abort the whole listing.
+        try:
+            tasks = svc.tasks(filters={"desired-state": "running"})
+        except Exception:
+            continue
+        for t in tasks:
             if (t.get("Status", {}) or {}).get("State") != "running":
                 continue
             nid = t.get("NodeID")
