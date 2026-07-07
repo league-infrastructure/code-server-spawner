@@ -1745,11 +1745,15 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
 
         # Create droplet — tier.slug takes precedence over do_size when provided
         effective_size = tier.slug if tier is not None else do_size
+        # A numeric DO_IMAGE is a snapshot/custom-image ID and must be sent to the
+        # DO API as an integer; a slug (e.g. "docker-20-04") stays a string. The
+        # env-file stores everything as strings, so coerce an all-digits value.
+        image_arg = int(do_image) if str(do_image).isdigit() else do_image
         droplet = digitalocean.Droplet(
             token=do_token,
             name=fqdn,
             region=do_region,
-            image=do_image,
+            image=image_arg,
             size_slug=effective_size,
             ssh_keys=list(ssh_keys_param or []),
             backups=False,
@@ -1757,7 +1761,7 @@ def _create_droplet(ctx, *, mgr: digitalocean.Manager, manager_client: docker.Do
             tags=[do_tag] if do_tag else None,
             user_data=user_data,
         )
-        log.info(f"[expand] Creating droplet {fqdn} in {do_region} with size {effective_size} and image {do_image}")
+        log.info(f"[expand] Creating droplet {fqdn} in {do_region} with size {effective_size} and image {image_arg}")
         try:
             droplet.create()
         except Exception as e:
