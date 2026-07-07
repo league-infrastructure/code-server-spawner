@@ -973,11 +973,15 @@ def apply_plan(
             _join_swarm,
             _get_next_serial,
             _verify_node_provisioning,
+            _check_docker_staleness,
             _expected_docker_version,
             _manager_docker_version,
             _find_swarm_node,
             _drain_swarm_node,
             _ensure_priv_key,
+            _activate_swarm_node,
+            _get_prepull_images,
+            _prepull_images,
         )
         from cspawn.cs_docker.tiers import load_tiers
 
@@ -1004,6 +1008,25 @@ def apply_plan(
             [tier_large] * plan.add_large + [tier_small] * plan.add_small
         )
 
+        # Resolve the pre-pull image set ONCE for the whole batch (it doesn't
+        # change across nodes in a single scale-up run) -- unlike
+        # drain/verify/pre-pull/activate, which run per node below.
+        if app is not None:
+            try:
+                with app.app_context():
+                    prepull_images = _get_prepull_images(cfg)
+            except Exception as e:
+                log.warning("[autoscale] Failed to resolve pre-pull image list: %s", e)
+                prepull_images = []
+        else:
+            log.warning(
+                "[autoscale] apply_plan() called without a Flask app; skipping "
+                "class_proto DB image resolution for pre-pull (falling back to "
+                "NODE_PREPULL_IMAGES only, if configured)"
+            )
+            configured_raw = cfg.get("NODE_PREPULL_IMAGES") or ""
+            prepull_images = list(dict.fromkeys(configured_raw.replace(",", " ").split()))
+
         for tier in nodes_to_add:
             try:
                 droplet, ip, fqdn, shortname = _create_droplet(
@@ -1024,10 +1047,31 @@ def apply_plan(
                 _configure_node(ctx, fqdn, desired_shortname=shortname)
                 _join_swarm(ctx, fqdn, _client, docker_uri, tier=tier)
 
+                # Drain immediately post-join, before verification runs: matches
+                # expand()'s identical early-drain wiring (see
+                # architecture-update.md) -- closes the window during which an
+                # active-but-unverified-and-cold node could be scheduled onto.
+                # apply_plan() has no explicit swarm-membership-wait (unlike
+                # expand()); this ticket leaves that asymmetry as-is.
+                node_obj = None
+                try:
+                    node_obj = _find_swarm_node(_client, fqdn, shortname)
+                    if node_obj is not None:
+                        _drain_swarm_node(_client, node_obj, log=log)
+                    else:
+                        log.warning(
+                            "[autoscale] Could not find swarm node %s to drain (pre-verify)", shortname
+                        )
+                except Exception as drain_exc:
+                    log.warning(
+                        "[autoscale] Best-effort pre-verify drain of %s failed: %s", shortname, drain_exc
+                    )
+
                 verify_key_path, _ = _ensure_priv_key()
+                expected_docker_version = _manager_docker_version(_client) or _expected_docker_version(cfg)
                 verify_failures = _verify_node_provisioning(
                     ip, verify_key_path,
-                    expected_docker_version=(_manager_docker_version(_client) or _expected_docker_version(cfg)),
+                    expected_docker_version=expected_docker_version,
                     log=log,
                 )
                 if verify_failures:
@@ -1041,7 +1085,10 @@ def apply_plan(
                     # Swarm stops scheduling work onto it. A single bad node must
                     # not abort the rest of the batch, so we continue rather than
                     # break (unlike the ClickException/generic-exception branches
-                    # below, which indicate a systemic problem).
+                    # below, which indicate a systemic problem). This is a second
+                    # attempt at the same drain done above: a harmless idempotent
+                    # no-op in the common case, and a fallback for when the
+                    # earlier drain itself failed.
                     try:
                         node_obj = _find_swarm_node(_client, fqdn, shortname)
                         if node_obj is not None:
@@ -1055,6 +1102,33 @@ def apply_plan(
                             "[autoscale] Best-effort drain of %s failed: %s", shortname, drain_exc
                         )
                     continue
+
+                # Purely diagnostic: warn if the node's docker-ce major has
+                # drifted from the manager's (e.g. a stale golden snapshot).
+                # Never alters the verify verdict above -- reuses the same
+                # expected_docker_version already resolved for that call, no
+                # second resolution.
+                _check_docker_staleness(
+                    ip, verify_key_path,
+                    expected_docker_version=expected_docker_version, log=log,
+                )
+
+                # Warm the node's image cache before it can be scheduled onto,
+                # then reactivate it. Best-effort: a pre-pull failure never
+                # blocks activation; activation itself retries loudly (see
+                # _activate_swarm_node) since a warmed-but-still-drained node
+                # is silently-wasted capacity.
+                _prepull_images(
+                    ip, verify_key_path, prepull_images,
+                    timeout=cfg.get("NODE_PREPULL_TIMEOUT_S", 300), log=log,
+                )
+                activate_node_obj = node_obj or _find_swarm_node(_client, fqdn, shortname)
+                if activate_node_obj is not None:
+                    _activate_swarm_node(_client, activate_node_obj, log=log)
+                else:
+                    log.warning(
+                        "[autoscale] Could not find swarm node %s to activate", shortname
+                    )
 
                 result.added += 1
                 log.info("[autoscale] scale-up: added node %s (tier=%s)", fqdn, tier.name)

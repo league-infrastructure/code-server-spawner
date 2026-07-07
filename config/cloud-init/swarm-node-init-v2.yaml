@@ -104,12 +104,26 @@ runcmd:
   # (from /etc/os-release), so the pin works regardless of whether the DO base
   # image is focal, jammy, or noble.
   #
+  # Idempotency guard (sprint 013 ticket-003): a node provisioned from the
+  # golden snapshot (docs/golden-node-snapshot.md) already has docker-ce
+  # installed and apt-mark-held at the correct major -- running the full
+  # install/mask/hold/unmask round-trip below on every boot would be a
+  # needless apt/network round-trip on that node. Before doing anything else,
+  # this entry resolves DOCKER_PIN/EXPECTED_MAJOR exactly as before, then
+  # computes ACTUAL/ACTUAL_MAJOR from `docker --version` using the identical
+  # major-extraction idiom the fail-loud assertion below already uses. If
+  # ACTUAL_MAJOR is non-empty and already equals EXPECTED_MAJOR, the entire
+  # install/mask/hold/unmask sequence is skipped -- docker is already correct
+  # and held, so there is nothing to do. Only a node with no docker installed
+  # (a non-snapshot/base-image node) or a wrong-major docker falls through to
+  # the full hardened sequence below, unchanged.
+  #
   # Race-proofing (swarm5 incident, 2026-07-06): the pin install below used to
   # fail silently under a dpkg-lock race with unattended-upgrades, leaving a
   # node quietly on the base image's stock docker-ce while cloud-init still
   # reported "status: done" (runcmd does not abort later entries when one
   # entry fails -- that continue-on-error behavior is deliberately kept, see
-  # below). The steps are, in order:
+  # below). The fall-through steps are, in order:
   #   1. stop + mask unattended-upgrades and the apt-daily*/apt-daily-upgrade*
   #      services/timers so none of them can hold /var/lib/dpkg/lock-frontend
   #      for the rest of provisioning;
@@ -122,50 +136,58 @@ runcmd:
   #      drift, regardless of whether the pin install actually converged;
   #   4. assert the installed docker-ce major matches the pin's major; on
   #      mismatch, write a greppable marker file and an ERROR-labeled line to
-  #      cloud-init's own log, and exit non-zero for this step so `cloud-init
-  #      status` reflects the failure instead of silently reporting done;
+  #      cloud-init's own log;
   #   5. unmask + re-enable unattended-upgrades and apt-daily*/apt-daily-upgrade*
   #      afterward so the node keeps receiving normal OS security patches for
   #      its lifetime -- safe specifically because step 3's hold (not the
   #      masking) is what protects docker-ce/docker-ce-cli from drifting under
   #      automatic upgrades; a still-wrong version is caught by step 4 and by
   #      `_verify_node_provisioning`, not by leaving patching disabled forever.
+  #      Step 5 runs UNCONDITIONALLY, even when step 4's assertion fails: the
+  #      `exit 1` for a failed assertion is deferred (via the PIN_RC flag)
+  #      until after unmask/re-enable, specifically so a failed pin never
+  #      leaves the node's normal OS patching masked forever. The marker file
+  #      and the eventual non-zero exit still make the failure loud and
+  #      greppable (`cloud-init status` reflects it), and `runcmd`'s existing
+  #      no-`set -e` continue-on-error behavior means the rest of `runcmd`
+  #      (do-agent install, UFW config, sshd restart) still proceeds
+  #      regardless.
   #
   # (swarm-node-init-v1.yaml has no docker-ce install step and is confirmed
   # unreachable in every deployment -- DO_CLOUD_INIT=swarm-node-init-v2.yaml
   # in config/{devel,local-prod,prod}/public.env -- so it is intentionally
   # left unhardened.)
-  - apt-get update -qq
-  - >-
-    systemctl stop unattended-upgrades.service apt-daily.service apt-daily.timer
-    apt-daily-upgrade.service apt-daily-upgrade.timer || true;
-    systemctl mask unattended-upgrades.service apt-daily.service apt-daily.timer
-    apt-daily-upgrade.service apt-daily-upgrade.timer || true
-  - >-
-    . /etc/os-release;
-    DOCKER_PIN="5:__DOCKER_VERSION__-1~ubuntu.${VERSION_ID}~${VERSION_CODENAME}";
-    EXPECTED_MAJOR="${DOCKER_PIN#*:}";
-    EXPECTED_MAJOR="${EXPECTED_MAJOR%%.*}";
-    for attempt in 1 2 3; do
-    apt-get install -y --allow-downgrades --allow-change-held-packages
-    -o DPkg::Lock::Timeout=600
-    "docker-ce=${DOCKER_PIN}" "docker-ce-cli=${DOCKER_PIN}" && break;
-    echo "docker-ce pin install attempt ${attempt} failed; retrying" >&2;
-    sleep $((attempt * 10));
-    done;
-    apt-mark hold docker-ce docker-ce-cli;
-    ACTUAL="$(docker --version 2>/dev/null || true)";
-    ACTUAL_MAJOR="$(echo "$ACTUAL" | grep -oE '[0-9]+' | head -n1)";
-    if [ "$ACTUAL_MAJOR" != "$EXPECTED_MAJOR" ]; then
-    echo "CLOUD_INIT_DOCKER_PIN_FAILED: expected docker-ce major ${EXPECTED_MAJOR} (pin ${DOCKER_PIN}), got '${ACTUAL}'" >&2;
-    printf 'CLOUD_INIT_DOCKER_PIN_FAILED expected_major=%s expected_pin=%s actual=%s\n' "$EXPECTED_MAJOR" "$DOCKER_PIN" "$ACTUAL" > /var/log/cspawn-docker-pin-failed;
-    exit 1;
+  - |-
+    . /etc/os-release
+    DOCKER_PIN="5:__DOCKER_VERSION__-1~ubuntu.${VERSION_ID}~${VERSION_CODENAME}"
+    EXPECTED_MAJOR="${DOCKER_PIN#*:}"
+    EXPECTED_MAJOR="${EXPECTED_MAJOR%%.*}"
+    ACTUAL="$(docker --version 2>/dev/null || true)"
+    ACTUAL_MAJOR="$(echo "$ACTUAL" | grep -oE '[0-9]+' | head -n1)"
+    if [ -n "$ACTUAL_MAJOR" ] && [ "$ACTUAL_MAJOR" = "$EXPECTED_MAJOR" ]; then
+      echo "docker-ce already at major ${ACTUAL_MAJOR}, matches pin -- skipping install/hold round-trip"
+    else
+      apt-get update -qq
+      systemctl stop unattended-upgrades.service apt-daily.service apt-daily.timer apt-daily-upgrade.service apt-daily-upgrade.timer || true
+      systemctl mask unattended-upgrades.service apt-daily.service apt-daily.timer apt-daily-upgrade.service apt-daily-upgrade.timer || true
+      for attempt in 1 2 3; do
+        apt-get install -y --allow-downgrades --allow-change-held-packages -o DPkg::Lock::Timeout=600 "docker-ce=${DOCKER_PIN}" "docker-ce-cli=${DOCKER_PIN}" && break
+        echo "docker-ce pin install attempt ${attempt} failed; retrying" >&2
+        sleep $((attempt * 10))
+      done
+      apt-mark hold docker-ce docker-ce-cli
+      ACTUAL="$(docker --version 2>/dev/null || true)"
+      ACTUAL_MAJOR="$(echo "$ACTUAL" | grep -oE '[0-9]+' | head -n1)"
+      PIN_RC=0
+      if [ "$ACTUAL_MAJOR" != "$EXPECTED_MAJOR" ]; then
+        echo "CLOUD_INIT_DOCKER_PIN_FAILED: expected docker-ce major ${EXPECTED_MAJOR} (pin ${DOCKER_PIN}), got '${ACTUAL}'" >&2
+        printf 'CLOUD_INIT_DOCKER_PIN_FAILED expected_major=%s expected_pin=%s actual=%s\n' "$EXPECTED_MAJOR" "$DOCKER_PIN" "$ACTUAL" > /var/log/cspawn-docker-pin-failed
+        PIN_RC=1
+      fi
+      systemctl unmask unattended-upgrades.service apt-daily.service apt-daily.timer apt-daily-upgrade.service apt-daily-upgrade.timer || true
+      systemctl enable --now unattended-upgrades.service apt-daily.timer apt-daily-upgrade.timer || true
+      if [ "$PIN_RC" -ne 0 ]; then exit 1; fi
     fi
-  - >-
-    systemctl unmask unattended-upgrades.service apt-daily.service apt-daily.timer
-    apt-daily-upgrade.service apt-daily-upgrade.timer || true;
-    systemctl enable --now unattended-upgrades.service apt-daily.timer
-    apt-daily-upgrade.timer || true
   - systemctl enable --now docker
 
   # Install the DigitalOcean metrics agent (do-agent). The install script

@@ -1,5 +1,7 @@
 """Unit tests for sprint-009 ticket-002: post-join provisioning verification
-in `cspawnctl node expand`.
+in `cspawnctl node expand`, sprint-013 ticket-001: pre-pull codehost
+images at node-expand (drain, warm, activate), and sprint-013 ticket-002:
+snapshot staleness WARNING on a docker major mismatch.
 
 Covers:
 - `_expected_docker_version`: parses the `DOCKER_PIN="5:X.Y.Z-..."` pattern
@@ -12,6 +14,19 @@ Covers:
 - `expand()` CLI wiring: post-join verification failure drains the node and
   aborts with a non-zero exit; success leaves the pre-existing summary
   output unchanged.
+- `_activate_swarm_node`: idempotent activate mirroring `_drain_swarm_node`,
+  with retry+backoff and a loud ERROR on exhausted retries.
+- `_get_prepull_images`: DB-derived `class_proto.image_uri` list unioned with
+  the optional `NODE_PREPULL_IMAGES` config allowlist.
+- `_prepull_images`: best-effort per-image `docker pull` over SSH.
+- `_ssh_exec`'s extended `command_timeout` parameter.
+- `expand()`'s new drain-before-verify and pre-pull-then-activate wiring.
+- `_check_docker_staleness`: purely diagnostic WARNING when a node's
+  docker-ce major differs from the manager's, naming golden-snapshot
+  staleness and the rebuild script -- never raises, never alters
+  `_verify_node_provisioning`'s pass/fail verdict.
+- `expand()`'s wiring of `_check_docker_staleness`, called once after verify
+  succeeds, reusing the same already-computed `expected_docker_version`.
 
 Follows `test/test_node_cloud_init.py`'s `find_parent_dir`-patch /
 `tmp_path`-as-project-root convention and `test/test_node_labels.py`'s
@@ -19,16 +34,22 @@ Follows `test/test_node_cloud_init.py`'s `find_parent_dir`-patch /
 """
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
 
 from cspawn.cli.node import (
+    _activate_swarm_node,
+    _check_docker_staleness,
     _expected_docker_version,
+    _get_prepull_images,
     _major,
     _manager_docker_version,
+    _prepull_images,
+    _ssh_exec,
     _verify_node_provisioning,
     expand,
 )
@@ -322,7 +343,10 @@ class TestVerifyNodeProvisioning:
 # expand() CLI wiring
 # ---------------------------------------------------------------------------
 
-def _invoke_expand(cfg: dict, *, verify_failures=None, manager_docker_version=None):
+def _invoke_expand(cfg: dict, *, verify_failures=None, manager_docker_version=None,
+                    call_order: list[str] | None = None, prepull_result=None,
+                    prepull_images_list=None, mock_check_staleness: bool = True,
+                    node_docker_version_output: str | None = None):
     """Invoke `expand` (default all-steps flow) with DO/Docker/SSH infra mocked.
 
     `verify_failures` is the return value of the mocked
@@ -336,10 +360,34 @@ def _invoke_expand(cfg: dict, *, verify_failures=None, manager_docker_version=No
     file-literal fallback. Pass a string (e.g. "29.7.2") to simulate a
     reachable manager reporting that docker-ce version.
 
+    `call_order`, when given a list, has `"drain"`, `"verify"`, `"prepull"`,
+    and `"activate"` appended to it (in call order) by the respective mocks —
+    lets callers assert sequencing without depending on Mock internals.
+
+    `prepull_result` configures `_prepull_images`'s return value (default
+    `{}`); `prepull_images_list` configures `_get_prepull_images`'s return
+    value (default `[]`).
+
+    `mock_check_staleness` (default `True`) replaces `_check_docker_staleness`
+    with a no-op `MagicMock` — the default for every test that doesn't care
+    about its internals, since the real function would otherwise attempt a
+    genuine SSH connection. Pass `False` to exercise the REAL
+    `_check_docker_staleness` end-to-end through `expand()`'s wiring; in that
+    mode `_ssh_exec` is faked instead (only `"docker --version"` is a valid
+    call in this mode, since `_verify_node_provisioning` itself stays mocked
+    and never reaches `_ssh_exec`), reporting `node_docker_version_output`
+    (default: a `"29.6.1"`-shaped string) as the node's docker-ce version.
+
     Returns (result, mocks) so callers can assert on both CLI outcome and
-    which collaborators were invoked.
+    which collaborators were invoked. `mocks["log"]` is the `MagicMock`
+    returned by the patched `get_logger`, useful for asserting on log calls
+    made by code (like the real `_check_docker_staleness`) that isn't itself
+    mocked out.
     """
     verify_failures = [] if verify_failures is None else verify_failures
+    prepull_result = {} if prepull_result is None else prepull_result
+    prepull_images_list = [] if prepull_images_list is None else prepull_images_list
+    order: list[str] = [] if call_order is None else call_order
 
     mock_droplet = MagicMock()
     mock_create_droplet = MagicMock(
@@ -347,12 +395,46 @@ def _invoke_expand(cfg: dict, *, verify_failures=None, manager_docker_version=No
     )
     mock_configure_node = MagicMock(return_value=("10.0.0.5", "swarm5"))
     mock_join_swarm = MagicMock(return_value=None)
-    mock_verify = MagicMock(return_value=verify_failures)
+
+    def _verify_side_effect(*args, **kwargs):
+        order.append("verify")
+        return verify_failures
+
+    def _drain_side_effect(*args, **kwargs):
+        order.append("drain")
+
+    def _get_images_side_effect(cfg):
+        order.append("get_prepull_images")
+        return prepull_images_list
+
+    def _prepull_side_effect(*args, **kwargs):
+        order.append("prepull")
+        return prepull_result
+
+    def _activate_side_effect(*args, **kwargs):
+        order.append("activate")
+        return True
+
+    mock_verify = MagicMock(side_effect=_verify_side_effect)
     mock_ensure_priv_key = MagicMock(return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")))
     mock_swarm_node_obj = MagicMock()
     mock_find_swarm_node = MagicMock(return_value=mock_swarm_node_obj)
-    mock_drain_swarm_node = MagicMock(return_value=None)
+    mock_drain_swarm_node = MagicMock(side_effect=_drain_side_effect)
     mock_sync_domains = MagicMock(return_value=None)
+    mock_get_prepull_images = MagicMock(side_effect=_get_images_side_effect)
+    mock_prepull_images = MagicMock(side_effect=_prepull_side_effect)
+    mock_activate_swarm_node = MagicMock(side_effect=_activate_side_effect)
+    mock_get_app = MagicMock(return_value=MagicMock())
+    mock_check_docker_staleness = MagicMock(return_value=None)
+    mock_log = MagicMock()
+
+    def _fake_ssh_exec_for_staleness(host, username, key_path, cmd, **kwargs):
+        # Only reachable when mock_check_staleness=False: _verify_node_provisioning
+        # stays mocked (never calls _ssh_exec itself), so the real
+        # _check_docker_staleness's "docker --version" call is the only caller.
+        if cmd == "docker --version":
+            return (0, node_docker_version_output or "Docker version 29.6.1, build abc", "")
+        raise AssertionError(f"unexpected _ssh_exec call in staleness-only mode: {cmd!r}")
 
     node_mock = MagicMock()
     node_mock.attrs = {"Description": {"Hostname": "swarm5.example.com"}}
@@ -365,20 +447,32 @@ def _invoke_expand(cfg: dict, *, verify_failures=None, manager_docker_version=No
     mock_docker_client_cls = MagicMock(return_value=manager_client)
     mock_do_manager_cls = MagicMock(return_value=MagicMock())
 
-    with (
-        patch("cspawn.cli.node.get_config", return_value=cfg),
-        patch("cspawn.cli.node.get_logger", return_value=MagicMock()),
-        patch("cspawn.cli.node.docker.DockerClient", mock_docker_client_cls),
-        patch("cspawn.cli.node.digitalocean.Manager", mock_do_manager_cls),
-        patch("cspawn.cli.node._create_droplet", mock_create_droplet),
-        patch("cspawn.cli.node._configure_node", mock_configure_node),
-        patch("cspawn.cli.node._join_swarm", mock_join_swarm),
-        patch("cspawn.cli.node._verify_node_provisioning", mock_verify),
-        patch("cspawn.cli.node._ensure_priv_key", mock_ensure_priv_key),
-        patch("cspawn.cli.node._find_swarm_node", mock_find_swarm_node),
-        patch("cspawn.cli.node._drain_swarm_node", mock_drain_swarm_node),
-        patch("cspawn.cli.node._sync_domain_records", mock_sync_domains),
-    ):
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch("cspawn.cli.node.get_config", return_value=cfg))
+        stack.enter_context(patch("cspawn.cli.node.get_logger", return_value=mock_log))
+        stack.enter_context(patch("cspawn.cli.node.docker.DockerClient", mock_docker_client_cls))
+        stack.enter_context(patch("cspawn.cli.node.digitalocean.Manager", mock_do_manager_cls))
+        stack.enter_context(patch("cspawn.cli.node._create_droplet", mock_create_droplet))
+        stack.enter_context(patch("cspawn.cli.node._configure_node", mock_configure_node))
+        stack.enter_context(patch("cspawn.cli.node._join_swarm", mock_join_swarm))
+        stack.enter_context(patch("cspawn.cli.node._verify_node_provisioning", mock_verify))
+        stack.enter_context(patch("cspawn.cli.node._ensure_priv_key", mock_ensure_priv_key))
+        stack.enter_context(patch("cspawn.cli.node._find_swarm_node", mock_find_swarm_node))
+        stack.enter_context(patch("cspawn.cli.node._drain_swarm_node", mock_drain_swarm_node))
+        stack.enter_context(patch("cspawn.cli.node._sync_domain_records", mock_sync_domains))
+        stack.enter_context(patch("cspawn.cli.node._get_prepull_images", mock_get_prepull_images))
+        stack.enter_context(patch("cspawn.cli.node._prepull_images", mock_prepull_images))
+        stack.enter_context(patch("cspawn.cli.node._activate_swarm_node", mock_activate_swarm_node))
+        stack.enter_context(patch("cspawn.cli.util.get_app", mock_get_app))
+        if mock_check_staleness:
+            stack.enter_context(
+                patch("cspawn.cli.node._check_docker_staleness", mock_check_docker_staleness)
+            )
+        else:
+            stack.enter_context(
+                patch("cspawn.cli.node._ssh_exec", _fake_ssh_exec_for_staleness)
+            )
+
         runner = CliRunner()
         result = runner.invoke(expand, [])
 
@@ -391,6 +485,13 @@ def _invoke_expand(cfg: dict, *, verify_failures=None, manager_docker_version=No
         "find_swarm_node": mock_find_swarm_node,
         "drain_swarm_node": mock_drain_swarm_node,
         "sync_domains": mock_sync_domains,
+        "get_prepull_images": mock_get_prepull_images,
+        "prepull_images": mock_prepull_images,
+        "activate_swarm_node": mock_activate_swarm_node,
+        "get_app": mock_get_app,
+        "check_docker_staleness": mock_check_docker_staleness if mock_check_staleness else None,
+        "log": mock_log,
+        "call_order": order,
     }
     return result, mocks
 
@@ -404,14 +505,24 @@ BASE_CFG = {
 
 class TestExpandVerificationFailure:
     def test_failure_exits_nonzero_and_drains_node(self):
-        """A verification failure aborts the command and attempts a drain."""
+        """A verification failure aborts the command and attempts a drain.
+
+        Drain is now attempted twice: once immediately post-join (before
+        verify even runs, ticket-013-001) and once more, unchanged, in the
+        verify-failure branch itself (a harmless idempotent no-op in
+        practice, kept as a fallback for when the early drain failed).
+        """
         result, mocks = _invoke_expand(BASE_CFG, verify_failures=["docker version mismatch: ..."])
 
         assert result.exit_code != 0, result.output
         mocks["verify"].assert_called_once()
-        mocks["find_swarm_node"].assert_called_once()
-        mocks["drain_swarm_node"].assert_called_once()
+        assert mocks["find_swarm_node"].call_count == 2
+        assert mocks["drain_swarm_node"].call_count == 2
         assert "Created and joined node" not in result.output
+        # Verification failure aborts before pre-pull/activate ever run.
+        mocks["get_prepull_images"].assert_not_called()
+        mocks["prepull_images"].assert_not_called()
+        mocks["activate_swarm_node"].assert_not_called()
 
     def test_failure_message_names_the_failures(self):
         result, mocks = _invoke_expand(
@@ -424,15 +535,24 @@ class TestExpandVerificationFailure:
 
 class TestExpandVerificationSuccess:
     def test_success_exits_zero_with_unchanged_summary(self):
-        """Verification passing leaves the existing summary output unchanged."""
+        """Verification passing leaves the existing summary output unchanged.
+
+        Sprint-013 ticket-001: drain now fires in the happy path too
+        (immediately post-join, before verify runs) -- it is no longer true
+        that a successful expand never touches find/drain. The node is also
+        warmed (pre-pull) and reactivated (activate) after verify passes.
+        """
         result, mocks = _invoke_expand(BASE_CFG, verify_failures=[])
 
         assert result.exit_code == 0, result.output
         assert "Created and joined node: swarm5.example.com" in result.output
         mocks["verify"].assert_called_once()
-        mocks["find_swarm_node"].assert_not_called()
-        mocks["drain_swarm_node"].assert_not_called()
+        mocks["find_swarm_node"].assert_called_once()
+        mocks["drain_swarm_node"].assert_called_once()
         mocks["sync_domains"].assert_called_once()
+        mocks["get_prepull_images"].assert_called_once()
+        mocks["prepull_images"].assert_called_once()
+        mocks["activate_swarm_node"].assert_called_once()
 
     def test_verify_called_with_resolved_ip_and_key(self):
         result, mocks = _invoke_expand(BASE_CFG, verify_failures=[])
@@ -467,3 +587,715 @@ class TestExpandVerificationSuccess:
         assert result.exit_code == 0, result.output
         _, kwargs = mocks["verify"].call_args
         assert kwargs["expected_docker_version"] == "28.1.0"
+
+
+# ---------------------------------------------------------------------------
+# expand() sprint-013 ticket-001: drain -> verify -> pre-pull -> activate
+# ordering and best-effort behavior
+# ---------------------------------------------------------------------------
+
+class TestExpandPrepullOrdering:
+    """Ordering guarantees for the new drain -> verify -> pre-pull -> activate
+    sequence wired into expand()'s post-join block."""
+
+    def test_drain_before_verify_before_prepull_before_activate(self):
+        result, mocks = _invoke_expand(BASE_CFG, verify_failures=[])
+
+        assert result.exit_code == 0, result.output
+        assert mocks["call_order"] == [
+            "drain", "verify", "get_prepull_images", "prepull", "activate",
+        ]
+
+    def test_verify_failure_aborts_before_prepull_and_activate(self):
+        """A verification failure raises before pre-pull/activate ever run --
+        only drain (early + failure-branch) and verify appear in the order."""
+        result, mocks = _invoke_expand(
+            BASE_CFG, verify_failures=["docker version mismatch: ..."]
+        )
+
+        assert result.exit_code != 0
+        assert "prepull" not in mocks["call_order"]
+        assert "get_prepull_images" not in mocks["call_order"]
+        assert "activate" not in mocks["call_order"]
+        assert mocks["call_order"][0] == "drain"
+        assert "verify" in mocks["call_order"]
+
+    def test_pull_failure_is_best_effort_and_does_not_block_activation(self):
+        """A failed pre-pull for an image is best-effort: activation still
+        happens, and ordering (prepull before activate) is unaffected."""
+        result, mocks = _invoke_expand(
+            BASE_CFG, verify_failures=[],
+            prepull_images_list=["ghcr.io/example/code-server:latest"],
+            prepull_result={"ghcr.io/example/code-server:latest": False},
+        )
+
+        assert result.exit_code == 0, result.output
+        mocks["prepull_images"].assert_called_once()
+        mocks["activate_swarm_node"].assert_called_once()
+        assert mocks["call_order"] == [
+            "drain", "verify", "get_prepull_images", "prepull", "activate",
+        ]
+
+    def test_prepull_uses_configured_timeout(self):
+        cfg = dict(BASE_CFG)
+        cfg["NODE_PREPULL_TIMEOUT_S"] = 120
+        result, mocks = _invoke_expand(cfg, verify_failures=[])
+
+        assert result.exit_code == 0, result.output
+        _, kwargs = mocks["prepull_images"].call_args
+        assert kwargs["timeout"] == 120
+
+    def test_prepull_defaults_to_300s_timeout_when_unconfigured(self):
+        result, mocks = _invoke_expand(BASE_CFG, verify_failures=[])
+
+        assert result.exit_code == 0, result.output
+        _, kwargs = mocks["prepull_images"].call_args
+        assert kwargs["timeout"] == 300
+
+    def test_prepull_and_activate_use_the_same_swarm_node_object(self):
+        """The node object resolved by the single early `_find_swarm_node`
+        call is reused for activate -- no second lookup in the happy path."""
+        result, mocks = _invoke_expand(BASE_CFG, verify_failures=[])
+
+        assert result.exit_code == 0, result.output
+        mocks["find_swarm_node"].assert_called_once()
+        activate_args, _ = mocks["activate_swarm_node"].call_args
+        find_return = mocks["find_swarm_node"].return_value
+        assert activate_args[1] is find_return
+
+
+# ---------------------------------------------------------------------------
+# _activate_swarm_node
+# ---------------------------------------------------------------------------
+
+class _FakeSwarmNode:
+    """A minimal stand-in for a docker-py `Node` object with a real `attrs`
+    dict (unlike a bare MagicMock, so idempotency/availability checks behave
+    like production code, not like an auto-generated Mock attribute)."""
+
+    def __init__(self, availability: str = "drain", node_id: str = "node-id-1",
+                 hostname: str = "swarm5.example.com"):
+        self.id = node_id
+        self.attrs = {
+            "Description": {"Hostname": hostname},
+            "Spec": {"Availability": availability},
+        }
+
+    def update(self, **kwargs):
+        # Mirrors the real, installed docker-py's `Node.update(node_spec)`
+        # signature (one positional arg, no kwargs) -- any kwarg-style call
+        # always raises TypeError in production.
+        raise TypeError("update() got an unexpected keyword argument")
+
+
+class TestActivateSwarmNode:
+    """Direct unit coverage for `_activate_swarm_node` (sprint-013
+    ticket-001): idempotent activate mirroring `_drain_swarm_node`'s update
+    chain, wrapped in a bounded retry-with-backoff loop, with a loud ERROR
+    (not WARNING) on exhausted retries.
+    """
+
+    def test_already_active_short_circuits_without_update_call(self):
+        node_obj = _FakeSwarmNode(availability="active")
+        manager_client = MagicMock()
+
+        result = _activate_swarm_node(manager_client, node_obj)
+
+        assert result is True
+        manager_client.api.update_node.assert_not_called()
+
+    def test_high_level_update_succeeds_directly(self):
+        """An SDK variant where `.update(availability=...)` itself succeeds
+        (no TypeError) never falls through to the low-level API."""
+        node_obj = _FakeSwarmNode(availability="drain")
+        node_obj.update = MagicMock(return_value=True)
+        manager_client = MagicMock()
+
+        result = _activate_swarm_node(manager_client, node_obj)
+
+        assert result is True
+        node_obj.update.assert_called_once_with(availability="active")
+        manager_client.api.update_node.assert_not_called()
+
+    def test_low_level_fallback_used_when_high_level_raises_typeerror(self):
+        """Matches the real, installed docker-py's `Node.update(node_spec)`
+        signature, which always raises TypeError for the kwarg-style calls
+        this helper tries first -- exercising the low-level
+        `api.update_node` fallback, exactly like `_drain_swarm_node`."""
+        node_obj = _FakeSwarmNode(availability="drain", node_id="node-id-1")
+        manager_client = MagicMock()
+        manager_client.api.inspect_node.return_value = {
+            "Version": {"Index": 7},
+            "Spec": {"Availability": "drain", "Role": "worker"},
+        }
+
+        result = _activate_swarm_node(manager_client, node_obj)
+
+        assert result is True
+        manager_client.api.update_node.assert_called_once_with(
+            "node-id-1", 7, {"Availability": "active", "Role": "worker"}
+        )
+
+    def test_retries_then_succeeds(self, monkeypatch):
+        """A transient failure on the first attempt (the low-level API
+        fallback raising, e.g. a connection blip) is retried -- logged as a
+        WARNING, not yet an ERROR -- and the second attempt succeeds."""
+        monkeypatch.setattr("cspawn.cli.node.time.sleep", lambda s: None)
+
+        node_obj = _FakeSwarmNode(
+            availability="drain", node_id="node-id-2", hostname="flaky.example.com",
+        )
+        manager_client = MagicMock()
+        manager_client.api.inspect_node.side_effect = [
+            Exception("connection refused"),
+            {"Version": {"Index": 3}, "Spec": {"Availability": "drain"}},
+        ]
+        log = MagicMock()
+
+        result = _activate_swarm_node(
+            manager_client, node_obj, retries=3, initial_delay=0.01, log=log
+        )
+
+        assert result is True
+        assert manager_client.api.inspect_node.call_count == 2
+        log.warning.assert_called_once()
+        log.error.assert_not_called()
+
+    def test_exhausts_retries_logs_error_and_returns_false(self, monkeypatch):
+        """When every attempt fails, `_activate_swarm_node` returns False and
+        logs at ERROR (not WARNING) naming the node and the manual remedy --
+        a warmed-but-still-drained node is silently-wasted capacity and must
+        be loud."""
+        monkeypatch.setattr("cspawn.cli.node.time.sleep", lambda s: None)
+
+        node_obj = _FakeSwarmNode(availability="drain", hostname="stuck.example.com")
+        manager_client = MagicMock()
+        manager_client.api.inspect_node.side_effect = Exception("connection refused")
+        log = MagicMock()
+
+        result = _activate_swarm_node(
+            manager_client, node_obj, retries=3, initial_delay=0.01, log=log
+        )
+
+        assert result is False
+        log.error.assert_called_once()
+        error_msg = log.error.call_args[0][0]
+        assert "stuck.example.com" in error_msg
+        assert "docker node update --availability active" in error_msg
+        # Two prior attempts logged as WARNING (not yet the final ERROR).
+        assert log.warning.call_count == 2
+
+    def test_default_retries_and_delay_match_ticket_spec(self, monkeypatch):
+        """Ticket-013-001 specifies retries=3, initial_delay=2.0 as the
+        defaults -- assert the signature default, not just behavior."""
+        import inspect
+
+        sig = inspect.signature(_activate_swarm_node)
+        assert sig.parameters["retries"].default == 3
+        assert sig.parameters["initial_delay"].default == 2.0
+
+
+# ---------------------------------------------------------------------------
+# _get_prepull_images
+# ---------------------------------------------------------------------------
+
+class TestGetPrepullImages:
+    """Direct unit coverage for `_get_prepull_images` (sprint-013
+    ticket-001): DB-derived `class_proto.image_uri` UNIONED with the
+    optional `NODE_PREPULL_IMAGES` config allowlist -- the DB list is always
+    present, config can only add.
+    """
+
+    def test_returns_db_images_when_no_config(self, monkeypatch):
+        mock_session = MagicMock()
+        mock_session.query.return_value.distinct.return_value.all.return_value = [
+            ("ghcr.io/example/code-server-python:latest",),
+            ("ghcr.io/example/code-server-java:latest",),
+        ]
+        monkeypatch.setattr("cspawn.models.db.session", mock_session)
+
+        result = _get_prepull_images({})
+
+        assert result == [
+            "ghcr.io/example/code-server-python:latest",
+            "ghcr.io/example/code-server-java:latest",
+        ]
+
+    def test_unions_db_and_configured_images(self, monkeypatch):
+        mock_session = MagicMock()
+        mock_session.query.return_value.distinct.return_value.all.return_value = [
+            ("ghcr.io/example/code-server-python:latest",),
+        ]
+        monkeypatch.setattr("cspawn.models.db.session", mock_session)
+
+        result = _get_prepull_images({
+            "NODE_PREPULL_IMAGES": "ghcr.io/example/extra:latest, ghcr.io/example/extra2:latest",
+        })
+
+        assert result == [
+            "ghcr.io/example/code-server-python:latest",
+            "ghcr.io/example/extra:latest",
+            "ghcr.io/example/extra2:latest",
+        ]
+
+    def test_configured_images_cannot_narrow_db_derived_coverage(self, monkeypatch):
+        """NODE_PREPULL_IMAGES is a strict union, never an override: setting
+        it to a single image must not drop the other DB-derived images."""
+        mock_session = MagicMock()
+        mock_session.query.return_value.distinct.return_value.all.return_value = [
+            ("ghcr.io/example/code-server-python:latest",),
+            ("ghcr.io/example/code-server-java:latest",),
+        ]
+        monkeypatch.setattr("cspawn.models.db.session", mock_session)
+
+        result = _get_prepull_images({
+            "NODE_PREPULL_IMAGES": "ghcr.io/example/code-server-python:latest",
+        })
+
+        assert "ghcr.io/example/code-server-python:latest" in result
+        assert "ghcr.io/example/code-server-java:latest" in result
+        assert len(result) == 2
+
+    def test_dedupes_image_appearing_in_both_db_and_config(self, monkeypatch):
+        mock_session = MagicMock()
+        mock_session.query.return_value.distinct.return_value.all.return_value = [
+            ("ghcr.io/example/code-server-python:latest",),
+        ]
+        monkeypatch.setattr("cspawn.models.db.session", mock_session)
+
+        result = _get_prepull_images({
+            "NODE_PREPULL_IMAGES": "ghcr.io/example/code-server-python:latest",
+        })
+
+        assert result == ["ghcr.io/example/code-server-python:latest"]
+
+    def test_config_accepts_comma_and_whitespace_separators(self, monkeypatch):
+        mock_session = MagicMock()
+        mock_session.query.return_value.distinct.return_value.all.return_value = []
+        monkeypatch.setattr("cspawn.models.db.session", mock_session)
+
+        result = _get_prepull_images({"NODE_PREPULL_IMAGES": "img:a, img:b  img:c,img:d"})
+
+        assert result == ["img:a", "img:b", "img:c", "img:d"]
+
+    def test_db_failure_falls_back_to_configured_allowlist(self):
+        """Called with no active Flask app context (as here), the DB query
+        raises -- caught, logged as a WARNING, falls back to the configured
+        allowlist. Never raises."""
+        result = _get_prepull_images({"NODE_PREPULL_IMAGES": "ghcr.io/example/fallback:latest"})
+
+        assert result == ["ghcr.io/example/fallback:latest"]
+
+    def test_db_failure_and_no_config_returns_empty_list(self):
+        assert _get_prepull_images({}) == []
+
+
+# ---------------------------------------------------------------------------
+# _prepull_images
+# ---------------------------------------------------------------------------
+
+class TestPrepullImagesHelper:
+    """Direct unit coverage for `_prepull_images` (sprint-013 ticket-001):
+    best-effort per-image `docker pull` over SSH, never raising, never
+    aborting the batch over one bad image.
+    """
+
+    def test_all_images_pulled_successfully(self, monkeypatch):
+        calls = []
+
+        def _fake_ssh_exec(host, username, key_path, cmd, **kwargs):
+            calls.append((host, username, key_path, cmd, kwargs))
+            return (0, "Pulling ok", "")
+
+        monkeypatch.setattr("cspawn.cli.node._ssh_exec", _fake_ssh_exec)
+
+        result = _prepull_images(
+            "10.0.0.5", Path("/fake/id_rsa"), ["img:a", "img:b"], timeout=42.0
+        )
+
+        assert result == {"img:a": True, "img:b": True}
+        assert len(calls) == 2
+        assert calls[0][3] == "docker pull img:a"
+        assert calls[0][4]["command_timeout"] == 42.0
+
+    def test_per_image_nonzero_exit_logs_warning_and_continues(self, monkeypatch):
+        def _fake_ssh_exec(host, username, key_path, cmd, **kwargs):
+            if "bad" in cmd:
+                return (1, "", "no such image")
+            return (0, "ok", "")
+
+        monkeypatch.setattr("cspawn.cli.node._ssh_exec", _fake_ssh_exec)
+        log = MagicMock()
+
+        result = _prepull_images(
+            "10.0.0.5", Path("/fake/id_rsa"), ["img:bad", "img:good"], log=log
+        )
+
+        assert result == {"img:bad": False, "img:good": True}
+        log.warning.assert_called_once()
+        assert "img:bad" in log.warning.call_args[0][0]
+
+    def test_per_image_exception_or_timeout_logs_warning_and_continues(self, monkeypatch):
+        def _fake_ssh_exec(host, username, key_path, cmd, **kwargs):
+            if "wedged" in cmd:
+                raise TimeoutError("simulated wedged pull")
+            return (0, "ok", "")
+
+        monkeypatch.setattr("cspawn.cli.node._ssh_exec", _fake_ssh_exec)
+        log = MagicMock()
+
+        result = _prepull_images(
+            "10.0.0.5", Path("/fake/id_rsa"), ["img:wedged", "img:fine"], log=log
+        )
+
+        assert result == {"img:wedged": False, "img:fine": True}
+        log.warning.assert_called_once()
+
+    def test_empty_image_list_returns_empty_dict_without_ssh(self, monkeypatch):
+        mock_ssh = MagicMock()
+        monkeypatch.setattr("cspawn.cli.node._ssh_exec", mock_ssh)
+
+        result = _prepull_images("10.0.0.5", Path("/fake/id_rsa"), [])
+
+        assert result == {}
+        mock_ssh.assert_not_called()
+
+    def test_default_timeout_matches_ticket_spec(self):
+        import inspect
+
+        sig = inspect.signature(_prepull_images)
+        assert sig.parameters["timeout"].default == 300.0
+
+
+# ---------------------------------------------------------------------------
+# _ssh_exec: extended command_timeout parameter
+# ---------------------------------------------------------------------------
+
+def _build_fake_ssh_client():
+    stdin = MagicMock()
+    stdout = MagicMock()
+    stderr = MagicMock()
+    stdout.channel = MagicMock()
+    stdout.channel.recv_exit_status.return_value = 0
+    stdout.read.return_value = b"output"
+    stderr.read.return_value = b""
+    client = MagicMock()
+    client.exec_command.return_value = (stdin, stdout, stderr)
+    return client, stdout
+
+
+class TestSshExecCommandTimeout:
+    """`_ssh_exec`'s new optional `command_timeout` parameter (sprint-013
+    ticket-001): `None` (the default) preserves every existing call site's
+    behavior exactly; a concrete value applies `.settimeout(...)` to the
+    command channel before reading the exit status/output.
+    """
+
+    def test_command_timeout_none_does_not_set_channel_timeout(self, monkeypatch):
+        client, stdout = _build_fake_ssh_client()
+        monkeypatch.setattr("cspawn.cli.node.paramiko.SSHClient", MagicMock(return_value=client))
+        monkeypatch.setattr(
+            "cspawn.cli.node.paramiko.RSAKey.from_private_key_file",
+            MagicMock(return_value=MagicMock()),
+        )
+
+        code, out, err = _ssh_exec("10.0.0.5", "root", Path("/fake/id_rsa"), "true")
+
+        assert code == 0
+        assert out == "output"
+        stdout.channel.settimeout.assert_not_called()
+
+    def test_command_timeout_set_applies_channel_settimeout(self, monkeypatch):
+        client, stdout = _build_fake_ssh_client()
+        monkeypatch.setattr("cspawn.cli.node.paramiko.SSHClient", MagicMock(return_value=client))
+        monkeypatch.setattr(
+            "cspawn.cli.node.paramiko.RSAKey.from_private_key_file",
+            MagicMock(return_value=MagicMock()),
+        )
+
+        code, out, err = _ssh_exec(
+            "10.0.0.5", "root", Path("/fake/id_rsa"), "docker pull img:a",
+            command_timeout=42.0,
+        )
+
+        assert code == 0
+        stdout.channel.settimeout.assert_called_once_with(42.0)
+
+    def test_client_closed_even_when_command_timeout_set(self, monkeypatch):
+        client, _stdout = _build_fake_ssh_client()
+        monkeypatch.setattr("cspawn.cli.node.paramiko.SSHClient", MagicMock(return_value=client))
+        monkeypatch.setattr(
+            "cspawn.cli.node.paramiko.RSAKey.from_private_key_file",
+            MagicMock(return_value=MagicMock()),
+        )
+
+        _ssh_exec(
+            "10.0.0.5", "root", Path("/fake/id_rsa"), "docker pull img:a",
+            command_timeout=5.0,
+        )
+
+        client.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _check_docker_staleness (sprint-013 ticket-002)
+# ---------------------------------------------------------------------------
+
+class TestCheckDockerStaleness:
+    """Direct unit coverage for `_check_docker_staleness`: a purely additive
+    diagnostic that warns when a node's docker-ce major differs from the
+    manager's -- naming golden-snapshot staleness as the likely cause and
+    `scripts/build-golden-node-snapshot.sh` as the remedy. Never raises, and
+    entirely independent of `_verify_node_provisioning` (not called here at
+    all) -- so nothing about that function's pass/fail verdict is exercised
+    or affected by this class.
+    """
+
+    def test_major_mismatch_logs_warning_naming_versions_and_remedy(self, monkeypatch):
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec",
+            lambda *a, **kw: (0, "Docker version 28.4.0, build xyz", ""),
+        )
+        log = MagicMock()
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="29.6.1", log=log,
+        )
+
+        assert result is None
+        log.warning.assert_called_once()
+        msg = log.warning.call_args[0][0]
+        assert "28" in msg
+        assert "29" in msg
+        assert "golden snapshot" in msg.lower()
+        assert "scripts/build-golden-node-snapshot.sh" in msg
+
+    def test_major_mismatch_reverse_direction_also_warns(self, monkeypatch):
+        """Node ahead of the manager (29 vs. manager 28) is symmetric -- also
+        a resolvable mismatch, not just node-behind-manager."""
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec",
+            lambda *a, **kw: (0, "Docker version 29.6.1, build abc", ""),
+        )
+        log = MagicMock()
+
+        _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="28.4.0", log=log,
+        )
+
+        log.warning.assert_called_once()
+        msg = log.warning.call_args[0][0]
+        assert "29" in msg
+        assert "28" in msg
+
+    def test_matching_major_logs_no_warning(self, monkeypatch):
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec",
+            lambda *a, **kw: (0, "Docker version 29.6.0, build abc", ""),
+        )
+        log = MagicMock()
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="29.6.1", log=log,
+        )
+
+        assert result is None
+        log.warning.assert_not_called()
+
+    def test_matching_major_correctly_provisioned_golden_snapshot(self, monkeypatch):
+        """A node correctly provisioned from a golden snapshot that still
+        matches the manager must never warn -- same check, identical
+        version strings."""
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec",
+            lambda *a, **kw: (0, "Docker version 29.6.1, build abc123", ""),
+        )
+        log = MagicMock()
+
+        _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="29.6.1", log=log,
+        )
+
+        log.warning.assert_not_called()
+
+    def test_expected_docker_version_none_is_a_complete_noop(self, monkeypatch):
+        """No SSH call at all, and no log line whatsoever, when there's
+        nothing to compare against -- matches
+        `_verify_node_provisioning`'s own skip condition for this case."""
+        mock_ssh = MagicMock()
+        monkeypatch.setattr("cspawn.cli.node._ssh_exec", mock_ssh)
+        log = MagicMock()
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version=None, log=log,
+        )
+
+        assert result is None
+        mock_ssh.assert_not_called()
+        log.warning.assert_not_called()
+        log.info.assert_not_called()
+        log.debug.assert_not_called()
+
+    def test_ssh_failure_is_not_escalated_to_warning(self, monkeypatch):
+        """An SSH failure here is treated as "can't compare," not itself a
+        staleness finding -- `_verify_node_provisioning`'s own
+        SSH-reachability check already surfaces node unreachability loudly,
+        so this function must not double-report it as a WARNING."""
+        def _raise(*a, **kw):
+            raise Exception("simulated SSH connect failure")
+
+        monkeypatch.setattr("cspawn.cli.node._ssh_exec", _raise)
+        log = MagicMock()
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="29.6.1", log=log,
+        )
+
+        assert result is None
+        log.warning.assert_not_called()
+
+    def test_unparseable_node_version_does_not_crash_or_warn(self, monkeypatch):
+        """Garbled/empty `docker --version` output on the node has no
+        parseable major -- handled gracefully: no crash, and no WARNING
+        (there's nothing resolvable to compare)."""
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec", lambda *a, **kw: (0, "", ""),
+        )
+        log = MagicMock()
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="29.6.1", log=log,
+        )
+
+        assert result is None
+        log.warning.assert_not_called()
+
+    def test_absent_node_version_output_in_stderr_only_does_not_crash(self, monkeypatch):
+        """Some SSH failures surface only via stderr with a zero-ish exit;
+        an unparseable stderr string is handled the same as unparseable
+        stdout -- no crash, no WARNING."""
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec",
+            lambda *a, **kw: (127, "", "bash: docker: command not found"),
+        )
+        log = MagicMock()
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"),
+            expected_docker_version="29.6.1", log=log,
+        )
+
+        assert result is None
+        log.warning.assert_not_called()
+
+    def test_no_log_object_does_not_crash_on_mismatch(self, monkeypatch):
+        """`log=None` (the default) must not crash even when a genuine
+        mismatch is found -- there's simply nowhere to log it."""
+        monkeypatch.setattr(
+            "cspawn.cli.node._ssh_exec",
+            lambda *a, **kw: (0, "Docker version 28.4.0, build xyz", ""),
+        )
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"), expected_docker_version="29.6.1",
+        )
+
+        assert result is None
+
+    def test_never_raises_on_unexpected_exception(self, monkeypatch):
+        """Even a non-connection-related exception from `_ssh_exec` (e.g. a
+        key-file error) is swallowed -- this helper is purely diagnostic and
+        must never abort the caller."""
+        def _raise(*a, **kw):
+            raise ValueError("unexpected failure mode")
+
+        monkeypatch.setattr("cspawn.cli.node._ssh_exec", _raise)
+
+        result = _check_docker_staleness(
+            "10.0.0.5", Path("/fake/id_rsa"), expected_docker_version="29.6.1",
+        )
+
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# expand() sprint-013 ticket-002: docker major mismatch staleness WARNING
+# wiring
+# ---------------------------------------------------------------------------
+
+class TestExpandDockerStalenessWarning:
+    """Wiring coverage: `expand()` calls `_check_docker_staleness` exactly
+    once, after `_verify_node_provisioning` succeeds, reusing the exact same
+    `expected_docker_version` value already computed for that verify call --
+    no second, independent resolution. Purely additive: never affects
+    `expand()`'s exit code, and never runs at all when verify itself fails
+    (matching `TestExpandVerificationFailure`/`TestExpandVerificationSuccess`,
+    left otherwise unmodified by this ticket).
+    """
+
+    def test_staleness_check_runs_after_verify_success_with_same_expected_version(self):
+        result, mocks = _invoke_expand(
+            BASE_CFG, verify_failures=[], manager_docker_version="29.7.2",
+        )
+
+        assert result.exit_code == 0, result.output
+        mocks["check_docker_staleness"].assert_called_once()
+        _, verify_kwargs = mocks["verify"].call_args
+        staleness_args, staleness_kwargs = mocks["check_docker_staleness"].call_args
+        assert staleness_kwargs["expected_docker_version"] == "29.7.2"
+        assert (
+            staleness_kwargs["expected_docker_version"]
+            == verify_kwargs["expected_docker_version"]
+        )
+        assert staleness_args[0] == "10.0.0.5"
+
+    def test_staleness_check_not_called_when_verify_fails(self):
+        result, mocks = _invoke_expand(
+            BASE_CFG, verify_failures=["docker version mismatch: ..."],
+        )
+
+        assert result.exit_code != 0
+        mocks["check_docker_staleness"].assert_not_called()
+
+    def test_major_mismatch_warns_but_exit_code_and_summary_are_unchanged(self):
+        """End-to-end: the REAL `_check_docker_staleness` runs (only
+        `_ssh_exec` is faked to report a stale node's docker-ce version);
+        verify itself still passes (it is mocked separately), and the
+        WARNING fires -- but `expand()`'s exit code and summary output are
+        exactly the same as the plain success case."""
+        result, mocks = _invoke_expand(
+            BASE_CFG, verify_failures=[], manager_docker_version="29.7.2",
+            mock_check_staleness=False,
+            node_docker_version_output="Docker version 28.4.0, build xyz",
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Created and joined node: swarm5.example.com" in result.output
+        log = mocks["log"]
+        warning_texts = [c.args[0] for c in log.warning.call_args_list if c.args]
+        assert any(
+            "golden snapshot" in t.lower() and "scripts/build-golden-node-snapshot.sh" in t
+            for t in warning_texts
+        )
+
+    def test_matching_major_end_to_end_produces_no_staleness_warning(self):
+        """End-to-end with the REAL `_check_docker_staleness`: a node whose
+        docker-ce major matches the manager's produces no staleness
+        WARNING."""
+        result, mocks = _invoke_expand(
+            BASE_CFG, verify_failures=[], manager_docker_version="29.7.2",
+            mock_check_staleness=False,
+            node_docker_version_output="Docker version 29.7.0, build xyz",
+        )
+
+        assert result.exit_code == 0, result.output
+        log = mocks["log"]
+        warning_texts = [c.args[0] for c in log.warning.call_args_list if c.args]
+        assert not any("golden snapshot" in t.lower() for t in warning_texts)
