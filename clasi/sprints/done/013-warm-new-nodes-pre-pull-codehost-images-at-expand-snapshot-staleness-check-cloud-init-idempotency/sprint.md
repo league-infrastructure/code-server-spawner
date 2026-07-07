@@ -2,7 +2,7 @@
 id: '013'
 title: "Warm new nodes \u2014 pre-pull codehost images at expand + snapshot staleness\
   \ check + cloud-init idempotency"
-status: planning-docs
+status: done
 branch: sprint/013-warm-new-nodes-pre-pull-codehost-images-at-expand-snapshot-staleness-check-cloud-init-idempotency
 use-cases: []
 issues:
