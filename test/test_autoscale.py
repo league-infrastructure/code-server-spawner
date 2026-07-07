@@ -1143,8 +1143,12 @@ class TestApplyPlanScaleUpVerification:
     def test_one_of_two_nodes_fails_verification(self):
         """A plan adding two nodes where one fails verification only counts the other.
 
-        The failed node's fqdn must appear in ``result.errors``, and drain must be
-        attempted only for the failed node (not the healthy one).
+        The failed node's fqdn must appear in ``result.errors``. Sprint-013
+        ticket-001: drain is now also attempted immediately post-join for
+        *every* node (before verify runs, closing the race window) in
+        addition to the pre-existing failure-branch drain -- so the failed
+        node is drained twice (early + failure-branch) and the healthy node
+        is drained once (early only).
         """
         plan = ScalePlan(add_large=1, add_small=1, remove_nodes=[], reason="test")
         ctx = MagicMock()
@@ -1185,9 +1189,13 @@ class TestApplyPlanScaleUpVerification:
         assert len(result.errors) == 1
         assert "swarm10.example.com" in result.errors[0]
         assert mock_verify.call_count == 2
-        # Drain attempted only for the failed node (swarm10), not the healthy one.
-        mock_find.assert_called_once_with(mock_client, "swarm10.example.com", "swarm10")
-        mock_drain.assert_called_once_with(mock_client, failed_node_obj, log=ANY)
+        # find/drain: early post-join call for both nodes (2), plus one more
+        # in the failure branch for the failed node only (1) = 3 total.
+        assert mock_find.call_count == 3
+        assert mock_drain.call_count == 3
+        mock_find.assert_any_call(mock_client, "swarm10.example.com", "swarm10")
+        mock_find.assert_any_call(mock_client, "swarm11.example.com", "swarm11")
+        mock_drain.assert_any_call(mock_client, failed_node_obj, log=ANY)
         # Both droplets/configure/join calls still happened (batch was not aborted).
         assert mock_create.call_count == 2
         assert mock_configure.call_count == 2
@@ -1197,6 +1205,9 @@ class TestApplyPlanScaleUpVerification:
         """When `_find_swarm_node` returns None, drain is skipped without raising.
 
         The verification failure must still be recorded in ``result.errors``.
+        `_find_swarm_node` is now called twice (the new early post-join
+        lookup, plus the pre-existing failure-branch lookup) since both
+        return None here -- drain is skipped both times.
         """
         plan = ScalePlan(add_large=1, add_small=0, remove_nodes=[], reason="test")
         ctx = MagicMock()
@@ -1232,13 +1243,17 @@ class TestApplyPlanScaleUpVerification:
         assert result.added == 0
         assert len(result.errors) == 1
         assert "swarm10.example.com" in result.errors[0]
-        mock_find.assert_called_once()
+        assert mock_find.call_count == 2
         mock_drain.assert_not_called()
 
     def test_all_nodes_pass_verification(self):
         """All planned nodes passing verification counts every node with no errors.
 
-        Regression guard matching pre-ticket behavior when verification is a no-op.
+        Sprint-013 ticket-001: an early post-join drain now fires for every
+        node (regardless of verify outcome), and a passing node additionally
+        gets pre-pull + activate. `find`/`drain` are therefore called once
+        per node (2 total for this two-node plan), not zero times as before
+        this ticket.
         """
         plan = ScalePlan(add_large=1, add_small=1, remove_nodes=[], reason="test")
         ctx = MagicMock()
@@ -1262,6 +1277,9 @@ class TestApplyPlanScaleUpVerification:
             patch("cspawn.cli.node._verify_node_provisioning", return_value=[]) as mock_verify,
             patch("cspawn.cli.node._find_swarm_node") as mock_find,
             patch("cspawn.cli.node._drain_swarm_node") as mock_drain,
+            patch("cspawn.cli.node._get_prepull_images", return_value=["img:1"]) as mock_get_images,
+            patch("cspawn.cli.node._prepull_images", return_value={}) as mock_prepull,
+            patch("cspawn.cli.node._activate_swarm_node", return_value=True) as mock_activate,
             patch("digitalocean.Manager"),
         ):
             result = apply_plan(
@@ -1272,8 +1290,14 @@ class TestApplyPlanScaleUpVerification:
         assert result.added == 2
         assert result.errors == []
         assert mock_verify.call_count == 2
-        mock_find.assert_not_called()
-        mock_drain.assert_not_called()
+        assert mock_find.call_count == 2
+        assert mock_drain.call_count == 2
+        assert mock_activate.call_count == 2
+        assert mock_prepull.call_count == 2
+        # Image resolution happens once for the whole batch, not per node,
+        # since app=None here (no Flask app passed) and the config-only
+        # fallback is used instead -- _get_prepull_images itself is skipped.
+        mock_get_images.assert_not_called()
 
     def test_verify_prefers_manager_docker_version_over_file_literal(self):
         """Scale-up's post-join verification passes the swarm manager's live
@@ -1358,6 +1382,238 @@ class TestApplyPlanScaleUpVerification:
         assert result.errors == []
         _, kwargs = mock_verify.call_args
         assert kwargs["expected_docker_version"] == "28.0.0"
+
+
+class TestApplyPlanPrepullAndActivate:
+    """Sprint-013 ticket-001: drain -> verify -> pre-pull -> activate wiring
+    in ``apply_plan()``'s scale-up loop, mirroring ``expand()``'s identical
+    sequence. Patched at ``cspawn.cli.node.*`` per this file's own
+    documented convention (patching ``cspawn.cs_docker.autoscale.*`` would
+    not intercept the lazily-imported calls).
+    """
+
+    @staticmethod
+    def _base_cfg():
+        return {
+            "NODE_TIERS": NODE_TIERS_JSON,
+            "DEFAULT_CAPACITY": "6",
+            "DO_TOKEN": "tok",
+            "DO_NAMES": "swarm{serial}.example.com",
+            "DOCKER_URI": "ssh://fake",
+        }
+
+    def test_drain_before_verify_prepull_before_activate(self):
+        """Ordering per node: the new early drain fires before verify runs;
+        activate fires only after pre-pull completes."""
+        plan = ScalePlan(add_large=1, add_small=0, remove_nodes=[], reason="test")
+        ctx = MagicMock()
+        cfg = self._base_cfg()
+        mock_client = MagicMock()
+        order: list[str] = []
+
+        def _drain_side_effect(*a, **k):
+            order.append("drain")
+
+        def _verify_side_effect(*a, **k):
+            order.append("verify")
+            return []
+
+        def _prepull_side_effect(*a, **k):
+            order.append("prepull")
+            return {}
+
+        def _activate_side_effect(*a, **k):
+            order.append("activate")
+            return True
+
+        with (
+            patch(
+                "cspawn.cli.node._create_droplet",
+                return_value=(MagicMock(), "10.0.0.10", "swarm10.example.com", "swarm10"),
+            ),
+            patch("cspawn.cli.node._configure_node"),
+            patch("cspawn.cli.node._join_swarm"),
+            patch(
+                "cspawn.cli.node._ensure_priv_key",
+                return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+            ),
+            patch("cspawn.cli.node._expected_docker_version", return_value=None),
+            patch("cspawn.cli.node._verify_node_provisioning", side_effect=_verify_side_effect),
+            patch("cspawn.cli.node._find_swarm_node", return_value=MagicMock()),
+            patch("cspawn.cli.node._drain_swarm_node", side_effect=_drain_side_effect),
+            patch("cspawn.cli.node._prepull_images", side_effect=_prepull_side_effect),
+            patch("cspawn.cli.node._activate_swarm_node", side_effect=_activate_side_effect),
+            patch("digitalocean.Manager"),
+        ):
+            result = apply_plan(
+                ctx, plan, cfg, dry_run=False,
+                manager_client=mock_client,
+            )
+
+        assert result.added == 1
+        assert order == ["drain", "verify", "prepull", "activate"]
+
+    def test_pull_failure_is_best_effort_node_still_added(self):
+        """A failed pre-pull never blocks the node from counting as added --
+        activation still happens regardless of per-image outcome."""
+        plan = ScalePlan(add_large=1, add_small=0, remove_nodes=[], reason="test")
+        ctx = MagicMock()
+        cfg = self._base_cfg()
+        mock_client = MagicMock()
+
+        with (
+            patch(
+                "cspawn.cli.node._create_droplet",
+                return_value=(MagicMock(), "10.0.0.10", "swarm10.example.com", "swarm10"),
+            ),
+            patch("cspawn.cli.node._configure_node"),
+            patch("cspawn.cli.node._join_swarm"),
+            patch(
+                "cspawn.cli.node._ensure_priv_key",
+                return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+            ),
+            patch("cspawn.cli.node._expected_docker_version", return_value=None),
+            patch("cspawn.cli.node._verify_node_provisioning", return_value=[]),
+            patch("cspawn.cli.node._find_swarm_node", return_value=MagicMock()),
+            patch("cspawn.cli.node._drain_swarm_node"),
+            patch(
+                "cspawn.cli.node._prepull_images",
+                return_value={"ghcr.io/example/code-server:latest": False},
+            ) as mock_prepull,
+            patch("cspawn.cli.node._activate_swarm_node", return_value=True) as mock_activate,
+            patch("digitalocean.Manager"),
+        ):
+            result = apply_plan(
+                ctx, plan, cfg, dry_run=False,
+                manager_client=mock_client,
+            )
+
+        assert result.added == 1
+        assert result.errors == []
+        mock_prepull.assert_called_once()
+        mock_activate.assert_called_once()
+
+    def test_image_resolution_happens_once_for_whole_batch(self):
+        """``_get_prepull_images`` is resolved ONCE before the scale-up
+        loop, not per node -- asserted via call_count across a two-node
+        plan, with a Flask ``app`` supplied so DB resolution is attempted."""
+        plan = ScalePlan(add_large=1, add_small=1, remove_nodes=[], reason="test")
+        ctx = MagicMock()
+        cfg = self._base_cfg()
+        mock_client = MagicMock()
+        app = MagicMock()
+        droplet_calls = [
+            (MagicMock(), "10.0.0.10", "swarm10.example.com", "swarm10"),
+            (MagicMock(), "10.0.0.11", "swarm11.example.com", "swarm11"),
+        ]
+
+        with (
+            patch("cspawn.cli.node._create_droplet", side_effect=droplet_calls),
+            patch("cspawn.cli.node._configure_node"),
+            patch("cspawn.cli.node._join_swarm"),
+            patch(
+                "cspawn.cli.node._ensure_priv_key",
+                return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+            ),
+            patch("cspawn.cli.node._expected_docker_version", return_value=None),
+            patch("cspawn.cli.node._verify_node_provisioning", return_value=[]),
+            patch("cspawn.cli.node._find_swarm_node", return_value=MagicMock()),
+            patch("cspawn.cli.node._drain_swarm_node"),
+            patch(
+                "cspawn.cli.node._get_prepull_images", return_value=["img:a"]
+            ) as mock_get_images,
+            patch("cspawn.cli.node._prepull_images", return_value={}) as mock_prepull,
+            patch("cspawn.cli.node._activate_swarm_node", return_value=True),
+            patch("digitalocean.Manager"),
+        ):
+            result = apply_plan(
+                ctx, plan, cfg, dry_run=False,
+                manager_client=mock_client, app=app,
+            )
+
+        assert result.added == 2
+        mock_get_images.assert_called_once_with(cfg)
+        assert mock_prepull.call_count == 2
+        for c in mock_prepull.call_args_list:
+            assert c.args[2] == ["img:a"]
+            assert c.kwargs["timeout"] == 300
+
+    def test_app_none_skips_db_image_resolution_falls_back_to_config(self):
+        """When ``app`` is None, ``_get_prepull_images`` (which requires an
+        app context for its DB query) is skipped entirely with a WARNING;
+        pre-pull falls back to the configured ``NODE_PREPULL_IMAGES``
+        allowlist only. The drain/verify/activate sequence is unaffected."""
+        plan = ScalePlan(add_large=1, add_small=0, remove_nodes=[], reason="test")
+        ctx = MagicMock()
+        cfg = self._base_cfg()
+        cfg["NODE_PREPULL_IMAGES"] = "ghcr.io/example/configured-only:latest"
+        mock_client = MagicMock()
+
+        with (
+            patch(
+                "cspawn.cli.node._create_droplet",
+                return_value=(MagicMock(), "10.0.0.10", "swarm10.example.com", "swarm10"),
+            ),
+            patch("cspawn.cli.node._configure_node"),
+            patch("cspawn.cli.node._join_swarm"),
+            patch(
+                "cspawn.cli.node._ensure_priv_key",
+                return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+            ),
+            patch("cspawn.cli.node._expected_docker_version", return_value=None),
+            patch("cspawn.cli.node._verify_node_provisioning", return_value=[]),
+            patch("cspawn.cli.node._find_swarm_node", return_value=MagicMock()),
+            patch("cspawn.cli.node._drain_swarm_node"),
+            patch("cspawn.cli.node._get_prepull_images") as mock_get_images,
+            patch("cspawn.cli.node._prepull_images", return_value={}) as mock_prepull,
+            patch("cspawn.cli.node._activate_swarm_node", return_value=True) as mock_activate,
+            patch("digitalocean.Manager"),
+        ):
+            result = apply_plan(
+                ctx, plan, cfg, dry_run=False,
+                manager_client=mock_client,  # app defaults to None
+            )
+
+        assert result.added == 1
+        mock_get_images.assert_not_called()
+        mock_prepull.assert_called_once()
+        assert mock_prepull.call_args.args[2] == ["ghcr.io/example/configured-only:latest"]
+        mock_activate.assert_called_once()
+
+    def test_prepull_uses_configured_timeout(self):
+        plan = ScalePlan(add_large=1, add_small=0, remove_nodes=[], reason="test")
+        ctx = MagicMock()
+        cfg = self._base_cfg()
+        cfg["NODE_PREPULL_TIMEOUT_S"] = 120
+        mock_client = MagicMock()
+
+        with (
+            patch(
+                "cspawn.cli.node._create_droplet",
+                return_value=(MagicMock(), "10.0.0.10", "swarm10.example.com", "swarm10"),
+            ),
+            patch("cspawn.cli.node._configure_node"),
+            patch("cspawn.cli.node._join_swarm"),
+            patch(
+                "cspawn.cli.node._ensure_priv_key",
+                return_value=(Path("/fake/id_rsa"), Path("/fake/id_rsa.pub")),
+            ),
+            patch("cspawn.cli.node._expected_docker_version", return_value=None),
+            patch("cspawn.cli.node._verify_node_provisioning", return_value=[]),
+            patch("cspawn.cli.node._find_swarm_node", return_value=MagicMock()),
+            patch("cspawn.cli.node._drain_swarm_node"),
+            patch("cspawn.cli.node._prepull_images", return_value={}) as mock_prepull,
+            patch("cspawn.cli.node._activate_swarm_node", return_value=True),
+            patch("digitalocean.Manager"),
+        ):
+            result = apply_plan(
+                ctx, plan, cfg, dry_run=False,
+                manager_client=mock_client,
+            )
+
+        assert result.added == 1
+        _, kwargs = mock_prepull.call_args
+        assert kwargs["timeout"] == 120
 
 
 # ---------------------------------------------------------------------------

@@ -721,13 +721,28 @@ def _verify_node_provisioning(ip: str, key_path: Path, *, expected_docker_versio
     return failures
 
 
-def _ssh_exec(host: str, username: str, key_path: Path, cmd: str, *, connect_timeout: int = 15) -> tuple[int, str, str]:
+def _ssh_exec(host: str, username: str, key_path: Path, cmd: str, *, connect_timeout: int = 15,
+              command_timeout: float | None = None) -> tuple[int, str, str]:
+    """Run `cmd` over a fresh SSH connection and return (exit_code, stdout, stderr).
+
+    `connect_timeout` bounds only the initial connection (unchanged, existing
+    behavior). `command_timeout`, when given, additionally bounds the command's
+    own execution: it is applied via `.settimeout(command_timeout)` on the
+    channel returned by `ssh.exec_command(cmd)`, *before* reading the exit
+    status/output, so a wedged remote command (e.g. a hung `docker pull`)
+    raises `socket.timeout` instead of blocking indefinitely. `command_timeout
+    =None` (the default) is a complete no-op — every existing call site
+    (`_verify_node_provisioning`, `_wait_for_cloud_init`, etc.) doesn't pass it
+    and keeps today's behavior exactly.
+    """
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     pkey = paramiko.RSAKey.from_private_key_file(str(key_path))
     try:
         ssh.connect(host, username=username, pkey=pkey, look_for_keys=False, timeout=connect_timeout)
         stdin, stdout, stderr = ssh.exec_command(cmd)
+        if command_timeout is not None:
+            stdout.channel.settimeout(command_timeout)
         exit_code = stdout.channel.recv_exit_status()
         out = stdout.read().decode()
         err = stderr.read().decode()
@@ -755,6 +770,90 @@ def _ssh_exec_retry(host: str, username: str, key_path: Path, cmd: str, *, retri
             delay = min(delay * 1.7, 10.0)
     # If we reach here, we've exhausted retries
     raise click.ClickException(f"SSH error connecting to {host} with key {key_path} while running: {cmd}\nlast error: {last_err}")
+
+
+def _get_prepull_images(cfg: dict) -> list[str]:
+    """Resolve the set of code-server image URIs to pre-pull onto a new node.
+
+    Must be called from within an active Flask app context (established by
+    the caller — e.g. via `get_app(ctx)` + `with app.app_context():`, the
+    same convention `rebalance()` already uses).
+
+    Returns the UNION, order-stable and de-duplicated, of:
+      - every DISTINCT `ClassProto.image_uri` in the database (always
+        included), and
+      - the optional `NODE_PREPULL_IMAGES` config value: a comma/whitespace
+        -separated string of additional image URIs.
+
+    `NODE_PREPULL_IMAGES` can only ADD images on top of the DB-derived list —
+    it is never used to drop or replace any of them (an explicit team-lead
+    decision to avoid a foot-gun where narrowing pre-pull coverage below what
+    `class_proto` implies happens silently; see architecture-update.md Design
+    Rationale). A DB query failure is caught, logged as a WARNING, and the
+    function falls back to just the configured allowlist (or an empty list)
+    — this function never raises.
+    """
+    db_images: list[str] = []
+    try:
+        from cspawn.models import ClassProto, db
+        rows = db.session.query(ClassProto.image_uri).distinct().all()
+        db_images = [row[0] for row in rows if row and row[0]]
+    except Exception as e:
+        logging.getLogger("cspawn.cli").warning(
+            f"[expand] Failed to query class_proto.image_uri for pre-pull: {e}"
+        )
+        db_images = []
+
+    configured_raw = cfg.get("NODE_PREPULL_IMAGES") or ""
+    configured_images = configured_raw.replace(",", " ").split()
+
+    seen: set[str] = set()
+    result: list[str] = []
+    for image in db_images + configured_images:
+        if image and image not in seen:
+            seen.add(image)
+            result.append(image)
+    return result
+
+
+def _prepull_images(ip: str, key_path: Path, images: list[str], *, timeout: float = 300.0,
+                     log=None) -> dict[str, bool]:
+    """Best-effort pre-pull of `images` onto the node at `ip`, over SSH.
+
+    For each image, runs `docker pull <image>` on the node itself via
+    `_ssh_exec(..., command_timeout=timeout)` — the spawner has SSH+key
+    access to nodes but ships no local `docker` CLI, so this mirrors the
+    node-local `ssh <node> docker ...` pattern `CodeHostRepo.push()` already
+    uses for the identical reason. Every code-server image is public on
+    ghcr, so no registry auth is involved.
+
+    Any per-image failure, non-zero exit, or timeout is caught, logged as a
+    WARNING naming the image, and the loop continues to the next image —
+    this never raises and never aborts the batch over one bad image. The
+    caller (`expand()`/`apply_plan()`) activates the node regardless of the
+    outcome here — pre-pull is best-effort, not a hard gate.
+
+    Returns `{image: success}` so callers/tests can inspect per-image
+    outcome without depending on log-scraping.
+    """
+    results: dict[str, bool] = {}
+    for image in images:
+        try:
+            code, out, err = _ssh_exec(
+                ip, "root", key_path, f"docker pull {image}", command_timeout=timeout,
+            )
+            success = code == 0
+            results[image] = success
+            if not success and log:
+                log.warning(
+                    f"[expand] docker pull {image} on {ip} exited {code}: "
+                    f"{(err or out or '').strip()}"
+                )
+        except Exception as e:
+            results[image] = False
+            if log:
+                log.warning(f"[expand] docker pull {image} on {ip} failed/timed out: {e}")
+    return results
 
 
 def _resolve_ip(hostname: str) -> str | None:
@@ -1048,6 +1147,95 @@ def _drain_swarm_node(manager_client: docker.DockerClient, node_obj, log=None) -
     except Exception as e:
         if log:
             log.warning(f"[stop] Failed to drain node: {e}")
+
+
+def _activate_swarm_node(manager_client: docker.DockerClient, node_obj, *, retries: int = 3,
+                          initial_delay: float = 2.0, log=None) -> bool:
+    """Set node availability to active (idempotent), retrying with backoff.
+
+    Structurally mirrors `_drain_swarm_node`'s idempotent update chain
+    (high-level `.update(availability="active")` -> capitalized-kwarg
+    fallback -> low-level `manager_client.api.update_node(...)` fallback,
+    compatible with Docker SDK 2.0) — but wraps that whole attempt in a
+    bounded retry-with-backoff loop, matching the shape of the existing
+    `_ssh_exec_retry` helper's retry/backoff pattern.
+
+    Unlike `_drain_swarm_node`'s single-attempt, log-and-swallow best-effort
+    posture, a node that gets warmed but never reactivates is
+    silently-wasted capacity — invisible to the scheduler, hiding in plain
+    sight. So on final failure (all `retries` attempts exhausted), this
+    function logs at **ERROR** (not WARNING), naming the node and the
+    manual remedy an operator needs: `docker node update --availability
+    active <node>`.
+
+    Returns `True` on confirmed success, `False` once all attempts are
+    exhausted. Never raises.
+    """
+    node_name = "?"
+    try:
+        node_name = node_obj.attrs.get("Description", {}).get("Hostname") or node_obj.id
+    except Exception:
+        try:
+            node_name = node_obj.id
+        except Exception:
+            pass
+
+    def _attempt_once() -> bool:
+        spec = node_obj.attrs.get("Spec", {}) or {}
+        availability = (spec.get("Availability") or "").lower()
+        if availability == "active":
+            if log:
+                log.info(f"[expand] Node {node_name} already active")
+            return True
+        # Try high-level update first (older SDKs)
+        try:
+            node_obj.update(availability="active")
+            if log:
+                log.info(f"[expand] Node {node_name} set to active (high-level)")
+            return True
+        except TypeError:
+            # Try with capitalized key (some SDK variants)
+            try:
+                node_obj.update(Availability="active")  # type: ignore[arg-type]
+                if log:
+                    log.info(f"[expand] Node {node_name} set to active (high-level, capitalized)")
+                return True
+            except Exception:
+                pass
+        # Fallback: low-level API
+        info = manager_client.api.inspect_node(node_obj.id)  # type: ignore[attr-defined]
+        version = ((info or {}).get("Version", {}) or {}).get("Index")
+        node_spec = ((info or {}).get("Spec", {}) or {}).copy()
+        node_spec["Availability"] = "active"
+        manager_client.api.update_node(node_obj.id, version, node_spec)  # type: ignore[attr-defined]
+        if log:
+            log.info(f"[expand] Node {node_name} set to active (low-level)")
+        return True
+
+    delay = initial_delay
+    last_err: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            return _attempt_once()
+        except Exception as e:
+            last_err = e
+            if attempt < retries:
+                if log:
+                    log.warning(
+                        f"[expand] Activate attempt {attempt}/{retries} failed for node "
+                        f"{node_name}: {e}; retrying in {delay:.1f}s"
+                    )
+                time.sleep(delay)
+                delay = min(delay * 1.7, 10.0)
+
+    if log:
+        log.error(
+            f"[expand] Node {node_name} failed to reactivate after {retries} attempts "
+            f"({last_err}) -- this node was warmed but remains drained and invisible to "
+            f"the scheduler (silently-wasted capacity). Manual remedy: "
+            f"docker node update --availability active {node_name}"
+        )
+    return False
 
 
 def _ensure_label_on_node(manager_client: docker.DockerClient, node_name: str, label_key: str, log=None) -> bool:
@@ -2639,6 +2827,23 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
     # when this invocation actually configured+joined a node (i.e. we know its
     # ip and shortname) — not for a standalone --create-only run.
     if last_ip and last_shortname:
+        # Drain immediately, before verification even runs: Docker Swarm marks
+        # a freshly-joined node Availability=active by default, and
+        # _verify_node_provisioning itself takes real wall-clock time (three
+        # SSH connect attempts plus two more round-trips) during which an
+        # active-but-unverified-and-cold node could still be scheduled onto.
+        # This closes that race earlier than before (previously drain only
+        # fired reactively, in the verify-failure branch below).
+        node_obj = None
+        try:
+            node_obj = _find_swarm_node(manager_client, last_fqdn, last_shortname)
+            if node_obj is not None:
+                _drain_swarm_node(manager_client, node_obj, log=log)
+            else:
+                log.warning(f"[expand] Could not find swarm node {last_shortname} to drain (pre-verify)")
+        except Exception as e:
+            log.warning(f"[expand] Best-effort pre-verify drain of {last_shortname} failed: {e}")
+
         log.info("[expand] Verifying node provisioning (SSH, docker version, cloud-init)")
         verify_key_path, _ = _ensure_priv_key()
         failures = _verify_node_provisioning(
@@ -2652,6 +2857,9 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
             # Best-effort: keep Swarm from scheduling more work onto a node we
             # just determined is defective. A drain failure is logged, not
             # raised — the verification failure is what aborts the command.
+            # This is a second attempt at the same drain done above: in the
+            # common case it's a harmless idempotent no-op, and it remains a
+            # fallback for the case where the earlier drain itself failed.
             try:
                 node_obj = _find_swarm_node(manager_client, last_fqdn, last_shortname)
                 if node_obj is not None:
@@ -2665,6 +2873,30 @@ def expand(ctx, project_selector: str | None, create_only: bool, create_serial: 
                 f"was drained: {'; '.join(failures)}"
             )
         log.info(f"[expand] Node {last_shortname} passed post-join provisioning verification")
+
+        # Warm the node's image cache before it can be scheduled onto, then
+        # reactivate it. Best-effort: a pre-pull failure never blocks
+        # activation, and activation itself is retried loudly (see
+        # _activate_swarm_node) since a node that stays drained after being
+        # warmed is silently-wasted capacity.
+        images: list[str] = []
+        try:
+            from cspawn.cli.util import get_app
+            app = get_app(ctx)
+            with app.app_context():
+                images = _get_prepull_images(cfg)
+        except Exception as e:
+            log.warning(f"[expand] Failed to resolve pre-pull image list: {e}")
+            images = []
+        _prepull_images(
+            last_ip, verify_key_path, images,
+            timeout=cfg.get("NODE_PREPULL_TIMEOUT_S", 300), log=log,
+        )
+        activate_node_obj = node_obj or _find_swarm_node(manager_client, last_fqdn, last_shortname)
+        if activate_node_obj is not None:
+            _activate_swarm_node(manager_client, activate_node_obj, log=log)
+        else:
+            log.warning(f"[expand] Could not find swarm node {last_shortname} to activate")
 
     # Output summary
     if do_all:
