@@ -398,7 +398,7 @@ wheels = [
 
 [[package]]
 name = "cspawn"
-version = "0.20260707.2"
+version = "0.20260707.3"
 source = { editable = "." }
 dependencies = [
     { name = "authlib" },
