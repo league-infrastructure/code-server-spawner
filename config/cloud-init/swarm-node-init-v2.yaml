@@ -104,19 +104,29 @@ runcmd:
   # (from /etc/os-release), so the pin works regardless of whether the DO base
   # image is focal, jammy, or noble.
   #
-  # Idempotency guard (sprint 013 ticket-003): a node provisioned from the
-  # golden snapshot (docs/golden-node-snapshot.md) already has docker-ce
-  # installed and apt-mark-held at the correct major -- running the full
+  # Idempotency guard (sprint 013 ticket-003; fixed post-deploy 2026-07-06/07
+  # -- see hotfix notes): a node provisioned from the golden snapshot
+  # (docs/golden-node-snapshot.md) already has docker-ce installed and
+  # apt-mark-held at the exact pinned version -- running the full
   # install/mask/hold/unmask round-trip below on every boot would be a
   # needless apt/network round-trip on that node. Before doing anything else,
-  # this entry resolves DOCKER_PIN/EXPECTED_MAJOR exactly as before, then
-  # computes ACTUAL/ACTUAL_MAJOR from `docker --version` using the identical
-  # major-extraction idiom the fail-loud assertion below already uses. If
-  # ACTUAL_MAJOR is non-empty and already equals EXPECTED_MAJOR, the entire
-  # install/mask/hold/unmask sequence is skipped -- docker is already correct
-  # and held, so there is nothing to do. Only a node with no docker installed
-  # (a non-snapshot/base-image node) or a wrong-major docker falls through to
-  # the full hardened sequence below, unchanged.
+  # this entry resolves DOCKER_PIN/EXPECTED_MAJOR exactly as before (
+  # EXPECTED_MAJOR is still needed by the post-install fail-loud assertion
+  # further down), plus EXPECTED_VERSION -- the pin's full `X.Y.Z`, stripped
+  # of both the `5:` epoch prefix and the `-1~ubuntu...` suffix. It then
+  # computes ACTUAL_VERSION from `docker --version`, the installed full
+  # `X.Y.Z`. If ACTUAL_VERSION is non-empty and EXACTLY equals EXPECTED_VERSION,
+  # the entire install/mask/hold/unmask sequence is skipped -- docker is
+  # already the pinned build and held, so there is nothing to do.
+  #
+  # This MUST be an exact-version comparison, not a major-only one: the DO
+  # base image can ship a docker-ce build that shares the pin's major but
+  # not its patch (e.g. base image at 29.6.0 vs a pin of 29.6.1) -- a
+  # major-only guard would wrongly skip the install and strand the node one
+  # patch behind the pin. Only a node with no docker installed (a
+  # non-snapshot/base-image node), a different major, OR a same-major
+  # different-patch docker falls through to the full hardened sequence
+  # below, unchanged.
   #
   # Race-proofing (swarm5 incident, 2026-07-06): the pin install below used to
   # fail silently under a dpkg-lock race with unattended-upgrades, leaving a
@@ -162,10 +172,12 @@ runcmd:
     DOCKER_PIN="5:__DOCKER_VERSION__-1~ubuntu.${VERSION_ID}~${VERSION_CODENAME}"
     EXPECTED_MAJOR="${DOCKER_PIN#*:}"
     EXPECTED_MAJOR="${EXPECTED_MAJOR%%.*}"
+    EXPECTED_VERSION="${DOCKER_PIN#*:}"
+    EXPECTED_VERSION="${EXPECTED_VERSION%%-*}"
     ACTUAL="$(docker --version 2>/dev/null || true)"
-    ACTUAL_MAJOR="$(echo "$ACTUAL" | grep -oE '[0-9]+' | head -n1)"
-    if [ -n "$ACTUAL_MAJOR" ] && [ "$ACTUAL_MAJOR" = "$EXPECTED_MAJOR" ]; then
-      echo "docker-ce already at major ${ACTUAL_MAJOR}, matches pin -- skipping install/hold round-trip"
+    ACTUAL_VERSION="$(echo "$ACTUAL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
+    if [ -n "$ACTUAL_VERSION" ] && [ "$ACTUAL_VERSION" = "$EXPECTED_VERSION" ]; then
+      echo "docker-ce already at pinned version ${ACTUAL_VERSION}, matches pin -- skipping install/hold round-trip"
     else
       apt-get update -qq
       systemctl stop unattended-upgrades.service apt-daily.service apt-daily.timer apt-daily-upgrade.service apt-daily-upgrade.timer || true

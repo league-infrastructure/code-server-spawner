@@ -671,15 +671,33 @@ class TestExpandPrepullOrdering:
 class _FakeSwarmNode:
     """A minimal stand-in for a docker-py `Node` object with a real `attrs`
     dict (unlike a bare MagicMock, so idempotency/availability checks behave
-    like production code, not like an auto-generated Mock attribute)."""
+    like production code, not like an auto-generated Mock attribute).
+
+    `reload_availability` lets a test simulate a node object whose
+    *constructed* (cached) `availability` diverges from what the manager
+    actually reports once reloaded -- e.g. a `node_obj` fetched before this
+    node was drained elsewhere in the expand flow, still cached as "active"
+    at construction time, but "drain" once reloaded from the manager. When
+    `reload_availability` is left `None`, `reload()` is a no-op (attrs stay
+    exactly as constructed), matching a real, unchanged node -- this is the
+    default so existing tests that never mention reload keep seeing stable
+    state across a `reload()` call.
+    """
 
     def __init__(self, availability: str = "drain", node_id: str = "node-id-1",
-                 hostname: str = "swarm5.example.com"):
+                 hostname: str = "swarm5.example.com", reload_availability: str | None = None):
         self.id = node_id
         self.attrs = {
             "Description": {"Hostname": hostname},
             "Spec": {"Availability": availability},
         }
+        self._reload_availability = reload_availability
+        self.reload_call_count = 0
+
+    def reload(self):
+        self.reload_call_count += 1
+        if self._reload_availability is not None:
+            self.attrs["Spec"]["Availability"] = self._reload_availability
 
     def update(self, **kwargs):
         # Mirrors the real, installed docker-py's `Node.update(node_spec)`
@@ -693,6 +711,16 @@ class TestActivateSwarmNode:
     ticket-001): idempotent activate mirroring `_drain_swarm_node`'s update
     chain, wrapped in a bounded retry-with-backoff loop, with a loud ERROR
     (not WARNING) on exhausted retries.
+
+    Post-deploy hotfix (2026-07-07): confirmed live that the expand flow
+    calls this with a `node_obj` fetched *before* the same node was drained
+    (and pre-pulled) earlier in that same flow. Trusting the cached
+    `.attrs["Spec"]["Availability"]` made the idempotency check below see
+    the pre-drain "active" value and silently short-circuit, leaving the
+    node drained. `_attempt_once` now reloads the node from the manager
+    before reading `.attrs` or calling `.update()`, on every attempt
+    (including retries) -- the tests below exercise that explicitly via
+    `_FakeSwarmNode`'s `reload_availability`.
     """
 
     def test_already_active_short_circuits_without_update_call(self):
@@ -715,6 +743,47 @@ class TestActivateSwarmNode:
 
         assert result is True
         node_obj.update.assert_called_once_with(availability="active")
+        manager_client.api.update_node.assert_not_called()
+
+    def test_stale_cached_active_but_reload_shows_drained_performs_update(self):
+        """The exact live-confirmed bug: `node_obj` was fetched (and its
+        `.attrs` snapshotted) *before* this node was drained elsewhere in
+        the expand flow, so its cached `Spec.Availability` still reads
+        "active". Trusting that cache would short-circuit and silently
+        leave the node drained. Reloading first must surface the real,
+        current "drain" state and perform the actual activation."""
+        node_obj = _FakeSwarmNode(
+            availability="active",  # stale cached value, captured before drain
+            node_id="node-id-3",
+            reload_availability="drain",  # ground truth once reloaded
+        )
+        manager_client = MagicMock()
+        manager_client.api.inspect_node.return_value = {
+            "Version": {"Index": 5},
+            "Spec": {"Availability": "drain"},
+        }
+
+        result = _activate_swarm_node(manager_client, node_obj)
+
+        assert result is True
+        assert node_obj.reload_call_count == 1
+        manager_client.api.update_node.assert_called_once_with(
+            "node-id-3", 5, {"Availability": "active"}
+        )
+
+    def test_already_active_only_after_reload_short_circuits_without_update_call(self):
+        """The reverse direction of the case above: a node constructed as
+        "drain" but reload reveals it is genuinely already "active" --
+        the idempotency check must trust the *reloaded* state, not the
+        constructed one, and still short-circuit without hitting the
+        update chain."""
+        node_obj = _FakeSwarmNode(availability="drain", reload_availability="active")
+        manager_client = MagicMock()
+
+        result = _activate_swarm_node(manager_client, node_obj)
+
+        assert result is True
+        assert node_obj.reload_call_count == 1
         manager_client.api.update_node.assert_not_called()
 
     def test_low_level_fallback_used_when_high_level_raises_typeerror(self):
@@ -765,7 +834,10 @@ class TestActivateSwarmNode:
         """When every attempt fails, `_activate_swarm_node` returns False and
         logs at ERROR (not WARNING) naming the node and the manual remedy --
         a warmed-but-still-drained node is silently-wasted capacity and must
-        be loud."""
+        be loud. The failure occurs through the reload+update path: reload
+        succeeds on every attempt (real docker-py reload has no reason to
+        fail here), then the low-level update fallback's `inspect_node`
+        call is what actually fails, on every attempt."""
         monkeypatch.setattr("cspawn.cli.node.time.sleep", lambda s: None)
 
         node_obj = _FakeSwarmNode(availability="drain", hostname="stuck.example.com")
@@ -778,6 +850,8 @@ class TestActivateSwarmNode:
         )
 
         assert result is False
+        # Reload happened on every attempt, not just the first.
+        assert node_obj.reload_call_count == 3
         log.error.assert_called_once()
         error_msg = log.error.call_args[0][0]
         assert "stuck.example.com" in error_msg

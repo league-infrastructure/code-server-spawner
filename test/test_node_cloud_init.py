@@ -500,13 +500,24 @@ class TestSwarmNodeInitV2DockerPinIdempotencyGuard:
     """The sprint-012 hardened docker-ce pin block used to unconditionally
     run its install/mask/hold/unmask round-trip on every boot, even on a
     golden-snapshot node where docker-ce is already installed and held at
-    the right major. Sprint 013 ticket-003 consolidates the 4 formerly
+    the pinned version. Sprint 013 ticket-003 consolidates the 4 formerly
     separate `runcmd` entries (`apt-get update -qq`, stop+mask, install-
     retry-hold-assert, unmask/re-enable) into a single guarded entry: a
-    precheck skips the whole round-trip when `docker --version`'s major
-    already matches the pin; otherwise the complete, unchanged hardened
-    sequence runs. These are structural content/order assertions only,
-    consistent with this file's existing no-live-execution style.
+    precheck skips the whole round-trip when `docker --version` already
+    matches the pin; otherwise the complete, unchanged hardened sequence
+    runs. These are structural content/order assertions only, consistent
+    with this file's existing no-live-execution style.
+
+    Post-deploy hotfix (2026-07-07): the precheck originally compared only
+    the docker-ce *major* (`ACTUAL_MAJOR`/`EXPECTED_MAJOR`), which wrongly
+    skipped the install when the DO base image's docker-ce shared the pin's
+    major but not its patch (observed live: base image at 29.6.0, pin
+    29.6.1 -- same major 29, guard skipped, node stranded on 29.6.0). The
+    guard now compares the full `X.Y.Z` (`ACTUAL_VERSION`/
+    `EXPECTED_VERSION`); only an *exact* version match skips the round-trip.
+    `EXPECTED_MAJOR`/`ACTUAL_MAJOR` remain, unchanged, for the post-install
+    fail-loud assertion further down (sprint-012 hardening, untouched by
+    this fix).
     """
 
     def test_docker_pin_runcmd_entries_consolidated_into_one(self):
@@ -518,41 +529,62 @@ class TestSwarmNodeInitV2DockerPinIdempotencyGuard:
         entries_with_pin_guard = [e for e in data["runcmd"] if "EXPECTED_MAJOR" in e]
         assert len(entries_with_pin_guard) == 1
 
-    def test_precheck_computes_actual_major_before_any_branch(self):
-        """ACTUAL_MAJOR is resolved once, before the guard's if/else, so the
-        precheck and the branch decision both see the same value."""
+    def test_precheck_computes_actual_version_before_any_branch(self):
+        """ACTUAL_VERSION is resolved once, before the guard's if/else, so
+        the precheck and the branch decision both see the same value."""
         text = _v2_runcmd_text()
-        actual_major_idx = text.index("ACTUAL_MAJOR=")
-        if_idx = text.index('if [ -n "$ACTUAL_MAJOR" ]')
-        assert actual_major_idx < if_idx
+        actual_version_idx = text.index("ACTUAL_VERSION=")
+        if_idx = text.index('if [ -n "$ACTUAL_VERSION" ]')
+        assert actual_version_idx < if_idx
 
-    def test_guard_compares_actual_major_to_expected_major_for_skip(self):
-        """The skip condition requires a non-empty ACTUAL_MAJOR that equals
-        EXPECTED_MAJOR -- a missing docker (empty ACTUAL_MAJOR) must not
-        satisfy the skip branch."""
+    def test_expected_version_strips_epoch_prefix_and_suffix(self):
+        """EXPECTED_VERSION is derived from DOCKER_PIN by stripping the `5:`
+        epoch prefix and the `-1~ubuntu...` suffix, leaving a bare `X.Y.Z`
+        comparable against `docker --version`'s output."""
         text = _v2_runcmd_text()
-        assert '[ -n "$ACTUAL_MAJOR" ]' in text
-        assert '"$ACTUAL_MAJOR" = "$EXPECTED_MAJOR"' in text
+        assert 'EXPECTED_VERSION="${DOCKER_PIN#*:}"' in text
+        assert 'EXPECTED_VERSION="${EXPECTED_VERSION%%-*}"' in text
+
+    def test_guard_compares_actual_version_to_expected_version_for_skip(self):
+        """The skip condition requires a non-empty ACTUAL_VERSION that
+        EXACTLY equals EXPECTED_VERSION -- a missing docker (empty
+        ACTUAL_VERSION) or a same-major-different-patch docker must not
+        satisfy the skip branch (this is the exact bug fixed post-deploy:
+        base image 29.6.0 vs pin 29.6.1 share major 29 but must not skip)."""
+        text = _v2_runcmd_text()
+        assert '[ -n "$ACTUAL_VERSION" ]' in text
+        assert '"$ACTUAL_VERSION" = "$EXPECTED_VERSION"' in text
+        # The old major-only skip condition must be gone from the guard line.
+        assert '"$ACTUAL_MAJOR" = "$EXPECTED_MAJOR"' not in text
 
     def test_skip_branch_log_line_present(self):
         text = _v2_runcmd_text()
-        assert "already at major" in text
+        assert "already at pinned version" in text
         assert "skipping install/hold round-trip" in text
 
-    def test_major_extraction_idiom_reused_not_duplicated(self):
-        """The precheck and the post-install fail-loud assertion both parse
-        docker's major via the identical `grep -oE '[0-9]+' | head -n1`
-        idiom -- not a second, divergently-written parsing expression for
-        "what is docker's major version" in shell."""
+    def test_version_extraction_idiom_used_once_in_precheck(self):
+        """The precheck parses docker's full installed version via a
+        `grep -oE` idiom matching dotted `X.Y.Z` -- distinct from (and not
+        duplicating) the major-only idiom the post-install fail-loud
+        assertion still uses."""
+        text = _v2_runcmd_text()
+        idiom = "grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+' | head -n1"
+        assert text.count(idiom) == 1
+
+    def test_major_extraction_idiom_still_used_by_post_install_assertion_only(self):
+        """The major-only `grep -oE '[0-9]+' | head -n1` idiom is no longer
+        used by the (now version-based) precheck -- it appears exactly once,
+        in the post-install fail-loud assertion, which sprint-012 hardening
+        this fix leaves untouched."""
         text = _v2_runcmd_text()
         idiom = "grep -oE '[0-9]+' | head -n1"
-        assert text.count(idiom) == 2
+        assert text.count(idiom) == 1
 
     def test_skip_branch_takes_no_install_or_mask_action(self):
         """Nothing between the guard `if` and its `else` performs any
         install/mask/hold/unmask action -- the skip branch is log-only."""
         text = _v2_runcmd_text()
-        if_idx = text.index('if [ -n "$ACTUAL_MAJOR" ]')
+        if_idx = text.index('if [ -n "$ACTUAL_VERSION" ]')
         else_idx = text.index("else", if_idx)
         skip_branch = text[if_idx:else_idx]
         for forbidden in (

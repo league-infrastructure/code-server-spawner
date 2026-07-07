@@ -1239,6 +1239,33 @@ def _activate_swarm_node(manager_client: docker.DockerClient, node_obj, *, retri
             pass
 
     def _attempt_once() -> bool:
+        nonlocal node_obj
+        # Reload the node from the manager before reading .attrs or calling
+        # .update(). The expand flow's `node_obj` here is commonly a
+        # snapshot fetched *before* this same node was drained (and
+        # pre-pulled) earlier in that flow -- trusting its cached
+        # `.attrs["Spec"]["Availability"]` would make the idempotency check
+        # below see the pre-drain "active" value and silently short-circuit,
+        # leaving the node drained forever (confirmed live, 2026-07-06/07:
+        # an expanded node stayed Drain until a manual `docker node update
+        # --availability active` fixed it). The cached `.attrs["Version"]`
+        # index used by any high-level `.update()` call that succeeds would
+        # be stale for the same reason. Prefer `Node.reload()`; if that
+        # itself isn't reliable, re-fetch the node by id from the manager.
+        try:
+            node_obj.reload()
+        except Exception as reload_err:
+            try:
+                node_obj = manager_client.nodes.get(node_obj.id)
+            except Exception as refetch_err:
+                if log:
+                    log.warning(
+                        f"[expand] Could not reload node {node_name} before "
+                        f"activation check ({reload_err}; re-fetch also "
+                        f"failed: {refetch_err}) -- proceeding with "
+                        f"possibly-stale node state"
+                    )
+
         spec = node_obj.attrs.get("Spec", {}) or {}
         availability = (spec.get("Availability") or "").lower()
         if availability == "active":
