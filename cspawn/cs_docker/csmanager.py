@@ -273,7 +273,24 @@ def hostname_type(hostname):
     return "public"
 
 
-   
+def _truthy(value, default: bool) -> bool:
+    """Coerce a config value to bool ('true'/'1'/'yes' -> True), mirroring
+    `cs_docker/autoscale.py`'s existing `_cfg_bool()` idiom.
+
+    Unlike `_cfg_bool` (which reads `cfg.get(key)` itself), this takes an
+    already-fetched value: `self.config` (a `cspawn.util.config.Config`)
+    supports `getattr(config, KEY, default)`, but that default only fires
+    when the attribute is *absent* -- a present-but-string config value
+    (e.g. `PIN_HOSTS_TO_NODE=false` loaded from a `public.env` file) is
+    always truthy as a plain Python object, so it still needs parsing here.
+    A bool value (the `getattr(...)` default itself, or a real bool config)
+    is returned unchanged.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("true", "1", "yes")
 
 
 def define_cs_container(
@@ -663,9 +680,47 @@ class CodeServerManager(ServicesManager):
         # for m in container_def.get('mounts', []):
         #    host_dir, container_dir = m.split(':')
 
+        # Resolved by the pin block below (success path only); stays None on
+        # the 409-recovery path, on the flag being off, or on any resolve/pin
+        # failure -- feeds CodeHost.node_name below with no special-casing.
+        node_fqdn = None
+
         try:
             logger.debug("Running container")
             s: CSMService = self.run(**container_def)
+
+            # Sprint 014, Approach B: pin the newly created host to the node
+            # Swarm's own scheduler just placed it on, so Swarm can never
+            # migrate it later (a node in trouble would otherwise reschedule
+            # -- and potentially cascade -- this host onto a neighbour).
+            # Best-effort only: a failure here must never fail or delay
+            # returning the new host, so this block guards all its own
+            # exceptions. It must stay inside this `try:` (still before the
+            # `except docker.errors.APIError` below) but must never let one
+            # of its own APIError-family exceptions (e.g. from
+            # `_pin_service_to_node`'s `svc.update()`) escape into that
+            # handler, which exists solely for `self.run()`'s own
+            # 409-already-exists race and would misinterpret a pin failure
+            # as "service already exists".
+            if _truthy(getattr(self.config, "PIN_HOSTS_TO_NODE", True), True):
+                try:
+                    from cspawn.cli.node import _pin_service_to_node, _resolve_task_node_fqdn
+
+                    placement_timeout_s = float(
+                        getattr(self.config, "PIN_HOST_PLACEMENT_TIMEOUT_S", 10.0)
+                    )
+                    node_fqdn = _resolve_task_node_fqdn(
+                        self.client, s.o, timeout=placement_timeout_s, log=logger
+                    )
+                    if node_fqdn:
+                        _pin_service_to_node(s.o, node_fqdn)
+                    else:
+                        logger.warning(
+                            "Could not resolve placement node for %s in time; host not pinned",
+                            username,
+                        )
+                except Exception as e:
+                    logger.warning("Failed to pin new host %s to its node: %s", username, e)
 
         except docker.errors.APIError as e:
             if e.response.status_code == 409:
@@ -686,6 +741,12 @@ class CodeServerManager(ServicesManager):
         logger.debug("Committing model")
         ch: CodeHost = s.to_model(no_container=True)
         ch.proto_id = proto.id
+        # Populate node_name immediately from the resolved placement (rather
+        # than leaving it None until the next sync()/to_model() container
+        # resolution). Stays None exactly as today when unresolved/disabled --
+        # no regression. No retroactive backfill: this only ever runs for a
+        # host created by this call, never for a pre-existing CodeHost row.
+        ch.node_name = node_fqdn
 
         # The swarm service may already have a CodeHost row (e.g. a prior start
         # that raced or left a stale record). Reuse it instead of inserting a
@@ -701,6 +762,7 @@ class CodeServerManager(ServicesManager):
             existing.public_url = ch.public_url
             existing.password = ch.password
             existing.labels = ch.labels
+            existing.node_name = ch.node_name
             db.session.commit()
             return s, existing
 

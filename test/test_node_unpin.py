@@ -13,6 +13,15 @@ Covers:
   the droplet, still destroys the droplet even if the unpin attempt raises
   (e.g. Docker unreachable), and with `--dry-run` never touches Docker at
   all.
+- `_resolve_task_node_fqdn` (sprint-014 ticket-001): resolves the hostname
+  once a task carries a `NodeID`; returns `None` (+ WARNING when `log` is
+  given) on timeout, whether from no tasks, tasks never getting a `NodeID`,
+  or `.tasks()`/`client.nodes.get()` themselves raising -- never propagates.
+- A create-time pin (sprint-014 ticket-001's `_pin_service_to_node()` call
+  site) is unpinned by `_unpin_services_from_node()`/`graceful_remove_node()`
+  identically to a pin set by `node rebalance` (sprint-014 ticket-002): same
+  constraint stripped, other constraints preserved, unpin still happens
+  before node removal regardless of whether the swarm node object is found.
 
 All tests use mocked Docker clients — no live Docker/DigitalOcean access.
 """
@@ -23,6 +32,9 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from cspawn.cli.node import (
+    _pin_service_to_node,
+    _resolve_task_node_fqdn,
+    _service_constraints,
     _unpin_services_from_node,
     graceful_remove_node,
     stop_node,
@@ -51,6 +63,34 @@ def _make_client(services: list) -> MagicMock:
     client = MagicMock()
     client.services.list.return_value = services
     return client
+
+
+def _make_task(node_id=None):
+    """Build a raw Swarm task dict; `NodeID` (a top-level key, a sibling of
+    `Status`/`Spec`) is present only when `node_id` is given -- matching a
+    task that has been scheduled but has no assigned node yet."""
+    task = {"ID": "task-1", "DesiredState": "running", "Status": {"State": "pending"}}
+    if node_id is not None:
+        task["NodeID"] = node_id
+    return task
+
+
+def _make_raw_service(*, tasks=None, tasks_side_effect=None, service_id="svc-1"):
+    """Build a MagicMock standing in for the raw docker-py Service object
+    (`CSMService.o`), styled after test_node_missing.py's `_make_raw_service`."""
+    raw = MagicMock()
+    raw.id = service_id
+    if tasks_side_effect is not None:
+        raw.tasks.side_effect = tasks_side_effect
+    else:
+        raw.tasks.return_value = tasks or []
+    return raw
+
+
+def _make_node(hostname="swarm3.example.com"):
+    node = MagicMock()
+    node.attrs = {"Description": {"Hostname": hostname}}
+    return node
 
 
 # ---------------------------------------------------------------------------
@@ -415,3 +455,204 @@ class TestStopNodeForceUnpin:
         mock_docker_cls.assert_not_called()
         mock_unpin.assert_not_called()
         droplet.destroy.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests: _resolve_task_node_fqdn (sprint 014, ticket 001)
+# ---------------------------------------------------------------------------
+
+class TestResolveTaskNodeFqdn:
+    def test_resolves_once_a_task_carries_a_node_id(self):
+        """A task with no NodeID yet is skipped; once one appears, its node's
+        hostname is resolved and returned -- no WARNING on the happy path."""
+        client = MagicMock()
+        client.nodes.get.return_value = _make_node("swarm3.example.com")
+        raw = _make_raw_service(
+            tasks_side_effect=[[_make_task(None)], [_make_task("node-abc")]]
+        )
+        log = MagicMock()
+
+        result = _resolve_task_node_fqdn(client, raw, timeout=1.0, poll_interval=0.01, log=log)
+
+        assert result == "swarm3.example.com"
+        client.nodes.get.assert_called_once_with("node-abc")
+        log.warning.assert_not_called()
+
+    def test_returns_none_and_warns_on_timeout(self):
+        """No task is ever assigned a NodeID within `timeout` -> None + WARNING."""
+        raw = _make_raw_service(tasks=[_make_task(None)], service_id="svc-timeout")
+        client = MagicMock()
+        log = MagicMock()
+
+        result = _resolve_task_node_fqdn(client, raw, timeout=0.05, poll_interval=0.01, log=log)
+
+        assert result is None
+        client.nodes.get.assert_not_called()
+        log.warning.assert_called_once()
+
+    def test_timeout_with_no_tasks_at_all(self):
+        """A brand-new service with no tasks yet also degrades to None + WARNING."""
+        raw = _make_raw_service(tasks=[], service_id="svc-no-tasks")
+        client = MagicMock()
+        log = MagicMock()
+
+        result = _resolve_task_node_fqdn(client, raw, timeout=0.05, poll_interval=0.01, log=log)
+
+        assert result is None
+        log.warning.assert_called_once()
+
+    def test_never_raises_when_nodes_get_itself_raises(self):
+        """A task gets a NodeID, but resolving it via client.nodes.get() raises --
+        the helper must swallow it, return None, and log a WARNING, not propagate."""
+        raw = _make_raw_service(tasks=[_make_task("node-abc")], service_id="svc-badnode")
+        client = MagicMock()
+        client.nodes.get.side_effect = RuntimeError("node vanished")
+        log = MagicMock()
+
+        result = _resolve_task_node_fqdn(client, raw, timeout=1.0, poll_interval=0.01, log=log)
+
+        assert result is None
+        log.warning.assert_called_once()
+
+    def test_never_raises_when_tasks_call_itself_raises(self):
+        """service.tasks() raising (e.g. a 404 on a since-removed service)
+        degrades to a timeout, not a propagated exception."""
+        raw = _make_raw_service(tasks_side_effect=RuntimeError("swarm unreachable"), service_id="svc-err")
+        client = MagicMock()
+        log = MagicMock()
+
+        result = _resolve_task_node_fqdn(client, raw, timeout=0.03, poll_interval=0.01, log=log)
+
+        assert result is None
+        log.warning.assert_called()
+
+    def test_no_log_provided_does_not_raise_on_timeout(self):
+        """log=None (the default) must not itself raise -- matches this module's
+        existing log=None-means-silent convention."""
+        raw = _make_raw_service(tasks=[], service_id="svc-quiet")
+        client = MagicMock()
+
+        result = _resolve_task_node_fqdn(client, raw, timeout=0.02, poll_interval=0.01)
+
+        assert result is None
+
+    def test_polls_multiple_times_before_node_id_appears(self):
+        """Confirms the bounded poll loop actually re-checks .tasks() rather
+        than giving up after a single failed look, as long as time remains."""
+        client = MagicMock()
+        client.nodes.get.return_value = _make_node("swarm9.example.com")
+        raw = _make_raw_service(
+            tasks_side_effect=[[_make_task(None)], [_make_task(None)], [_make_task("node-z")]]
+        )
+
+        result = _resolve_task_node_fqdn(client, raw, timeout=1.0, poll_interval=0.01)
+
+        assert result == "swarm9.example.com"
+        assert raw.tasks.call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Tests: a create-time pin (sprint-014 ticket-001) is unpinned identically
+# to a rebalance-set pin (sprint-014 tickets 002/003)
+# ---------------------------------------------------------------------------
+
+def _pin_via_real_call(svc: MagicMock, node_fqdn: str) -> None:
+    """Pin `svc` using the real, unchanged `_pin_service_to_node()`, then bake
+    the resulting constraint list back into `svc.attrs` so a later read of
+    `_service_constraints(svc)` sees the pin -- exactly as it would against a
+    real Docker service once `svc.update()` has taken effect. Resets
+    `svc.update`'s call history afterward so later assertions in the test
+    only see calls made *after* this fixture-building step.
+
+    This is how Ticket 002/003's "build the fixture by calling the real
+    _pin_service_to_node() first" requirement is satisfied: the constraint
+    shape comes from production code, not from hand-typed strings.
+    """
+    _pin_service_to_node(svc, node_fqdn)
+    applied = list(svc.update.call_args.kwargs["constraints"])
+    svc.attrs["Spec"]["TaskTemplate"]["Placement"]["Constraints"] = applied
+    svc.update.reset_mock()
+
+
+class TestCreateTimePinUnpinnedLikeRebalancePin:
+    """Sprint 014 ticket 002: a service pinned by Ticket 001's create-time
+    `_pin_service_to_node()` call must be unpinned by
+    `_unpin_services_from_node()` / `graceful_remove_node()` exactly like a
+    pin set by `node rebalance` -- no production code changes, just proof
+    that the existing unpin path generalizes to the new pin source.
+    """
+
+    def test_create_time_pin_is_stripped_preserving_other_constraints(self):
+        """A bare service pinned via a real _pin_service_to_node() call has
+        its pin removed by _unpin_services_from_node(); the pre-existing
+        node.role constraint survives untouched and no stale/duplicate
+        node.hostname== constraint is left behind."""
+        svc = _make_service(["node.role != manager"], name="create-time-pinned")
+        _pin_via_real_call(svc, "swarm7.example.com")
+        assert _service_constraints(svc) == [
+            "node.role != manager",
+            "node.hostname==swarm7.example.com",
+        ]
+
+        client = _make_client([svc])
+        count = _unpin_services_from_node(client, "swarm7.example.com")
+
+        assert count == 1
+        svc.update.assert_called_once_with(constraints=["node.role != manager"])
+
+    def _run_graceful_remove_with_real_unpin(self, node_obj):
+        """Like TestGracefulRemoveNodeUnpinOrdering._run, but leaves
+        `_unpin_services_from_node` UNMOCKED so it runs for real against a
+        create-time-pinned service double, and records call order via the
+        service's own `.update()` and the swarm node's own `.remove()`."""
+        ctx = MagicMock()
+        manager_client = MagicMock()
+        mgr = MagicMock()
+        droplet = MagicMock()
+        log = MagicMock()
+
+        svc = _make_service(["node.role != manager"], name="create-time-pinned")
+        _pin_via_real_call(svc, "swarm7.example.com")
+        manager_client.services.list.return_value = [svc]
+
+        call_order: list[str] = []
+        svc.update.side_effect = lambda **kw: call_order.append("unpin")
+        if node_obj is not None:
+            node_obj.remove.side_effect = lambda **kw: call_order.append("remove")
+
+        with (
+            patch("cspawn.cli.node.get_config", return_value={}),
+            patch(
+                "cspawn.cli.node._resolve_droplet_by_spec",
+                return_value=(droplet, "swarm7.example.com"),
+            ),
+            patch("cspawn.cli.node._find_swarm_node", return_value=node_obj),
+            patch("cspawn.cli.node._drain_swarm_node"),
+            patch("cspawn.cli.node._wait_node_tasks_drained"),
+        ):
+            graceful_remove_node(
+                ctx, manager_client, mgr, "swarm7.example.com", dry_run=False, log=log
+            )
+
+        return call_order, svc, droplet
+
+    def test_create_time_pin_unpinned_before_node_removal_when_node_found(self):
+        """When the swarm node object is found, the create-time pin is
+        stripped before the node is removed -- same ordering as an
+        already-covered rebalance-set pin."""
+        node_obj = MagicMock()
+        call_order, svc, droplet = self._run_graceful_remove_with_real_unpin(node_obj)
+
+        assert call_order == ["unpin", "remove"]
+        svc.update.assert_called_once_with(constraints=["node.role != manager"])
+        droplet.destroy.assert_called_once()
+
+    def test_create_time_pin_unpinned_even_when_swarm_node_not_found(self):
+        """A stale create-time pin is cleared even if the swarm-side node
+        object is already gone -- unpin does not depend on _find_swarm_node
+        resolving anything."""
+        call_order, svc, droplet = self._run_graceful_remove_with_real_unpin(None)
+
+        assert call_order == ["unpin"]
+        svc.update.assert_called_once_with(constraints=["node.role != manager"])
+        droplet.destroy.assert_called_once()

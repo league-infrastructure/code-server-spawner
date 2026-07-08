@@ -214,6 +214,81 @@ def _unpin_services_from_node(client, node_fqdn: str, *, log=None, dry_run: bool
     return unpinned
 
 
+def _resolve_task_node_fqdn(
+    client: docker.DockerClient,
+    service,
+    *,
+    timeout: float = 10.0,
+    poll_interval: float = 0.5,
+    log=None,
+) -> "str | None":
+    """Poll a just-created service's tasks for the node Swarm placed it on.
+
+    Used by `CodeServerManager._new_cs_inner()` (sprint 014, Approach B) to
+    pin a brand-new codehost to its actual placement node right after Swarm
+    schedules it, instead of letting Swarm freely reschedule it later.
+
+    A task's `NodeID` is a top-level key on the raw task dict -- a sibling
+    of `Status`/`Spec`, the same field `count_hosts_per_node()` already
+    reads -- assigned at scheduling time, well before its container starts.
+    Polling the raw `service.tasks()` (not `.container_tasks`/`.containers`,
+    which only surface a task once it already has a *container*) lets
+    pinning happen as early as possible in the host's startup window.
+
+    Bounded, best-effort lookup: returns `None` once `timeout` seconds have
+    elapsed with no task assigned a `NodeID`. Never raises -- any exception,
+    including one from `service.tasks()` or `client.nodes.get()`, is caught
+    and treated as "not resolved" rather than propagated. A WARNING is
+    logged (when `log` is given) on every "not resolved" outcome, matching
+    this module's existing `log=None`-means-silent convention (see
+    `_unpin_services_from_node`, `_drain_swarm_node` above).
+
+    Args:
+        client: docker-py DockerClient, used to resolve the node's hostname.
+        service: the raw docker-py Service object (`CSMService.o`, per
+            `cs_docker/proc.py`'s `ProcessBase.o`).
+        timeout: total seconds to poll before giving up.
+        poll_interval: seconds to sleep between polls.
+        log: optional logger; failures are silent when omitted.
+
+    Returns:
+        The placed node's hostname (fqdn, as recorded by Swarm), or `None`
+        if it could not be resolved within `timeout`.
+    """
+    svc_id = getattr(service, "id", "?")
+    deadline = time.monotonic() + timeout
+
+    while True:
+        try:
+            tasks = service.tasks() or []
+        except Exception as e:
+            if log:
+                log.warning(f"Failed to poll tasks for service {svc_id} while resolving placement node: {e}")
+            tasks = []
+
+        for t in tasks:
+            node_id = (t or {}).get("NodeID")
+            if not node_id:
+                continue
+            try:
+                node = client.nodes.get(node_id)
+                return node.attrs["Description"]["Hostname"]
+            except Exception as e:
+                if log:
+                    log.warning(f"Failed to resolve hostname for node {node_id} (service {svc_id}): {e}")
+                return None
+
+        if time.monotonic() >= deadline:
+            if log:
+                log.warning(
+                    f"Timed out after {timeout}s waiting for Swarm to assign a "
+                    f"placement node to service {svc_id}; host will not be pinned"
+                )
+            return None
+
+        time.sleep(poll_interval)
+
+
 @node.command()
 @click.option("-N", "--dry-run", is_flag=True,
               help="Show the planned moves without changing anything.")

@@ -1,5 +1,5 @@
 ---
-status: draft
+status: approved
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 

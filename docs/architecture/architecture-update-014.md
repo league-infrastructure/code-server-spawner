@@ -1,6 +1,6 @@
 ---
 sprint: "014"
-status: draft
+status: approved
 ---
 <!-- CLASI: Before changing code or making plans, review the SE process in CLAUDE.md -->
 
@@ -24,17 +24,17 @@ The fix is a hard per-service placement constraint,
 `node.hostname==<node-fqdn>`, which Swarm cannot violate — a pinned host
 either stays on its node or sits `Pending` until that node returns. This
 mechanism already exists and is already proven in production: `node
-rebalance` (`cspawn/cli/node.py:203-325`) uses `_pin_service_to_node()`
-(`node.py:145-158`) to force a host onto a chosen target node, and node
-removal/drain (`graceful_remove_node`, `node.py:2590-2696`) already calls
-`_unpin_services_from_node()` (`node.py:161-200`) first so a pinned host is
+rebalance` (`cspawn/cli/node.py:225-341`) uses `_pin_service_to_node()`
+(`node.py:159-172`) to force a host onto a chosen target node, and node
+removal/drain (`graceful_remove_node`, `node.py:2604-2710`) already calls
+`_unpin_services_from_node()` (`node.py:175-214`) first so a pinned host is
 never left orphaned when its node is deliberately retired. **This sprint's
 job is to make every *newly created* codehost carry that same
 `node.hostname==` constraint from the moment it starts** — not to invent a
 new pinning mechanism.
 
-**The design fork.** The one open question is *when* the target node is
-decided:
+**The design fork — DECIDED.** The one design question this sprint had to
+settle was *when* the target node is decided:
 
 - **A — decide the node before creating the service.** The spawner picks
   the node itself (some capacity/least-loaded selection) and creates the
@@ -46,16 +46,19 @@ decided:
   task reschedule immediately after creation (container recreates on the
   *same* node it already started on).
 
-This document resolves that fork (**recommendation: B** — see Step 6) and
-then specifies B's design in full for Steps 2-5. A's evaluation and why it
-is not recommended is documented in the Design Rationale (Step 6) in enough
-detail that a future revision could still pursue it if the stakeholder
-prefers.
+**Approach B is the confirmed decision**, recorded in the linked issue
+(`clasi/issues/pin-codehosts-to-node-no-migration.md`, "DECISION
+(2026-07-08): Approach B — let Swarm place, then pin") and reconfirmed by
+the team-lead for this planning pass. It is not reopened in this document.
+Steps 2-5 specify B's design in full. A's evaluation and why it was not
+chosen is preserved below in the Design Rationale (Step 6) in enough detail
+that a future sprint could revisit it as an optimization, but it is not a
+live decision here.
 
 **Where the host is created.** `CodeServerManager._new_cs_inner()`
 (`csmanager.py:621-711`), called from `CodeServerManager.new_cs()`
 (`csmanager.py:587-607`), which is called synchronously from
-`main.routes.classes.start_class` (`cspawn/main/routes/classes.py:97`,
+`main.routes.classes.start_class` (`cspawn/main/routes/classes.py:98`,
 `s, ch = ca.csm.new_cs(user=current_user, proto=proto, class_=class_)`) —
 the Flask request handler behind "Start" (UC-003). Inside `_new_cs_inner`,
 the service is created at `s: CSMService = self.run(**container_def)`
@@ -77,9 +80,9 @@ reused completely unchanged.
 |---|---|---|
 | Decide *whether* new-host pinning is active for this deployment | `CodeServerManager._new_cs_inner()` (`csmanager.py`) | **New** — reads `PIN_HOSTS_TO_NODE` config (default on), same `getattr(config, ..., default)` idiom already used for `PLACEMENT_CONSTRAINTS` |
 | Discover which node Swarm assigned a just-created service's task to | `_resolve_task_node_fqdn()` (new, `cli/node.py`) | **New** — bounded poll of the raw docker-py service's `.tasks()` for a `NodeID`, then resolves it to a hostname via `client.nodes.get(node_id)` |
-| Apply a hard `node.hostname==` constraint to a service | `_pin_service_to_node()` (`cli/node.py:145`) | **Unchanged** — reused exactly as `rebalance()` already uses it |
-| Strip a node's pins so it is never orphaned on removal/drain | `_unpin_services_from_node()` (`cli/node.py:161`), `graceful_remove_node()` (`cli/node.py:2590`) | **Unchanged** — already runs unpin-before-drain/remove; this sprint adds confirming test coverage only |
-| Relocate hosts across nodes, replacing whatever pin (if any) a host has | `plan_rebalance()`, `rebalance()` (`cli/node.py:211-393`) | **Unchanged** — already reads live placement and calls `_pin_service_to_node()` generically; this sprint adds confirming test coverage only |
+| Apply a hard `node.hostname==` constraint to a service | `_pin_service_to_node()` (`cli/node.py:159`) | **Unchanged** — reused exactly as `rebalance()` already uses it |
+| Strip a node's pins so it is never orphaned on removal/drain | `_unpin_services_from_node()` (`cli/node.py:175`), `graceful_remove_node()` (`cli/node.py:2604`) | **Unchanged** — already runs unpin-before-drain/remove; this sprint adds confirming test coverage only |
+| Relocate hosts across nodes, replacing whatever pin (if any) a host has | `plan_rebalance()`, `rebalance()` (`cli/node.py:225-406`) | **Unchanged** — already reads live placement and calls `_pin_service_to_node()` generically; this sprint adds confirming test coverage only |
 | Record which node a new host landed on, immediately (not just after the next `sync()`) | `CodeHost` row population in `_new_cs_inner()` (`csmanager.py:687-708`) | **Changed** — `node_name` set from the resolved fqdn at creation time instead of staying `None` until a later sync |
 
 These are two small, tightly related additions (one new helper function in
@@ -137,16 +140,16 @@ only on its *output shape*).
 
 ```mermaid
 graph TD
-    Route["classes.start_class()\n(main/routes/classes.py:97)\n— UNCHANGED —"]
+    Route["classes.start_class()\n(main/routes/classes.py:98)\n— UNCHANGED —"]
     NewCS["CodeServerManager.new_cs()\n(csmanager.py:587)\n— UNCHANGED —"]
     Inner["_new_cs_inner()\n(csmanager.py:621)\n— CHANGED: new pin call site —"]
     DefineC["define_cs_container()\n(csmanager.py:279)\n— UNCHANGED: still only\nPLACEMENT_CONSTRAINTS —"]
     Run["ServicesManager.run()\n(manager.py:263)\n— UNCHANGED —"]
     Resolve["_resolve_task_node_fqdn()\n(cli/node.py, NEW)"]
-    Pin["_pin_service_to_node()\n(cli/node.py:145)\n— UNCHANGED, reused —"]
-    Unpin["_unpin_services_from_node()\n(cli/node.py:161)\n— UNCHANGED —"]
-    Drain["graceful_remove_node()\n(cli/node.py:2590)\n— UNCHANGED —"]
-    Rebal["rebalance() / plan_rebalance()\n(cli/node.py:211-393)\n— UNCHANGED —"]
+    Pin["_pin_service_to_node()\n(cli/node.py:159)\n— UNCHANGED, reused —"]
+    Unpin["_unpin_services_from_node()\n(cli/node.py:175)\n— UNCHANGED —"]
+    Drain["graceful_remove_node()\n(cli/node.py:2604)\n— UNCHANGED —"]
+    Rebal["rebalance() / plan_rebalance()\n(cli/node.py:225-406)\n— UNCHANGED —"]
     Swarm[("Docker Swarm\nmanager API")]
 
     Route -->|"1: start host"| NewCS --> Inner
@@ -195,7 +198,10 @@ section, alongside `_pin_service_to_node`/`_unpin_services_from_node`/
   `container_tasks`/`containers`, which only surface a task once it has a
   *container*; a `NodeID` is assigned at scheduling time, well before the
   container starts, and pinning should happen as early as possible — for a
-  task whose `Status` has a `NodeID` key. Once found, resolves it via
+  task with a top-level `NodeID` key (`t.get("NodeID")`, the same field
+  `count_hosts_per_node()` and `container_tasks` already read — it is a
+  sibling of `Status`/`Spec` on the task dict, not nested inside `Status`).
+  Once found, resolves it via
   `client.nodes.get(node_id).attrs["Description"]["Hostname"]` (the exact
   hostname string `_pin_service_to_node`/`_unpin_services_from_node` already
   expect and normalize). Returns `None`, logging a WARNING, if no task gets
@@ -288,7 +294,7 @@ in Step 6).
 | `define_cs_container()` | **None.** Still only ever sets `PLACEMENT_CONSTRAINTS` (`node.role==worker`); the pin is layered on after `run()`, in a different function. |
 | `ServicesManager.run()` | **None.** Already forwards any `constraints` kwarg; this sprint never passes one at create time for B. |
 | `_pin_service_to_node`, `_unpin_services_from_node`, `_service_constraints` | **None.** Reused exactly as `rebalance()`/`graceful_remove_node()` already call them. Their existing normalization (replace, don't accumulate, any prior `node.hostname==`) is exactly what makes repeated/idempotent host-start calls safe. |
-| `graceful_remove_node()` / node drain / `node stop` | **None** in behavior. A create-time-pinned host is unpinned by the same `_unpin_services_from_node()` call that already runs before drain/remove — confirmed by reading `node.py:2665-2667` (unpin runs unconditionally, before the `if node_obj:` branch, regardless of whether the pin came from `rebalance` or from this sprint's new create-time path). New test coverage only. |
+| `graceful_remove_node()` / node drain / `node stop` | **None** in behavior. A create-time-pinned host is unpinned by the same `_unpin_services_from_node()` call that already runs before drain/remove — confirmed by reading `node.py:2681` (unpin runs unconditionally, before the `if node_obj:` branch at `node.py:2683`, regardless of whether the pin came from `rebalance` or from this sprint's new create-time path). New test coverage only. |
 | `rebalance()` / `plan_rebalance()` | **None.** Live placement is read from `svc.tasks()` at call time regardless of any existing constraint, and `_pin_service_to_node()` already replaces whatever `node.hostname==` constraint is present. A fully-pinned fleet rebalances exactly like today's partially-pinned one. New test coverage only. |
 | `CodeHost` model | No schema change. `node_name` is populated earlier (at create, not at next sync) for newly created hosts only; existing rows and their sync path are unaffected. |
 | Flask app import graph | One new lazy, function-local import (`csmanager.py` → `cli.node`), matching the precedent already set by `admin/routes.py:458` and `cs_docker/autoscale.py` (lines 649, 970, 1150). No new top-level import, no new dependency in `pyproject.toml` (`click`, `paramiko`, `python-digitalocean` are already installed dependencies of this single package). |
@@ -329,14 +335,14 @@ selection logic this sprint must write and keep correct.
 
 1. **Approach A.** At host-start, the spawner would need its own node
    selection: list eligible workers (worker role, active availability —
-   `rebalance()`'s existing `eligible` computation, `node.py:241-251`),
-   read current load (`count_hosts_per_node()`, `node.py:53-76`), and pick
+   `rebalance()`'s existing `eligible` computation, `node.py:252-265`),
+   read current load (`count_hosts_per_node()`, `node.py:53-84`), and pick
    one. Two problems surfaced by actually reading the reuse candidates,
    not just assuming they exist:
 
    - **`plan_rebalance()`/`rebalance()` do *not*, in fact, already do
      "capacity-aware selection."** They level *raw host counts* across
-     eligible nodes — nothing in `plan_rebalance` (`node.py:328-392`) reads
+     eligible nodes — nothing in `plan_rebalance` (`node.py:342-406`) reads
      `cs.capacity` at all. The only code that actually knows about
      per-node `cs.capacity` and "how full is full" is
      `cspawn/cs_docker/autoscale.py` (`capacity_for_node` at line 201,
@@ -496,9 +502,10 @@ or stay pending.
 2. Unpin before draining/removing, so Swarm is free to reschedule the
    now-unconstrained tasks elsewhere as part of the normal drain-triggered
    rescheduling — which is **already exactly what
-   `graceful_remove_node()` does** (`node.py:2665-2667`: `
+   `graceful_remove_node()` does** (`node.py:2681`: `
    _unpin_services_from_node(...)` runs unconditionally, before the
-   `_drain_swarm_node`/`_wait_node_tasks_drained`/`node_obj.remove` sequence,
+   `_drain_swarm_node`/`_wait_node_tasks_drained`/`node_obj.remove` sequence
+   (which starts at `node.py:2683`),
    regardless of whether the swarm-side node object was even found).
    Chosen — because it's already the codebase's behavior, not because this
    sprint is introducing it.
@@ -516,11 +523,11 @@ not new production code.
 
 ## Step 7: Flag Open Questions
 
-1. **Stakeholder must confirm A vs. B.** This document recommends B with
-   the reasoning in Step 6, and the rest of the document (Steps 2-5) is
-   written against B. If the stakeholder instead wants A despite the
-   reuse/race-safety concerns raised above, this document needs a revision
-   (`architecture-update-r1.md`) before ticketing.
+1. **A vs. B — RESOLVED, not open.** Approach B is the confirmed decision
+   (Step 1, Step 6); Steps 2-5 are written against B. Retained here only so
+   a future revision has a pointer to Step 6's alternatives analysis if a
+   later sprint wants to revisit A specifically to remove B's one
+   post-create restart.
 2. **Existing (pre-sprint) hosts are not retroactively pinned.** Is a
    one-time "pin every currently-running codehost to its current node"
    migration/CLI command wanted as a follow-up, or is "pinned on next
@@ -546,11 +553,17 @@ not new production code.
    placement" module could address this and the two pre-existing call
    sites together — out of scope here to avoid unrelated churn.
 
-## Proposed Implementation Tickets (pending stakeholder A-vs-B decision — not yet created)
+## Implementation Tickets
 
-Sketched here per the sprint brief's request for a tight ticket plan; actual
-`create_ticket` calls are deferred until the team-lead records
-`stakeholder_approval` for the design fork.
+Approach B is confirmed (Step 1), the architecture self-review verdict is
+APPROVE (`architecture_review` gate recorded passed), and
+`stakeholder_approval` was recorded 2026-07-08 (team-lead decisions: no
+retroactive backfill; `PIN_HOST_PLACEMENT_TIMEOUT_S` default 10s;
+`PIN_HOSTS_TO_NODE` default on; pin failure → WARNING, never blocks host
+creation — all baked into the tickets below). Three tickets were created
+via `create_ticket`, sequenced by dependency (001 first; 002 and 003 both
+depend only on 001 and can run in either order relative to each other, but
+are listed in the sprint's suggested execution order):
 
 1. **Pin new codehosts to their placement node at creation** — the M1
    change in full: `_resolve_task_node_fqdn()` in `cli/node.py`, the new
@@ -560,7 +573,9 @@ Sketched here per the sprint brief's request for a tight ticket plan; actual
    `test_node_unpin.py`'s style): pin applied when enabled; skipped when
    disabled; best-effort no-crash on resolve-timeout and on
    `_pin_service_to_node` raising; not re-applied on the 409-recovery path;
-   idempotent across a retried start. No dependencies.
+   idempotent across a retried start; and a mocked-Swarm regression proving
+   a pinned service's task is not reassigned when another node's
+   availability changes (SUC-002). No dependencies.
 2. **Confirm node remove/drain never orphans a create-time-pinned host** —
    regression tests proving `graceful_remove_node`/`_unpin_services_from_node`
    correctly unpin a host pinned by Ticket 1's new path (not just
@@ -572,3 +587,9 @@ Sketched here per the sprint brief's request for a tight ticket plan; actual
    where every host was pinned via Ticket 1's path, proving unpin→move→repin
    still works with no accumulation of constraints. No production code
    change expected. Depends on Ticket 1.
+
+Full acceptance criteria and implementation plans live in
+`tickets/001-pin-new-codehosts-to-their-placement-node-at-creation.md`,
+`tickets/002-confirm-node-remove-drain-never-orphans-a-create-time-pinned-host.md`,
+and `tickets/003-confirm-node-rebalance-still-relocates-a-create-time-pinned-host.md`
+(all `status: open`).
