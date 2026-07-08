@@ -13,6 +13,10 @@ Covers:
   the droplet, still destroys the droplet even if the unpin attempt raises
   (e.g. Docker unreachable), and with `--dry-run` never touches Docker at
   all.
+- `_resolve_task_node_fqdn` (sprint-014 ticket-001): resolves the hostname
+  once a task carries a `NodeID`; returns `None` (+ WARNING when `log` is
+  given) on timeout, whether from no tasks, tasks never getting a `NodeID`,
+  or `.tasks()`/`client.nodes.get()` themselves raising -- never propagates.
 
 All tests use mocked Docker clients — no live Docker/DigitalOcean access.
 """
@@ -23,6 +27,7 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from cspawn.cli.node import (
+    _resolve_task_node_fqdn,
     _unpin_services_from_node,
     graceful_remove_node,
     stop_node,
@@ -51,6 +56,34 @@ def _make_client(services: list) -> MagicMock:
     client = MagicMock()
     client.services.list.return_value = services
     return client
+
+
+def _make_task(node_id=None):
+    """Build a raw Swarm task dict; `NodeID` (a top-level key, a sibling of
+    `Status`/`Spec`) is present only when `node_id` is given -- matching a
+    task that has been scheduled but has no assigned node yet."""
+    task = {"ID": "task-1", "DesiredState": "running", "Status": {"State": "pending"}}
+    if node_id is not None:
+        task["NodeID"] = node_id
+    return task
+
+
+def _make_raw_service(*, tasks=None, tasks_side_effect=None, service_id="svc-1"):
+    """Build a MagicMock standing in for the raw docker-py Service object
+    (`CSMService.o`), styled after test_node_missing.py's `_make_raw_service`."""
+    raw = MagicMock()
+    raw.id = service_id
+    if tasks_side_effect is not None:
+        raw.tasks.side_effect = tasks_side_effect
+    else:
+        raw.tasks.return_value = tasks or []
+    return raw
+
+
+def _make_node(hostname="swarm3.example.com"):
+    node = MagicMock()
+    node.attrs = {"Description": {"Hostname": hostname}}
+    return node
 
 
 # ---------------------------------------------------------------------------
@@ -415,3 +448,97 @@ class TestStopNodeForceUnpin:
         mock_docker_cls.assert_not_called()
         mock_unpin.assert_not_called()
         droplet.destroy.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests: _resolve_task_node_fqdn (sprint 014, ticket 001)
+# ---------------------------------------------------------------------------
+
+class TestResolveTaskNodeFqdn:
+    def test_resolves_once_a_task_carries_a_node_id(self):
+        """A task with no NodeID yet is skipped; once one appears, its node's
+        hostname is resolved and returned -- no WARNING on the happy path."""
+        client = MagicMock()
+        client.nodes.get.return_value = _make_node("swarm3.example.com")
+        raw = _make_raw_service(
+            tasks_side_effect=[[_make_task(None)], [_make_task("node-abc")]]
+        )
+        log = MagicMock()
+
+        result = _resolve_task_node_fqdn(client, raw, timeout=1.0, poll_interval=0.01, log=log)
+
+        assert result == "swarm3.example.com"
+        client.nodes.get.assert_called_once_with("node-abc")
+        log.warning.assert_not_called()
+
+    def test_returns_none_and_warns_on_timeout(self):
+        """No task is ever assigned a NodeID within `timeout` -> None + WARNING."""
+        raw = _make_raw_service(tasks=[_make_task(None)], service_id="svc-timeout")
+        client = MagicMock()
+        log = MagicMock()
+
+        result = _resolve_task_node_fqdn(client, raw, timeout=0.05, poll_interval=0.01, log=log)
+
+        assert result is None
+        client.nodes.get.assert_not_called()
+        log.warning.assert_called_once()
+
+    def test_timeout_with_no_tasks_at_all(self):
+        """A brand-new service with no tasks yet also degrades to None + WARNING."""
+        raw = _make_raw_service(tasks=[], service_id="svc-no-tasks")
+        client = MagicMock()
+        log = MagicMock()
+
+        result = _resolve_task_node_fqdn(client, raw, timeout=0.05, poll_interval=0.01, log=log)
+
+        assert result is None
+        log.warning.assert_called_once()
+
+    def test_never_raises_when_nodes_get_itself_raises(self):
+        """A task gets a NodeID, but resolving it via client.nodes.get() raises --
+        the helper must swallow it, return None, and log a WARNING, not propagate."""
+        raw = _make_raw_service(tasks=[_make_task("node-abc")], service_id="svc-badnode")
+        client = MagicMock()
+        client.nodes.get.side_effect = RuntimeError("node vanished")
+        log = MagicMock()
+
+        result = _resolve_task_node_fqdn(client, raw, timeout=1.0, poll_interval=0.01, log=log)
+
+        assert result is None
+        log.warning.assert_called_once()
+
+    def test_never_raises_when_tasks_call_itself_raises(self):
+        """service.tasks() raising (e.g. a 404 on a since-removed service)
+        degrades to a timeout, not a propagated exception."""
+        raw = _make_raw_service(tasks_side_effect=RuntimeError("swarm unreachable"), service_id="svc-err")
+        client = MagicMock()
+        log = MagicMock()
+
+        result = _resolve_task_node_fqdn(client, raw, timeout=0.03, poll_interval=0.01, log=log)
+
+        assert result is None
+        log.warning.assert_called()
+
+    def test_no_log_provided_does_not_raise_on_timeout(self):
+        """log=None (the default) must not itself raise -- matches this module's
+        existing log=None-means-silent convention."""
+        raw = _make_raw_service(tasks=[], service_id="svc-quiet")
+        client = MagicMock()
+
+        result = _resolve_task_node_fqdn(client, raw, timeout=0.02, poll_interval=0.01)
+
+        assert result is None
+
+    def test_polls_multiple_times_before_node_id_appears(self):
+        """Confirms the bounded poll loop actually re-checks .tasks() rather
+        than giving up after a single failed look, as long as time remains."""
+        client = MagicMock()
+        client.nodes.get.return_value = _make_node("swarm9.example.com")
+        raw = _make_raw_service(
+            tasks_side_effect=[[_make_task(None)], [_make_task(None)], [_make_task("node-z")]]
+        )
+
+        result = _resolve_task_node_fqdn(client, raw, timeout=1.0, poll_interval=0.01)
+
+        assert result == "swarm9.example.com"
+        assert raw.tasks.call_count == 3
