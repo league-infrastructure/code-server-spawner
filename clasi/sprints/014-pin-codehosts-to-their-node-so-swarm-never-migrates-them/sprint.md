@@ -36,16 +36,17 @@ Apply the existing, already-proven `node.hostname==` pinning mechanism
 (`_pin_service_to_node()` / `_unpin_services_from_node()`,
 `cspawn/cli/node.py`, already used by `node rebalance` and node
 remove/drain) to every *newly created* codehost, not just ones a rebalance
-touches. This sprint resolves one design fork — pin the node up-front
-(Approach A) vs. let Swarm place it then pin where it landed (Approach B) —
-recommending **Approach B**: create with today's `node.role==worker`
-constraint unchanged, read back which node Swarm's own scheduler assigned
-the task to, then pin it there with the existing `_pin_service_to_node()`.
-See `architecture-update.md` for the full reasoning (Step 6), including why
-Approach A's "reuse the rebalance path's capacity-aware selection" premise
-does not hold up against the actual code, and why a client-side node
-selection would be race-prone for concurrent host starts (e.g. many
-students starting at once).
+touches. The one design fork — pin the node up-front (Approach A) vs. let
+Swarm place it then pin where it landed (Approach B) — is decided:
+**Approach B**, per the linked issue's recorded decision and reconfirmed by
+the team-lead for this planning pass (not reopened). Create with today's
+`node.role==worker` constraint unchanged, read back which node Swarm's own
+scheduler assigned the task to, then pin it there with the existing
+`_pin_service_to_node()`. See `architecture-update.md` for the full
+reasoning (Step 6), including why Approach A's "reuse the rebalance path's
+capacity-aware selection" premise does not hold up against the actual code,
+and why a client-side node selection would be race-prone for concurrent
+host starts (e.g. many students starting at once).
 
 Gated behind a config toggle, `PIN_HOSTS_TO_NODE` (default on), so the
 behavior can be disabled without a code change if it ever misbehaves.
@@ -114,13 +115,15 @@ production-proven via `node rebalance`.
 
 See `architecture-update.md` for the full design, including the A-vs-B
 design fork, module boundaries, diagrams, and design rationale. Headline
-decision: recommend **Approach B** (pin after Swarm places it), reusing
-`_pin_service_to_node` via a lazy, function-local import from
-`cspawn.cli.node` into `cspawn/cs_docker/csmanager.py` — matching an
-already-established codebase convention (`cspawn/admin/routes.py:458`,
-`cspawn/cs_docker/autoscale.py` lines 649/970/1150 do the same). This
-design fork requires stakeholder confirmation before ticketing proceeds
-(see Open Questions in `architecture-update.md`, Step 7).
+decision: **Approach B** (pin after Swarm places it, confirmed — not
+reopened this pass), reusing `_pin_service_to_node` via a lazy,
+function-local import from `cspawn.cli.node` into
+`cspawn/cs_docker/csmanager.py` — matching an already-established codebase
+convention (`cspawn/admin/routes.py:458`, `cspawn/cs_docker/autoscale.py`
+lines 649/970/1150 do the same). The architecture self-review passed
+(APPROVE); remaining open questions needing stakeholder input before
+implementation are listed in `architecture-update.md`, Step 7 (none block
+ticketing).
 
 ## GitHub Issues
 
@@ -130,20 +133,18 @@ design fork requires stakeholder confirmation before ticketing proceeds
 
 Before tickets can be created, all of the following must be true:
 
-- [ ] Sprint planning documents are complete (sprint.md, use cases, architecture)
-- [ ] Architecture review passed
-- [ ] Stakeholder has approved the sprint plan
+- [x] Sprint planning documents are complete (sprint.md, use cases, architecture)
+- [x] Architecture review passed (self-review verdict: APPROVE; see sprint-planner's report)
+- [x] Stakeholder has approved the sprint plan (`stakeholder_approval` gate recorded 2026-07-08)
 
 ## Tickets
 
-Not yet created — pending stakeholder confirmation of the A-vs-B design
-fork (`architecture-update.md` Step 6/Open Questions). Proposed plan, to be
-created via `create_ticket` once approved:
+`stakeholder_approval` recorded 2026-07-08; all three tickets created and
+`open`. Tickets execute serially in the order listed (002 and 003 both
+depend only on 001 and may run in either order relative to each other):
 
-| # | Title | Depends On |
-|---|-------|------------|
-| 001 | Pin new codehosts to their placement node at creation | — |
-| 002 | Confirm node remove/drain never orphans a create-time-pinned host | 001 |
-| 003 | Confirm `node rebalance` still relocates a create-time-pinned host | 001 |
-
-Tickets execute serially in the order listed.
+| # | Title | Depends On | File |
+|---|-------|------------|------|
+| 001 | Pin new codehosts to their placement node at creation | — | `tickets/001-pin-new-codehosts-to-their-placement-node-at-creation.md` |
+| 002 | Confirm node remove/drain never orphans a create-time-pinned host | 001 | `tickets/002-confirm-node-remove-drain-never-orphans-a-create-time-pinned-host.md` |
+| 003 | Confirm `node rebalance` still relocates a create-time-pinned host | 001 | `tickets/003-confirm-node-rebalance-still-relocates-a-create-time-pinned-host.md` |

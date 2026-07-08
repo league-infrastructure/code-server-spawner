@@ -1,6 +1,10 @@
 ---
-status: pending
+status: done
 sprint: '014'
+tickets:
+- 014-001
+- 014-002
+- 014-003
 ---
 
 # Pin codehosts to their node so Swarm never migrates them
@@ -38,7 +42,16 @@ remove/drain). Reuse these — do NOT reinvent. Note `_pin_service_to_node`'s
 `svc.update(constraints=...)` **triggers a task reschedule** (recreates the
 container), which matters for the approach choice below.
 
-## Design — two approaches (planner: evaluate + recommend; team-lead will confirm with stakeholder)
+## DECISION (2026-07-08): Approach **B** — let Swarm place, then pin.
+Team-lead chose B (stakeholder delegated the call). Rationale: Swarm's scheduler
+already handles capacity-aware concurrent placement correctly (dozens of hosts at
+class-start) — approach A would re-implement that AND need a clumping-race guard.
+B reuses the existing `_pin_service_to_node` mechanism (consistent with `node
+rebalance`). B's one cost — a single reschedule when the pin is added — is hidden
+by pinning EARLY in the host's startup window (before the student connects), so
+there's no visible disconnect. A (no-restart) is a possible future optimization.
+
+## Design — two approaches (A recorded for context; **B is chosen**)
 
 **A. Pick the node up-front, create already-pinned (no post-create restart).**
 At host start, choose the target worker (reuse the capacity-aware selection the
