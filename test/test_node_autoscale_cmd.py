@@ -194,7 +194,12 @@ class TestAutoscaleCmdCLI:
 # ---------------------------------------------------------------------------
 
 class TestCrontabAutoscaleLine:
-    """Static checks on docker/crontab to verify the cron line is present but inert."""
+    """Static checks on docker/crontab.
+
+    The autoscale cron was activated 2026-07-07 (Phase 1 dry-run): the line is now
+    LIVE, and safety comes from AUTOSCALE_DRY_RUN=true in config, not from the line
+    being commented. These checks enforce it is present, active, and correctly
+    formed for cron's stripped environment (cd /app + source the runtime env)."""
 
     CRONTAB_PATH = Path(__file__).parent.parent / "docker" / "crontab"
 
@@ -206,25 +211,30 @@ class TestCrontabAutoscaleLine:
         text = self.CRONTAB_PATH.read_text()
         assert "node autoscale" in text, "Expected 'node autoscale' line not found in crontab"
 
-    def test_autoscale_cron_line_is_commented_out(self):
-        """Every line containing 'node autoscale' must be commented out (starts with #)."""
-        text = self.CRONTAB_PATH.read_text()
-        for line in text.splitlines():
-            stripped = line.strip()
-            if "node autoscale" in stripped:
-                assert stripped.startswith("#"), (
-                    f"Found uncommented 'node autoscale' line: {line!r}\n"
-                    "This line MUST be commented out for safety."
-                )
-
-    def test_no_live_autoscale_cron_line(self):
-        """There must be zero live (uncommented) autoscale cron lines."""
+    def test_autoscale_cron_line_is_active_and_well_formed(self):
+        """The autoscale cron is now LIVE (Phase 1 dry-run) and must be correctly
+        formed for cron's stripped environment: exactly one uncommented line that
+        cd's to /app and sources /app/cron.env before running `cspawnctl -d prod
+        node autoscale` on a */2 schedule. Missing the `cd`/env-source is the exact
+        regression that made the cron crash (FileNotFoundError / DATABASE_URI unset)."""
         text = self.CRONTAB_PATH.read_text()
         live_lines = [
             line for line in text.splitlines()
             if "node autoscale" in line and not line.strip().startswith("#")
         ]
-        assert live_lines == [], (
-            f"Found {len(live_lines)} live (uncommented) autoscale cron line(s):\n"
+        assert len(live_lines) == 1, (
+            f"Expected exactly one live 'node autoscale' cron line, found {len(live_lines)}:\n"
             + "\n".join(live_lines)
+        )
+        line = live_lines[0]
+        assert line.strip().startswith("*/2 "), f"Autoscale cron should run every 2 min: {line!r}"
+        assert "cd /app" in line, (
+            f"Autoscale cron must `cd /app` (else find_parent_dir can't locate config/): {line!r}"
+        )
+        assert ". /app/cron.env" in line, (
+            f"Autoscale cron must source /app/cron.env (cron has a stripped env; without it "
+            f"DATABASE_URI/DO_TOKEN are unset): {line!r}"
+        )
+        assert "cspawnctl -d prod node autoscale" in line, (
+            f"Autoscale cron must run `cspawnctl -d prod node autoscale`: {line!r}"
         )
