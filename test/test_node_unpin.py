@@ -17,6 +17,11 @@ Covers:
   once a task carries a `NodeID`; returns `None` (+ WARNING when `log` is
   given) on timeout, whether from no tasks, tasks never getting a `NodeID`,
   or `.tasks()`/`client.nodes.get()` themselves raising -- never propagates.
+- A create-time pin (sprint-014 ticket-001's `_pin_service_to_node()` call
+  site) is unpinned by `_unpin_services_from_node()`/`graceful_remove_node()`
+  identically to a pin set by `node rebalance` (sprint-014 ticket-002): same
+  constraint stripped, other constraints preserved, unpin still happens
+  before node removal regardless of whether the swarm node object is found.
 
 All tests use mocked Docker clients — no live Docker/DigitalOcean access.
 """
@@ -27,7 +32,9 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from cspawn.cli.node import (
+    _pin_service_to_node,
     _resolve_task_node_fqdn,
+    _service_constraints,
     _unpin_services_from_node,
     graceful_remove_node,
     stop_node,
@@ -542,3 +549,110 @@ class TestResolveTaskNodeFqdn:
 
         assert result == "swarm9.example.com"
         assert raw.tasks.call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Tests: a create-time pin (sprint-014 ticket-001) is unpinned identically
+# to a rebalance-set pin (sprint-014 tickets 002/003)
+# ---------------------------------------------------------------------------
+
+def _pin_via_real_call(svc: MagicMock, node_fqdn: str) -> None:
+    """Pin `svc` using the real, unchanged `_pin_service_to_node()`, then bake
+    the resulting constraint list back into `svc.attrs` so a later read of
+    `_service_constraints(svc)` sees the pin -- exactly as it would against a
+    real Docker service once `svc.update()` has taken effect. Resets
+    `svc.update`'s call history afterward so later assertions in the test
+    only see calls made *after* this fixture-building step.
+
+    This is how Ticket 002/003's "build the fixture by calling the real
+    _pin_service_to_node() first" requirement is satisfied: the constraint
+    shape comes from production code, not from hand-typed strings.
+    """
+    _pin_service_to_node(svc, node_fqdn)
+    applied = list(svc.update.call_args.kwargs["constraints"])
+    svc.attrs["Spec"]["TaskTemplate"]["Placement"]["Constraints"] = applied
+    svc.update.reset_mock()
+
+
+class TestCreateTimePinUnpinnedLikeRebalancePin:
+    """Sprint 014 ticket 002: a service pinned by Ticket 001's create-time
+    `_pin_service_to_node()` call must be unpinned by
+    `_unpin_services_from_node()` / `graceful_remove_node()` exactly like a
+    pin set by `node rebalance` -- no production code changes, just proof
+    that the existing unpin path generalizes to the new pin source.
+    """
+
+    def test_create_time_pin_is_stripped_preserving_other_constraints(self):
+        """A bare service pinned via a real _pin_service_to_node() call has
+        its pin removed by _unpin_services_from_node(); the pre-existing
+        node.role constraint survives untouched and no stale/duplicate
+        node.hostname== constraint is left behind."""
+        svc = _make_service(["node.role != manager"], name="create-time-pinned")
+        _pin_via_real_call(svc, "swarm7.example.com")
+        assert _service_constraints(svc) == [
+            "node.role != manager",
+            "node.hostname==swarm7.example.com",
+        ]
+
+        client = _make_client([svc])
+        count = _unpin_services_from_node(client, "swarm7.example.com")
+
+        assert count == 1
+        svc.update.assert_called_once_with(constraints=["node.role != manager"])
+
+    def _run_graceful_remove_with_real_unpin(self, node_obj):
+        """Like TestGracefulRemoveNodeUnpinOrdering._run, but leaves
+        `_unpin_services_from_node` UNMOCKED so it runs for real against a
+        create-time-pinned service double, and records call order via the
+        service's own `.update()` and the swarm node's own `.remove()`."""
+        ctx = MagicMock()
+        manager_client = MagicMock()
+        mgr = MagicMock()
+        droplet = MagicMock()
+        log = MagicMock()
+
+        svc = _make_service(["node.role != manager"], name="create-time-pinned")
+        _pin_via_real_call(svc, "swarm7.example.com")
+        manager_client.services.list.return_value = [svc]
+
+        call_order: list[str] = []
+        svc.update.side_effect = lambda **kw: call_order.append("unpin")
+        if node_obj is not None:
+            node_obj.remove.side_effect = lambda **kw: call_order.append("remove")
+
+        with (
+            patch("cspawn.cli.node.get_config", return_value={}),
+            patch(
+                "cspawn.cli.node._resolve_droplet_by_spec",
+                return_value=(droplet, "swarm7.example.com"),
+            ),
+            patch("cspawn.cli.node._find_swarm_node", return_value=node_obj),
+            patch("cspawn.cli.node._drain_swarm_node"),
+            patch("cspawn.cli.node._wait_node_tasks_drained"),
+        ):
+            graceful_remove_node(
+                ctx, manager_client, mgr, "swarm7.example.com", dry_run=False, log=log
+            )
+
+        return call_order, svc, droplet
+
+    def test_create_time_pin_unpinned_before_node_removal_when_node_found(self):
+        """When the swarm node object is found, the create-time pin is
+        stripped before the node is removed -- same ordering as an
+        already-covered rebalance-set pin."""
+        node_obj = MagicMock()
+        call_order, svc, droplet = self._run_graceful_remove_with_real_unpin(node_obj)
+
+        assert call_order == ["unpin", "remove"]
+        svc.update.assert_called_once_with(constraints=["node.role != manager"])
+        droplet.destroy.assert_called_once()
+
+    def test_create_time_pin_unpinned_even_when_swarm_node_not_found(self):
+        """A stale create-time pin is cleared even if the swarm-side node
+        object is already gone -- unpin does not depend on _find_swarm_node
+        resolving anything."""
+        call_order, svc, droplet = self._run_graceful_remove_with_real_unpin(None)
+
+        assert call_order == ["unpin"]
+        svc.update.assert_called_once_with(constraints=["node.role != manager"])
+        droplet.destroy.assert_called_once()
