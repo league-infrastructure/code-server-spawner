@@ -14,7 +14,9 @@ PATH=/bin:/usr/bin:/usr/local/bin:/app
 #   Phase 2 (live): after ≥1 week of dry-run review, set AUTOSCALE_DRY_RUN=false in config.
 # WARNING: Uncommenting alone is NOT sufficient — you must also set AUTOSCALE_ENABLED=true in config.
 # ACTIVATED 2026-07-07 — Phase 1 (dry-run): AUTOSCALE_ENABLED=true + AUTOSCALE_DRY_RUN=true in config/prod.
-*/2 * * * * cspawnctl -d prod node autoscale >/proc/1/fd/1 2>/proc/1/fd/2
+# `cd /app` (so find_parent_dir locates config/) and source the runtime env
+# (cron has a stripped env; entrypoint.sh writes /app/cron.env).
+*/2 * * * * cd /app && . /app/cron.env && cspawnctl -d prod node autoscale >/proc/1/fd/1 2>/proc/1/fd/2
 
 # Hourly
 0 * * * * curl -m 5 -X GET http://localhost:8000/cron/hourly >/proc/1/fd/1 2>/proc/1/fd/2

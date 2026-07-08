@@ -13,4 +13,11 @@ else
     echo "WARNING: ID_RSA is not set — outbound SSH to worker nodes will fail." >&2
 fi
 
+# Export the runtime environment to a file so cron jobs can source it. Cron runs
+# with a stripped environment, so `cspawnctl` invoked from crontab otherwise
+# can't see DATABASE_URI / DO_TOKEN / AUTOSCALE_* etc. (ID_RSA was already unset
+# above, so it is not written here). Root-only.
+export -p | grep -vE "^export (PWD|OLDPWD|SHLVL|_)=" > /app/cron.env
+chmod 600 /app/cron.env
+
 exec "$@"
