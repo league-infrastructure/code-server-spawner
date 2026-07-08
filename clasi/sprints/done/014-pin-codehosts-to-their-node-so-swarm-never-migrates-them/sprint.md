@@ -1,7 +1,7 @@
 ---
 id: '014'
 title: Pin codehosts to their node so Swarm never migrates them
-status: planning-docs
+status: done
 branch: sprint/014-pin-codehosts-to-their-node-so-swarm-never-migrates-them
 use-cases: []
 issues:
